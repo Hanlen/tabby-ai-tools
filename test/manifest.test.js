@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict')
+const test = require('node:test')
+const fs = require('node:fs')
+const path = require('node:path')
+
+test('package metadata meets Tabby plugin discovery requirements', () => {
+  const project = path.resolve(__dirname, '..')
+  const manifest = JSON.parse(fs.readFileSync(path.join(project, 'package.json'), 'utf8'))
+  assert.match(manifest.name, /^tabby-[a-zA-Z0-9._-]+$/)
+  assert.ok(manifest.keywords.includes('tabby-plugin'))
+  assert.ok(manifest.author)
+  assert.ok(manifest.version)
+  assert.ok(manifest.description)
+  assert.equal(manifest.main, 'dist/index.js')
+})

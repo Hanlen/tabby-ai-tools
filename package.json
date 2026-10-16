@@ -1,0 +1,44 @@
+{
+  "name": "tabby-codex-agent",
+  "version": "0.1.0",
+  "description": "A persistent Codex agent tab for Tabby",
+  "author": "tabby-ai contributors",
+  "license": "MIT",
+  "keywords": [
+    "tabby-plugin"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "webpack --mode production",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-tests.cjs",
+    "smoke:codex": "node scripts/smoke-codex.cjs",
+    "prepack": "npm run build",
+    "install:tabby": "node scripts/install-local.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@angular/common": "^15.2.10",
+    "@angular/core": "^15.2.10",
+    "@angular/forms": "^15.2.10",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^18.19.0",
+    "apply-loader": "^2.0.0",
+    "pug": "^2.0.4",
+    "pug-loader": "^2.4.0",
+    "rxjs": "^7.8.2",
+    "tabby-core": "^1.0.231-nightly.0",
+    "tabby-settings": "^1.0.231-nightly.0",
+    "tabby-terminal": "^1.0.231-nightly.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^4.9.5",
+    "webpack": "^5.102.1",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6"
+  }
+}

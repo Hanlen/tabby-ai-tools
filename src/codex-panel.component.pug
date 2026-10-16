@@ -1,0 +1,181 @@
+.codex-agent
+  .codex-header
+    .codex-heading
+      strong Codex
+      small([attr.title]='cwd || "未设置工作目录"') {{shortCwd}}
+    .codex-actions
+      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnect()', [disabled]='loading || busy', [attr.title]='loading ? "Codex 正在连接" : connected ? "Codex 已连接" : "Codex 未连接，点击重连"', [attr.aria-label]='"Codex " + connectionLabel + "，点击重连"')
+        i.fas([class.fa-link]='connected', [class.fa-unlink]='!connected', aria-hidden='true')
+      button.codex-details-toggle.btn.btn-outline-secondary.btn-sm(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.aria-label]='statusOpen ? "收起状态详情" : "展开状态详情"', title='展开或收起状态详情') 详情
+      button.btn.btn-outline-secondary.btn-sm(type='button', (click)='closeRequested.emit()', title='收起侧栏', aria-label='收起侧栏') ×
+  button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving', [attr.title]='"当前模型：" + currentModel + "；reasoning：" + currentReasoningEffort + "；点击切换，下回合生效"', aria-label='当前模型与 reasoning 等级，点击切换')
+    span.codex-current-model {{currentModel}}
+    span.codex-current-reasoning reasoning: {{currentReasoningEffort}}
+  .codex-summary
+    button.codex-status(type='button', [class.codex-done]='status === "任务已完成"', (click)='toggleStatus()', [attr.title]='status', [attr.aria-expanded]='statusOpen', [attr.aria-label]='"任务状态：" + status + "；展开或收起详情"') {{status}}
+    button.codex-summary-item.codex-context-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', title='上下文使用占比；点击查看 token 用量和会话累计')
+      span(*ngIf='contextWindowTokens !== null && contextUsedTokens !== null') 上下文 {{contextPercent | number:'1.0-0'}}%
+      span(*ngIf='contextWindowTokens === null || contextUsedTokens === null') 上下文 —
+    .codex-control-summary([class.codex-control-active]='controlledTabs.length > 0')
+      button.codex-summary-item(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='controlledTabs.length ? "当前控制 " + controlledTabs.length + " 个终端，输入已锁定；点击查看列表" : "当前未控制终端，用户可操作"') 控 {{controlledTabs.length || '—'}}
+      button.codex-release-all(type='button', *ngIf='controlledTabs.length', (click)='releaseControlledTabs()', title='临时释放全部受控终端，取回输入权', aria-label='临时释放全部受控终端') 释放
+    button.codex-summary-item.codex-forward-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='sourceTerminal ? "自动转发已开启；点击详情可停止" : "自动转发未绑定；可从目标终端点击工具栏图标绑定"') {{sourceTerminal ? '转发开' : '转发关'}}
+  .codex-status-detail(*ngIf='statusOpen')
+    .codex-detail-heading
+      strong 当前状态
+      .codex-detail-actions
+        button.btn.btn-link.btn-sm(type='button', (click)='openStatus()', [disabled]='statusLoading', aria-label='刷新状态详情') 刷新
+        button.btn.btn-link.btn-sm(type='button', (click)='statusOpen = false', aria-label='关闭状态详情') ×
+    small(*ngIf='statusLoading') 正在更新…
+    small.codex-detail-error(*ngIf='statusError') {{statusError}}
+    .codex-detail-grid
+      span 连接
+      strong {{connectionLabel}}
+      span 任务状态
+      strong.codex-detail-status {{status}}
+      span 工作目录
+      strong {{cwd || '未设置'}}
+      span 会话
+      strong {{threadId || '未连接'}}
+      span 回合
+      strong {{turnLabel}}
+      span 会话状态（查询时）
+      strong {{threadStateLabel}}
+      span 当前模型（查询时）
+      strong {{threadStatus?.model || '未上报'}}
+      span 下回合模型
+      strong {{settings.model || 'Codex 默认配置'}}
+      span 当前推理强度（查询时）
+      strong {{threadStatus?.reasoningEffort || '未上报'}}
+      span 下回合推理强度
+      strong {{settings.reasoningEffort || 'Codex 默认配置'}}
+      span 上下文
+      strong(*ngIf='contextUsedTokens !== null && contextWindowTokens !== null') {{contextUsedTokens | number:'1.0-0'}} / {{contextWindowTokens | number:'1.0-0'}} tokens（{{contextPercent | number:'1.0-0'}}%）
+      strong(*ngIf='contextUsedTokens === null || contextWindowTokens === null') 未上报
+      span 会话累计
+      strong {{sessionTotalTokens === null ? '未上报' : (sessionTotalTokens | number:'1.0-0') + ' tokens'}}
+      span {{rateLimitLabel(statusRateLimits?.primary)}}
+      strong {{rateLimitValue(statusRateLimits?.primary)}}
+      span(*ngIf='statusRateLimits?.secondary') {{rateLimitLabel(statusRateLimits?.secondary)}}
+      strong(*ngIf='statusRateLimits?.secondary') {{rateLimitValue(statusRateLimits?.secondary)}}
+      span 普通用量
+      strong {{ordinaryUsageLabel}}
+      span 目标
+      strong {{goalLabel}}
+      span 下回合文件权限
+      strong {{settings.sandbox === 'read-only' ? '只读' : settings.sandbox === 'workspace-write' ? '工作区可写' : '完全访问'}}
+      span 下回合审批
+      strong {{settings.approvalPolicy === 'on-request' ? '按需' : settings.approvalPolicy === 'untrusted' ? '不可信时' : '不询问'}}
+    .codex-detail-section
+      strong 终端控制（{{controlledTabs.length}}）
+      small(*ngIf='!controlledTabs.length') 当前无控制，终端可由用户操作。
+      .codex-tab-control(*ngFor='let control of controlledTabs')
+        span {{control.title}}（{{control.tabId}}） · 命令执行中，终端输入已锁定 · {{control.command}}
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='releaseControlledTab(control.tabId)', [attr.aria-label]='"临时释放终端 " + control.title') 临时释放
+    .codex-detail-section
+      strong 自动转发：{{sourceTerminal ? '已开启' : '未绑定'}}
+      small(*ngIf='sourceTerminal') 已绑定终端：{{sourceTerminal.title}}。仅自动转发新增输出；Codex 可按需访问所有标签。
+      small(*ngIf='!sourceTerminal') 可从目标终端点击工具栏图标绑定；Codex 仍可按需访问所有标签。
+      button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') 停止自动转发
+  .codex-history(*ngIf='historyOpen')
+    .codex-history-heading
+      strong 当前目录的 Tabby AI Agent 会话
+      .codex-history-actions
+        button.btn.btn-link.btn-sm(type='button', (click)='loadSessions(true)', [disabled]='!canBrowseHistory') 刷新
+        button.btn.btn-link.btn-sm(type='button', (click)='historyOpen = false', aria-label='关闭历史会话') ×
+    small.codex-history-path {{cwd}}
+    small(*ngIf='!busy && !request') 点击会话恢复，或用 ↑↓ 选择、Enter 恢复、Esc 关闭
+    small(*ngIf='busy || request') {{request ? '请先处理当前提问或审批，再恢复会话' : '当前任务执行中，请先停止再恢复会话'}}
+    button.btn.btn-outline-danger.btn-sm(type='button', *ngIf='busy && !request', (click)='stop()', [disabled]='!turnId || loading') 停止当前任务
+    .codex-history-error(*ngIf='historyError') {{historyError}}
+    .codex-history-empty(*ngIf='!historyLoading && !sessions.length') {{sessionCursor ? '本页没有可复用会话，可继续加载' : '暂无可复用的历史会话'}}
+    .codex-session-list(*ngIf='sessions.length', (keydown)='onPromptKeydown($event)')
+      button.codex-session(type='button', *ngFor='let session of sessions; let index = index', (focus)='sessionSelection = index', (click)='selectSession(session)', [disabled]='loading || historyLoading || busy || !!request', [class.codex-session-current]='session.id === threadId', [class.codex-session-selected]='index === sessionSelection', [attr.title]='session.name || session.preview || session.id')
+        span.codex-session-title {{session.name || session.preview || '未命名会话'}}
+        span.codex-session-meta {{session.updatedAt * 1000 | date:'yyyy-MM-dd HH:mm'}} · {{session.id === threadId ? '当前会话' : session.id.slice(0, 8)}}
+    .codex-history-footer
+      small(*ngIf='historyLoading') 正在读取会话…
+      button.btn.btn-primary.btn-sm(type='button', *ngIf='sessions.length', (click)='selectSession(sessions[sessionSelection])', [disabled]='loading || historyLoading || busy || !!request') 恢复所选会话
+      button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sessionCursor && !historyLoading', (click)='loadSessions()', [disabled]='!canBrowseHistory') 加载更多
+  .codex-output-note(*ngIf='historyNotice') {{historyNotice}}
+  .codex-output-note(*ngIf='outputNotice') {{outputNotice}}
+  .codex-feed-container
+    .codex-feed(#chatFeed='', tabindex='0', aria-label='对话消息')
+      .codex-feed-content(#chatContent='')
+        .codex-entry(*ngFor='let entry of entries', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"')
+          .codex-entry-header
+            .codex-role {{entry.kind === 'user' ? '你' : entry.kind === 'tool' ? '工具输出' : entry.kind === 'system' ? '系统' : 'Codex'}}
+            button.btn.btn-link.btn-sm.codex-copy(type='button', (click)='copyEntry(entry)', [attr.aria-label]="'复制' + (entry.kind === 'user' ? '你的消息' : 'Codex 消息')") {{copiedEntryId === entry.id ? '已复制' : '复制'}}
+          .codex-text {{entry.text}}
+    button.codex-jump-latest(type='button', *ngIf='showJumpToLatest', (click)='jumpToLatest()', aria-label='回到最新消息并恢复自动滚动', title='回到底部并恢复自动滚动')
+      span(aria-hidden='true') ↓
+      span 回到最新消息
+  .codex-request(*ngIf='request')
+    strong {{request.title}}
+    .codex-takeover(*ngIf='request.method === "local/terminalTakeover" && takeover')
+      p(*ngIf='takeover.processes.length') 检测到：{{takeover.processes.join('、')}}
+      p(*ngIf='takeover.unknown && !takeover.verifyIdle') 当前终端不支持可靠的前台任务检测。请确认其状态。
+      p(*ngIf='takeover.verifyIdle') 已发送 Ctrl+C。确认原任务停止、终端回到命令提示符后，才能继续。
+      p AI 准备执行：{{takeover.purpose}}
+      .codex-request-actions
+        button.btn.btn-danger.btn-sm(type='button', *ngIf='!takeover.verifyIdle', (click)='decideTakeover("interrupt")') 中断现有任务并执行
+        button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='takeover.unknown', (click)='decideTakeover("proceed")') 我确认空闲，执行
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decideTakeover("cancel")') 取消
+    a(*ngIf='request.url', [href]='request.url', target='_blank', rel='noopener noreferrer') 打开授权链接
+    .codex-question(*ngFor='let question of request.questions')
+      strong(*ngIf='question.header') {{question.header}}
+      p {{question.question}}
+      .codex-options(*ngIf='question.options?.length')
+        button.btn.btn-sm.codex-option(type='button', *ngFor='let option of question.options', [class.btn-primary]='request.answers[question.id] === option.label', [class.btn-outline-secondary]='request.answers[question.id] !== option.label', (click)='request.answers[question.id] = option.label')
+          strong {{option.label}}
+          small(*ngIf='option.description') {{option.description}}
+        button.btn.btn-sm.codex-option(type='button', *ngIf='question.isOther', [class.btn-primary]='request.answers[question.id] === "__other__"', [class.btn-outline-secondary]='request.answers[question.id] !== "__other__"', (click)='request.answers[question.id] = "__other__"') 其他
+      input.form-control(*ngIf='question.isOther && request.answers[question.id] === "__other__"', [type]='question.isSecret ? "password" : "text"', [(ngModel)]='request.otherAnswers[question.id]', placeholder='输入其他答案')
+      input.form-control(*ngIf='!question.options?.length', [type]='question.isSecret ? "password" : "text"', [(ngModel)]='request.answers[question.id]', placeholder='输入回答')
+    .codex-request-actions(*ngIf='request.method !== "local/terminalTakeover"')
+      button.btn.btn-primary.btn-sm(type='button', (click)='decide("accept")', [disabled]='isUserInputRequest() && !canSubmitRequest()') {{isUserInputRequest() ? '提交答案' : '允许'}}
+      button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decide("decline")') {{isUserInputRequest() ? '跳过' : '拒绝'}}
+  .codex-compose
+    .codex-send-notice(*ngIf='sendNotice', role='alert') {{sendNotice}}
+    button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='goalStatus === "active" && !busy', (click)='continueTask()') 继续当前目标
+    .codex-slash-menu(*ngIf='visibleSlashCommands.length && !request && !loading', role='listbox', aria-label='命令')
+      button.codex-slash-option(type='button', role='option', *ngFor='let item of visibleSlashCommands; let index = index', [class.codex-slash-active]='slashSelection === index', [attr.aria-selected]='slashSelection === index', (click)='runSlashCommand(item.command)')
+        strong {{item.command}}
+        span {{item.description}}
+    .codex-model-picker(*ngIf='modelPickerOpen')
+      .codex-model-heading
+        strong {{pendingModel ? '选择推理强度（Thinking level）' : '选择模型'}}
+        button.btn.btn-link.btn-sm(type='button', (click)='modelPickerOpen = false', aria-label='关闭模型选择') ×
+      small(*ngIf='modelLoading') 正在读取模型…
+      small.codex-model-error(*ngIf='modelError') {{modelError}}
+      small(*ngIf='!modelLoading && !pendingModel') 当前：{{settings.model || 'Codex 默认'}} · {{settings.reasoningEffort || '默认推理强度'}}
+      .codex-model-list(*ngIf='!modelLoading && !pendingModel')
+        button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') 当前 Codex 默认（{{defaultModel.model}}）
+        button.codex-model-option(type='button', *ngFor='let model of otherModels', [class.codex-model-selected]='settings.model === model.model', [disabled]='modelSaving || permissionsSaving', [attr.title]='model.description || model.model', (click)='selectModel(model.model)')
+          span {{model.displayName || model.model}}
+          small {{model.model}}
+      small(*ngIf='pendingModel') {{pendingModel.displayName || pendingModel.model}}
+      .codex-model-list(*ngIf='pendingModel')
+        button.codex-model-option(type='button', *ngFor='let option of pendingModel.supportedReasoningEfforts', [class.codex-model-selected]='settings.model === pendingModel.model && settings.reasoningEffort === option.reasoningEffort', [disabled]='modelSaving || permissionsSaving', [attr.title]='option.description', (click)='chooseModel(pendingModel.model, option.reasoningEffort)')
+          span {{option.reasoningEffort}}
+          small {{option.reasoningEffort === pendingModel.defaultReasoningEffort ? '模型默认' : option.description}}
+      button.btn.btn-link.btn-sm(type='button', *ngIf='pendingModel', (click)='pendingModel = undefined', [disabled]='modelSaving') 返回模型列表
+    textarea.form-control(rows='3', [ngModel]='prompt', (ngModelChange)='onPromptChanged($event)', [disabled]='!!request', placeholder='描述任务或输入 / 选择命令', (keydown)='onPromptKeydown($event)')
+    .codex-compose-toolbar
+      .codex-permissions(aria-label='执行权限')
+        .codex-permission-field
+          label(for='codex-sandbox') 文件
+          select#codex-sandbox.form-control.form-control-sm([ngModel]='settings.sandbox', (ngModelChange)='setSandbox($event)', [disabled]='permissionsSaving || loading', title='文件访问权限；下一回合生效')
+            option(value='read-only') 只读
+            option(value='workspace-write') 工作区可写
+            option(value='danger-full-access') 完全访问
+        .codex-permission-field
+          label(for='codex-approval') 审批
+          select#codex-approval.form-control.form-control-sm([ngModel]='settings.approvalPolicy', (ngModelChange)='setApprovalPolicy($event)', [disabled]='permissionsSaving || loading', title='操作审批策略；下一回合生效')
+            option(value='on-request') 按需
+            option(value='untrusted') 不可信时
+            option(value='never') 不询问
+      .codex-compose-actions
+        button.btn.btn-outline-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') 停止
+        button.btn.btn-primary.btn-sm(type='button', (click)='send()', [disabled]='!prompt.trim() || loading || !!request') {{busy ? '追加指令' : '发送'}}
+    small.codex-permission-notice(*ngIf='permissionNotice') {{permissionNotice}}

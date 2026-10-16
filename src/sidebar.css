@@ -1,0 +1,43 @@
+.codex-agent-workspace {
+  display: flex;
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.codex-agent-workspace > .content {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+.codex-agent-sidebar {
+  display: flex;
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 220px;
+  overflow: hidden;
+  background: var(--theme-bg-more-2);
+  border-right: 1px solid rgba(127, 127, 127, .3);
+}
+.codex-agent-sidebar[hidden] { display: none !important; }
+.codex-agent-sidebar codex-agent-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.codex-agent-sidebar .codex-sidebar-grip {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.codex-agent-sidebar .codex-sidebar-grip:hover,
+.codex-agent-sidebar.codex-resizing .codex-sidebar-grip {
+  background: rgba(80, 150, 240, .35);
+}
