@@ -60,6 +60,39 @@ test('Windows PATH precedes desktop install; custom names use case-insensitive P
   assert.throws(() => resolveCodexExecutable('missing-command', f.context), /missing-command.*PATH.*未尝试其他安装/s)
 })
 
+test('Windows standalone and CODEX_INSTALL_DIR are discovered without PATH, before desktop hashes', t => {
+  const f = fixture(t)
+  const desktop = f.install('hash', 9000)
+  const standalone = f.file(path.relative(f.root, path.join(f.local, 'Programs/OpenAI/Codex/bin/codex.exe')))
+  assert.equal(resolveCodexExecutable('', f.context), standalone)
+  const custom = f.file('Custom Install/codex.exe')
+  f.context.env.codex_install_dir = `"${path.dirname(custom)}"`
+  assert.equal(resolveCodexExecutable('codex', f.context), custom)
+  const fromPath = f.file('PATH/codex.cmd')
+  f.context.env.Path = path.dirname(fromPath)
+  assert.equal(resolveCodexExecutable('codex', f.context), fromPath)
+  assert.throws(() => resolveCodexExecutable('my-codex', f.context), /未尝试其他安装/)
+  assert.throws(() => resolveCodexExecutable(path.join(f.root, 'missing.exe'), f.context), /未尝试自动查找/)
+  f.context.env.Path = ''
+  fs.unlinkSync(custom)
+  assert.equal(resolveCodexExecutable('', f.context), standalone)
+  fs.unlinkSync(standalone)
+  assert.equal(resolveCodexExecutable('', f.context), desktop)
+})
+
+test('POSIX CODEX_INSTALL_DIR supports home expansion and preserves lookup priorities', { skip: process.platform === 'win32' }, t => {
+  const f = fixture(t)
+  const custom = f.file('Custom Install/codex')
+  const fromPath = f.file('PATH/codex')
+  fs.chmodSync(custom, 0o755)
+  fs.chmodSync(fromPath, 0o755)
+  const context = { platform: 'linux', home: f.root, env: { PATH: '', CODEX_INSTALL_DIR: '~/Custom Install' } }
+  assert.equal(resolveCodexExecutable('', context), custom)
+  context.env.PATH = path.dirname(fromPath)
+  assert.equal(resolveCodexExecutable('', context), fromPath)
+  assert.throws(() => resolveCodexExecutable('custom-agent', context), /未尝试其他安装/)
+})
+
 test('explicit paths have priority, strip outer quotes, expand home and never fall back', t => {
   const f = fixture(t)
   f.install('hash', 5000)
