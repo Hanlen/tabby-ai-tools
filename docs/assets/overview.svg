@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1060" viewBox="0 0 1600 1060" role="img" aria-labelledby="title desc">
+<title id="title">Tabby Codex Agent — AI beside your terminal</title>
+<desc id="desc">界面示意图，非运行截图。左侧展示 Codex 对话、任务状态和权限，右侧展示 Tabby 标签与示例终端。下方介绍按目录恢复会话、终端协作与持久目标。</desc>
+<defs>
+  <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0d1724"/><stop offset="1" stop-color="#111323"/></linearGradient>
+  <radialGradient id="glow"><stop stop-color="#39796f" stop-opacity=".2"/><stop offset="1" stop-color="#39796f" stop-opacity="0"/></radialGradient>
+  <linearGradient id="edge"><stop stop-color="#4f827e"/><stop offset=".5" stop-color="#35455c"/><stop offset="1" stop-color="#363950"/></linearGradient>
+  <filter id="shadow" x="-15%" y="-15%" width="130%" height="150%"><feDropShadow dy="15" stdDeviation="20" flood-color="#030712" flood-opacity=".5"/></filter>
+</defs>
+<style>
+text{font-family:Inter,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#e8edf5}
+.mono{font-family:"Noto Sans Mono CJK SC",Consolas,monospace}
+.muted{fill:#94a6bc}.green{fill:#76e3bc}.dim{fill:#657990}
+</style>
+
+<rect x="0" y="0" width="1600" height="1060" rx="28" fill="url(#bg)"/>
+<ellipse cx="340" cy="220" rx="750" ry="500" fill="url(#glow)"/>
+<rect x="66" y="60" width="46" height="46" rx="13" fill="#153b36" stroke="#275950"/>
+<text x="76" y="92" font-size="25" fill="#88edc8" style="fill:#88edc8" font-weight="700" class="mono">&gt;_</text>
+<text x="130" y="92" font-size="21" fill="#9daec1" style="fill:#9daec1" font-weight="600">TABBY / CODEX AGENT</text>
+<rect x="1312" y="65" width="220" height="33" rx="16" fill="#172431" stroke="#2d4153"/>
+<text x="1330" y="87" font-size="15" fill="#91dec3" style="fill:#91dec3" font-weight="600">LOCAL APP SERVER</text>
+<text x="64" y="191" font-size="70" font-weight="750">Your terminal.</text>
+<text x="590" y="191" font-size="70" fill="#85e8c5" style="fill:#85e8c5" font-weight="750">Now with Codex.</text>
+<text x="68" y="244" font-size="28" fill="#a6b6c9" style="fill:#a6b6c9">在终端旁对话，在上下文中行动。</text>
+<text x="68" y="284" font-size="18" fill="#8195ad" style="fill:#8195ad">常驻侧栏  /  会话恢复  /  终端协作</text>
+<g filter="url(#shadow)">
+<rect x="64" y="326" width="1472" height="550" rx="16" fill="#0d1420" stroke="url(#edge)"/>
+</g>
+<rect x="65" y="327" width="1470" height="48" rx="15" fill="#1a2332"/>
+<rect x="65" y="353" width="1470" height="22" rx="0" fill="#1a2332"/>
+<circle cx="90" cy="351" r="6" fill="#ed7b7d"/>
+<circle cx="112" cy="351" r="6" fill="#e3be70"/>
+<circle cx="134" cy="351" r="6" fill="#6ec8a3"/>
+<text x="695" y="359" font-size="18" fill="#a4b0c1" style="fill:#a4b0c1" font-weight="600">Tabby</text>
+<text x="1403" y="359" font-size="21" fill="#a4b0c1" style="fill:#a4b0c1">+   ⚙</text>
+<rect x="65" y="375" width="492" height="500" rx="0" fill="#161f2d"/>
+<path d="M557 375L557 875" stroke="#344258"/>
+<text x="87" y="412" font-size="22" font-weight="700">Codex</text>
+<text x="178" y="411" font-size="15" fill="#8c9eb4" style="fill:#8c9eb4">workspace</text>
+<rect x="399" y="391" width="27" height="27" rx="5" fill="#1d6b51"/>
+<text x="405" y="411" font-size="18" fill="#bff8df" style="fill:#bff8df">↗</text>
+<rect x="434" y="391" width="62" height="27" rx="5" fill="#1c293b" stroke="#37475d"/>
+<text x="449" y="410" font-size="15" fill="#b7c6d8" style="fill:#b7c6d8">详情</text>
+<text x="520" y="412" font-size="24" fill="#9aaabe" style="fill:#9aaabe">×</text>
+<rect x="83" y="431" width="454" height="28" rx="5" fill="#202c3d"/>
+<text x="94" y="451" font-size="15" fill="#c5d3e4" style="fill:#c5d3e4">Codex 默认模型</text>
+<text x="294" y="451" font-size="14" fill="#9cafc7" style="fill:#9cafc7">reasoning: 默认</text>
+<rect x="83" y="469" width="151" height="27" rx="5" fill="#19382e"/>
+<text x="94" y="488" font-size="14" fill="#9ee9c5" style="fill:#9ee9c5">任务已完成</text>
+<text x="253" y="488" font-size="14" fill="#9cafc7" style="fill:#9cafc7">上下文 12%</text>
+<text x="381" y="488" font-size="14" fill="#9cafc7" style="fill:#9cafc7">控 —</text>
+<text x="462" y="488" font-size="14" fill="#9cafc7" style="fill:#9cafc7">转发开</text>
+<rect x="83" y="515" width="454" height="70" rx="9" fill="#1b2c44" stroke="#314361"/>
+<text x="99" y="540" font-size="14" fill="#9dbbe6" style="fill:#9dbbe6" font-weight="650">你</text>
+<text x="489" y="540" font-size="12" fill="#8098b6" style="fill:#8098b6">复制</text>
+<text x="99" y="568" font-size="17">检查测试结果，告诉我下一步怎么做。</text>
+<rect x="83" y="599" width="454" height="91" rx="9" fill="#17212f" stroke="#303e51"/>
+<text x="99" y="624" font-size="14" fill="#9ee8cd" style="fill:#9ee8cd" font-weight="650">Codex</text>
+<text x="489" y="624" font-size="12" fill="#8098b6" style="fill:#8098b6">复制</text>
+<text x="99" y="654" font-size="17">测试已通过。你可以继续查看改动，</text>
+<text x="99" y="678" font-size="17">也可以告诉我接下来要处理的任务。</text>
+<rect x="83" y="707" width="454" height="96" rx="7" fill="#101924" stroke="#3b4c65"/>
+<text x="99" y="741" font-size="17" fill="#758ba7" style="fill:#758ba7">描述任务或输入 / 选择命令</text>
+<text x="99" y="782" font-size="12" fill="#617994" style="fill:#617994">Ctrl / Cmd + Enter 发送</text>
+<text x="85" y="839" font-size="13" fill="#8a9fb9" style="fill:#8a9fb9">文件</text>
+<rect x="121" y="816" width="142" height="33" rx="5" fill="#1e2c3e" stroke="#36465c"/>
+<text x="131" y="838" font-size="14" fill="#bacbdf" style="fill:#bacbdf">工作区可写  ⌄</text>
+<text x="274" y="839" font-size="13" fill="#8a9fb9" style="fill:#8a9fb9">审批</text>
+<rect x="309" y="816" width="107" height="33" rx="5" fill="#1e2c3e" stroke="#36465c"/>
+<text x="320" y="838" font-size="14" fill="#bacbdf" style="fill:#bacbdf">按需  ⌄</text>
+<rect x="434" y="816" width="101" height="33" rx="5" fill="#327b65"/>
+<text x="466" y="839" font-size="15" fill="#e5fff5" style="fill:#e5fff5" font-weight="600">发送</text>
+<rect x="558" y="375" width="977" height="46" rx="0" fill="#141d2b"/>
+<rect x="572" y="382" width="234" height="39" rx="7" fill="#202c3c"/>
+<text x="591" y="408" font-size="17" fill="#c2d2e6" style="fill:#c2d2e6" font-weight="500" class="mono">&gt;_  workspace</text>
+<text x="826" y="408" font-size="16" fill="#7d94af" style="fill:#7d94af" class="mono">&gt;_  logs</text>
+<text x="998" y="408" font-size="23" fill="#7d94af" style="fill:#7d94af">+</text>
+<path d="M558 421H1535" stroke="#29364a"/>
+<text x="591" y="466" font-size="20" fill="#78dcba" style="fill:#78dcba" class="mono">~/workspace</text>
+<text x="591" y="501" font-size="21" fill="#dee7f4" style="fill:#dee7f4" class="mono">❯ npm test</text>
+<text x="591" y="552" font-size="18" fill="#91a7c4" style="fill:#91a7c4" class="mono">&gt; tabby-codex-agent@0.1.0 test</text>
+<text x="591" y="585" font-size="18" fill="#91a7c4" style="fill:#91a7c4" class="mono">&gt; node scripts/run-tests.cjs</text>
+<text x="591" y="643" font-size="20" fill="#99dfc0" style="fill:#99dfc0" class="mono">✓  CLI discovery</text>
+<text x="591" y="679" font-size="20" fill="#99dfc0" style="fill:#99dfc0" class="mono">✓  JSONL transport &amp; streaming</text>
+<text x="591" y="715" font-size="20" fill="#99dfc0" style="fill:#99dfc0" class="mono">✓  Session &amp; terminal tools</text>
+<path d="M591 745H1486" stroke="#263247"/>
+<text x="591" y="783" font-size="20" fill="#a8bcd4" style="fill:#a8bcd4" class="mono">Tests passed</text>
+<text x="591" y="835" font-size="24" fill="#78dcba" style="fill:#78dcba" class="mono">❯</text>
+<rect x="623" y="815" width="11" height="24" rx="2" fill="#8ae5c4"/>
+<text x="1269" y="853" font-size="12" fill="#526981" style="fill:#526981" class="mono">ILLUSTRATIVE OUTPUT</text>
+<text x="68" y="939" font-size="17" fill="#74c8ac" style="fill:#74c8ac" font-weight="600" class="mono">01</text>
+<text x="112" y="940" font-size="23" fill="#dce7f4" style="fill:#dce7f4" font-weight="650">上下文跟着项目走</text>
+<text x="112" y="978" font-size="18" fill="#8fa4bf" style="fill:#8fa4bf">按工作目录保存与恢复会话</text>
+<text x="581" y="939" font-size="17" fill="#74c8ac" style="fill:#74c8ac" font-weight="600" class="mono">02</text>
+<text x="625" y="940" font-size="23" fill="#dce7f4" style="fill:#dce7f4" font-weight="650">终端就在对话旁</text>
+<text x="625" y="978" font-size="18" fill="#8fa4bf" style="fill:#8fa4bf">读取输出、访问标签与分屏</text>
+<text x="1094" y="939" font-size="17" fill="#74c8ac" style="fill:#74c8ac" font-weight="600" class="mono">03</text>
+<text x="1138" y="940" font-size="23" fill="#dce7f4" style="fill:#dce7f4" font-weight="650">目标持续有进展</text>
+<text x="1138" y="978" font-size="18" fill="#8fa4bf" style="fill:#8fa4bf">持久 Goal 与实时任务状态</text>
+<text x="68" y="1028" font-size="13" fill="#647b96" style="fill:#647b96">UI CONCEPT · 示例会话，非运行截图</text>
+<text x="1334" y="1028" font-size="13" fill="#647b96" style="fill:#647b96" class="mono">MIT LICENSE</text>
+</svg>

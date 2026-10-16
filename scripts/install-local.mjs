@@ -25,7 +25,10 @@ const destination = join(modulesDir, manifest.name)
 mkdirSync(destination, { recursive: true })
 copyFileSync(join(projectDir, 'package.json'), join(destination, 'package.json'))
 cpSync(join(projectDir, 'dist'), join(destination, 'dist'), { recursive: true, force: true })
-for (const file of ['README.md', 'LICENSE']) {
+if (existsSync(join(projectDir, 'docs'))) {
+  cpSync(join(projectDir, 'docs'), join(destination, 'docs'), { recursive: true, force: true })
+}
+for (const file of ['README.md', 'LICENSE', 'VALIDATION.md']) {
   if (existsSync(join(projectDir, file))) copyFileSync(join(projectDir, file), join(destination, file))
 }
 console.log(`已安装到 ${destination}`)
