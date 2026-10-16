@@ -76,10 +76,24 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
   reasons.unshift(`PATH: ${pathValue ? `已检查 ${entries.length} 个目录，没有可用的 ${command}` : '未设置或为空'}${windows ? `；PATHEXT=${extensions.join(';')}` : ''}`)
   if (!automatic) return fail(`配置的 Codex CLI 命令 ${command} 无法从 PATH 定位；未尝试其他安装。`)
 
+  const installDir = environmentValue(env, 'CODEX_INSTALL_DIR', windows)
+  if (installDir) {
+    const directory = normalizeExecutable(installDir)
+    const expanded = /^~[/\\]/.test(directory) ? paths.join(context.home || os.homedir(), directory.slice(2)) : directory
+    const filename = paths.resolve(cwd, expanded, windows ? 'codex.exe' : 'codex')
+    try { validFile(filename); return filename } catch (error: any) {
+      reasons.push(`CODEX_INSTALL_DIR ${filename}: ${error.code || error.message}`)
+    }
+  }
+
   if (windows) {
     const localAppData = environmentValue(env, 'LOCALAPPDATA', true)
     if (!localAppData) reasons.push('LOCALAPPDATA: 未设置，无法扫描 OpenAI/Codex/bin')
     else {
+      const standalone = paths.resolve(cwd, localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe')
+      try { validFile(standalone); return standalone } catch (error: any) {
+        reasons.push(`独立安装 ${standalone}: ${error.code || error.message}`)
+      }
       const root = paths.resolve(cwd, localAppData, 'OpenAI', 'Codex', 'bin')
       const candidates: { filename: string; mtime: number }[] = []
       try {

@@ -76,11 +76,15 @@ Goal 通过证据检查和持续执行降低过早结束的概率，但无法数
 
 ## CLI 自动发现与启动排查
 
-`codexAgent.executable` 留空或保持默认 `codex` 时，先从 **Tabby 自身进程的 PATH** 查找并验证文件。Windows 若 PATH 无可用 Codex，再扫描 `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`。目录名可以是哈希；跳过缺文件、不可读或不是普通文件的候选，按 **codex.exe 的修改时间降序** 选择，时间相同用完整路径作稳定排序，不从目录名推断版本。每次重新启动后台进程都会重新扫描，以适配升级和旧目录清理；已有连接继续复用当前进程。文件时间只能表示文件的新旧，不能保证软件版本；需要固定安装时请填写显式路径。无需本机临时启动器，也不依赖开发终端变量。
+`codexAgent.executable` 留空或保持默认 `codex` 时，先从 **Tabby 自身进程的 PATH** 查找并验证文件，随后检查 `CODEX_INSTALL_DIR`。Windows 再检查官方独立安装入口 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`，最后扫描桌面安装 `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`。桌面安装目录名可以是哈希，按有效 **codex.exe 的修改时间降序** 选择，时间相同按完整路径排序；不从目录名推断版本。每次启动后台进程都会重新查找，以适配升级和旧目录清理；已有连接复用当前进程。
 
-Linux/macOS 的桌面 PATH 中没有默认 `codex` 时，会异步启动 `$SHELL -ilc` 读取 PATH（未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish）。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出；超时、失败或未找到 Codex 时继续检查安装目录。补充目录依次为 `~/.local/bin`、`~/.npm-global/bin`、`$NVM_DIR` 及 `~/.nvm` 下的 `current/bin` 和 `versions/node/v*/bin`，最后检查 `/opt/homebrew/bin` 和 `/usr/local/bin`。NVM 优先 current，其余按 Node 版本降序选择含有效 Codex 的目录；Shell 选择的安装优先于目录扫描。不要求 Shell 一定加载 NVM，也不固定用户名或 Node 版本。
+Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境，即使桌面 PATH 已经包含 Codex，也会读取用户 Shell 中的 Codex 配置。未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出。仅导入 PATH、CODEX_HOME / CODEX_SQLITE_HOME / CODEX_INSTALL_DIR、NVM_DIR、代理、证书及 OPENAI_API_KEY / CODEX_API_KEY / CODEX_ACCESS_TOKEN；其中非 PATH 变量以父进程已有值（包括空值）为准，不导入 Shell 的 NODE_OPTIONS 等运行时钩子，也不把环境变量内容写入诊断。
 
-查找结果与启动环境一起传递：读取到的 Shell PATH 会传给 app-server，Linux/macOS 还会把选中启动器的所在目录放到子进程 PATH 首位，保证 NVM 的 `#!/usr/bin/env node` 启动器能找到同目录的 Node；显式 NVM 路径也适用。父进程环境不变。关闭连接或切换配置会取消尚未结束的探测，防止旧请求随后启动后台进程。
+默认 Codex 仍未找到时，补充检查 `~/.local/bin`、`~/.npm-global/bin`、`$NVM_DIR` 及 `~/.nvm` 下的 `current/bin` 和 `versions/node/v*/bin`，最后检查 `/opt/homebrew/bin` 和 `/usr/local/bin`。NVM 优先 current，其余按 Node 版本降序选择含有效 Codex 的目录；不要求 Shell 一定加载 NVM，也不固定用户名或 Node 版本。已通过桌面 PATH 或设置选定的 Codex 不会被 Shell 或目录扫描中的另一个安装替换。
+
+查找结果与启动环境一起传递：Linux/macOS 把启动器所在目录放到子进程 PATH 首位。对于 `#!/usr/bin/env node`（含 `env -S node`）启动器，若 Node 不在同目录或 PATH，则从用户 Shell 及 NVM 等补充目录恢复 Node；这也适用于有效的显式路径和自定义命令名。找不到 Node 时报告运行环境错误，保留选定的 Codex。父进程环境不变，关闭或切换配置会取消尚未结束的探测。
+
+服务关闭和重连会等待旧进程回收。Linux/macOS 为服务创建独立进程组，先发送 SIGTERM，等待最多 1 秒，再向仍存活的进程组发送 SIGKILL，并等待最多 2 秒确认服务管道关闭。Windows 使用由 SystemRoot / WINDIR 定位的绝对路径 `System32\taskkill.exe /t /f`，不依赖 PATH；执行和退出确认均有 2 秒上限。回收失败会给出诊断并阻止启动另一个服务，需要处理该错误并重启 Tabby 后重试。
 
 显式配置的绝对路径、相对路径或 `~/` 路径优先（可带一对外层引号），会验证真实文件存在；无效立即报错，**不会自动降级到另一安装**。自定义命令名（如 `my-codex`、`codex.cmd`）仅按 PATH / Windows PATHEXT 查找，保留命令名配置兼容性；未找到也不会改用桌面安装。Windows 支持原生 exe/com 和 cmd/bat 启动器，含空格、中文路径可用。原生程序使用绝对路径、参数数组和 `shell:false`；cmd/bat 由 cross-spawn 负责 cmd.exe 转义，stdin/stdout JSONL 及 stderr 均保留为管道。只填写文件路径或命令名，不附加参数。
 

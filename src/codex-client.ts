@@ -4,6 +4,7 @@ import { EventEmitter } from 'events'
 import * as readline from 'readline'
 import { normalizeExecutable } from './codex-executable'
 import { resolveCodexLaunch } from './codex-discovery'
+import { terminateCodexProcess } from './codex-process'
 
 export interface RpcMessage {
   id?: number
@@ -23,6 +24,7 @@ export class CodexClient extends EventEmitter {
   private executable = ''
   private connected = false
   private discovery?: AbortController
+  private stopping?: Promise<void>
 
   get isConnected (): boolean { return this.connected }
 
@@ -43,6 +45,7 @@ export class CodexClient extends EventEmitter {
 
   private async start (executable: string, signal: AbortSignal): Promise<void> {
     const resolved = await resolveCodexLaunch(executable, { signal })
+    if (this.stopping) await this.stopping
     if (signal.aborted) throw new Error('Codex app-server was closed during CLI discovery')
     executable = resolved.executable
     // Native binaries always use an absolute path and direct argument arrays.
@@ -54,6 +57,7 @@ export class CodexClient extends EventEmitter {
       windowsHide: true,
       shell: false,
       env: resolved.env,
+      detached: process.platform !== 'win32',
     }) as ChildProcessWithoutNullStreams
     let stderr = ''
     const failure = (error: Error): Error => new Error(`${error.message}\nCodex CLI: ${executable}${stderr.trim() ? `\n${stderr.trim()}` : ''}\n请检查 Settings → Codex AI → codexAgent.executable。`)
@@ -72,8 +76,18 @@ export class CodexClient extends EventEmitter {
     })
     child.stdin.on('error', streamError)
     child.on('error', error => this.disconnect(failure(error), child))
-    // Unlike 'exit', 'close' runs after stdout/stderr have finished.
-    child.on('close', (code, signal) => this.disconnect(failure(new Error(`Codex app-server exited (${code ?? signal})`)), child))
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
+    const exited = (code: number | null, signal: NodeJS.Signals | null): Error => failure(new Error(`Codex app-server exited (${code ?? signal})`))
+    child.on('exit', (code, signal) => {
+      // Normally 'close' immediately follows 'exit' after draining stderr. A
+      // surviving descendant can hold the pipes open forever, even with no RPC
+      // outstanding; in that case start group cleanup without waiting for EOF.
+      exitTimer = setTimeout(() => this.disconnect(exited(code, signal), child), 100)
+    })
+    child.on('close', (code, signal) => {
+      clearTimeout(exitTimer)
+      this.disconnect(exited(code, signal), child, true)
+    })
     try {
       await this.requestRaw('initialize', {
         clientInfo: { name: 'tabby_codex_agent', title: 'Tabby Codex Agent', version: '0.1.0' },
@@ -109,7 +123,7 @@ export class CodexClient extends EventEmitter {
     if (message.method) this.emit('event', message)
   }
 
-  private disconnect (error: Error, child = this.process): void {
+  private disconnect (error: Error, child = this.process, closed = false): void {
     if (!child || this.process !== child) return
     this.process = undefined
     this.connected = false
@@ -121,15 +135,13 @@ export class CodexClient extends EventEmitter {
       request.reject(error)
     }
     this.pending.clear()
-    child.stdin.destroy()
-    if (child.exitCode === null && child.signalCode === null) {
-      if (process.platform === 'win32' && child.pid) {
-        // npm .cmd launchers own a child process; terminate the whole tree.
-        const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' })
-        killer.on('error', () => { child.kill() })
-        killer.on('close', code => { if (code !== 0) child.kill() })
-      } else child.kill()
-    }
+    const stopping = terminateCodexProcess(child, { closed })
+    this.stopping = stopping
+    // Retain a failed cleanup as a barrier: a reconnect must not create a
+    // second server when termination of the previous one could not be confirmed.
+    stopping.then(() => {
+      if (this.stopping === stopping) this.stopping = undefined
+    }, error => this.emit('diagnostic', error.message))
     this.emit('disconnected', error)
   }
 
@@ -166,10 +178,11 @@ export class CodexClient extends EventEmitter {
     this.process?.stdin.write(JSON.stringify({ id, error: { code: -32601, message } }) + '\n')
   }
 
-  close (): void {
+  close (): Promise<void> {
     this.discovery?.abort()
     this.discovery = undefined
     this.ready = undefined
     this.disconnect(new Error('Codex app-server was closed'))
+    return this.stopping || Promise.resolve()
   }
 }

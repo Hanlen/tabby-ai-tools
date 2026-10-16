@@ -1,4 +1,18 @@
-# Windows Codex 定位与启动验证包
+# Codex 定位与启动验证
+
+## Review 修复验证（2026-10-16）
+
+本轮修复四项 review 问题，以下结果在 Linux、Node 20.20.2、Codex CLI 0.162.1 上执行：
+
+- 默认命令发现补充 `CODEX_INSTALL_DIR`，Windows 补充官方独立安装 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`，保留 PATH、显式设置及自定义命令的优先级约定。
+- 已选中 Codex 的 JavaScript 启动器缺少 Node 时，恢复 Shell / NVM 的 Node 环境；不替换选中的启动器，无法恢复时给出运行环境错误。
+- 默认模式即使在 PATH 找到 Codex，也读取 Shell 的指定 Codex 状态目录、代理、证书及认证变量；父环境已有值优先。独立管道、超时、输出上限继续生效，不导入 NODE_OPTIONS，不在诊断中回显环境值。
+- POSIX 使用独立进程组，SIGTERM 超时后升级 SIGKILL，并等待旧服务退出后再启动新服务；覆盖忽略终止信号、存活子进程、父进程退出但子进程持有管道，以及回收失败阻止重启。Windows 改用绝对路径 taskkill，新增空 PATH 下常驻 Node 子进程的真实 Windows 回收测试。
+- CI 矩阵新增 macOS，保留 Ubuntu 和 Windows。
+
+验证结果：`npm test` 共 129 项，124 通过、0 失败、5 项 Windows 专用测试跳过；`npm run typecheck`、`npm run build` 和 `git diff --check` 通过。`node scripts/smoke-codex.cjs --without-path` 通过，实际 CLI 为 `/usr/bin/codex`，完成 initialize/initialized；未发送模型请求。macOS/Windows 的本轮真实执行结果尚未取得，规则模拟与 CI 配置不视为实测通过。
+
+## 历史 Windows 验证记录
 
 日期：2026-10-15。源码直接修复；未提交 Git，未修改本机 Codex/Tabby 安装配置，保留工作区原有未跟踪文件及 artifacts。
 

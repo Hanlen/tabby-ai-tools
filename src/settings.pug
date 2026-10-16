@@ -2,7 +2,7 @@ h3 Codex AI
 .form-line
   .header
     .title Codex CLI 可执行文件
-    .description 留空或 codex 时自动查找；Linux/macOS 支持用户 Shell、NVM 和常见安装目录，Windows 支持 Codex 桌面安装目录。支持含空格路径和 ~/ 路径；显式路径无效会报错，自定义命令名仅查 PATH。设置键 codexAgent.executable，只填路径或命令名，不附加参数。先运行 codex login 完成登录。
+    .description 留空或 codex 时自动查找；Linux/macOS 支持用户 Shell、NVM 和常见安装目录，Windows 支持 Codex 独立安装和桌面安装目录；也支持 CODEX_INSTALL_DIR。支持含空格路径和 ~/ 路径；显式路径无效会报错，自定义命令名仅查 PATH。设置键 codexAgent.executable，只填路径或命令名，不附加参数。先运行 codex login 完成登录。
   input.form-control([(ngModel)]='settings.executable', (ngModelChange)='save()', placeholder='自动查找（codex）')
 .form-line
   .header
