@@ -824,7 +824,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       return
     }
     if (!session || session.cwd !== this.cwd || session.originator !== 'tabby_codex_agent') {
-      this.historyError = '所选会话不属于当前目录的 Tabby AI Agent，请刷新列表'
+      this.historyError = '所选会话不属于当前目录的 Tabby AI Tools，请刷新列表'
       return
     }
     if (session.id === this.threadId) { this.historyOpen = false; return }

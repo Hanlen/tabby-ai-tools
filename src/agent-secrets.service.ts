@@ -9,7 +9,7 @@ export class AgentSecretsService {
     const source = apiKeySource(profile)
     if (source === 'direct') {
       const value = profile.apiKey?.trim()
-      if (!value) throw new Error('请在 AI Agent 设置中填写 API Key')
+      if (!value) throw new Error('请在 AI Tools 设置中填写 API Key')
       return value
     }
     if (source === 'environment') {

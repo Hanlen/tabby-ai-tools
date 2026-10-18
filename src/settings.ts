@@ -237,6 +237,6 @@ export class CodexSettingsComponent implements OnDestroy {
 export class CodexSettingsTabProvider extends SettingsTabProvider {
   id = 'codex-agent'
   icon = 'robot'
-  title = 'AI Agent'
+  title = 'AI Tools'
   getComponentType (): any { return CodexSettingsComponent }
 }

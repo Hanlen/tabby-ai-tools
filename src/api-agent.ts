@@ -51,7 +51,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   get isConnected (): boolean { return this.connected }
 
   async connect (_settings: AgentSettings): Promise<void> {
-    if (!this.profile.model.trim()) throw new Error('请先在 AI Agent 设置中填写模型 ID')
+    if (!this.profile.model.trim()) throw new Error('请先在 AI Tools 设置中填写模型 ID')
     if (!this.connected) { this.connected = true; this.emit('connected') }
   }
 

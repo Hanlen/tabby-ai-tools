@@ -296,7 +296,7 @@ rl.on('line', line => {
 `)
     await client.connect(executable)
     const result = await client.request('identity')
-    assert.deepEqual(result.clientInfo, { name: 'tabby_codex_agent', title: 'Tabby Codex Agent', version: '0.1.0' })
+    assert.deepEqual(result.clientInfo, { name: 'tabby_codex_agent', title: 'Tabby AI Tools', version: '0.1.0' })
     assert.deepEqual(result.overrides, [])
     assert.deepEqual(result.args, ['app-server', '--listen', 'stdio://'])
     assert.equal(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE, 'parent-identity')

@@ -75,7 +75,7 @@ export class CodexSidebarService implements OnDestroy {
     }
     this.host = document.createElement('aside')
     this.host.className = 'codex-agent-sidebar'
-    this.host.setAttribute('aria-label', 'AI Agent 侧栏')
+    this.host.setAttribute('aria-label', 'AI Tools 侧栏')
     this.grip = document.createElement('div')
     this.grip.className = 'codex-sidebar-grip'
     this.grip.setAttribute('role', 'separator')
