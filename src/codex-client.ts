@@ -60,7 +60,7 @@ export class CodexClient extends EventEmitter {
       detached: process.platform !== 'win32',
     }) as ChildProcessWithoutNullStreams
     let stderr = ''
-    const failure = (error: Error): Error => new Error(`${error.message}\nCodex CLI: ${executable}${stderr.trim() ? `\n${stderr.trim()}` : ''}\n请检查 Settings → AI Agent → codexAgent.executable。`)
+    const failure = (error: Error): Error => new Error(`${error.message}\nCodex CLI: ${executable}${stderr.trim() ? `\n${stderr.trim()}` : ''}\n请检查 Settings → AI Tools → codexAgent.executable。`)
     const streamError = (error: NodeJS.ErrnoException): void => {
       // A process that exits during startup may close stdin before its stderr
       // has drained. Let 'close' report the exit and the actual CLI error.
@@ -90,7 +90,7 @@ export class CodexClient extends EventEmitter {
     })
     try {
       await this.requestRaw('initialize', {
-        clientInfo: { name: 'tabby_codex_agent', title: 'Tabby Codex Agent', version: '0.1.0' },
+        clientInfo: { name: 'tabby_codex_agent', title: 'Tabby AI Tools', version: '0.1.0' },
         capabilities: { experimentalApi: true },
       })
     } catch (error: any) {

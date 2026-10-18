@@ -32,4 +32,4 @@ for (const file of ['README.md', 'LICENSE', 'VALIDATION.md']) {
   if (existsSync(join(projectDir, file))) copyFileSync(join(projectDir, file), join(destination, file))
 }
 console.log(`已安装到 ${destination}`)
-console.log('请完全退出并重启 Tabby，然后在设置的已安装插件中查看 Codex Agent。')
+console.log('请完全退出并重启 Tabby，然后在设置的已安装插件中查看 AI Tools。')

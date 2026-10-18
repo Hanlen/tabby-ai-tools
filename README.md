@@ -1,19 +1,19 @@
 <div align="center">
 
-# Tabby Codex Agent
+# Tabby AI Tools
 
-**把 Codex 放进终端，让上下文留在工作现场。**
+**把 AI 助手放进终端，让上下文留在工作现场。**
 
-在 Tabby 左侧与 Codex 对话，读取终端输出、操作标签，并接着上次的任务继续工作。
+在 Tabby 左侧与 AI 对话，读取终端输出、操作标签，并接着上次的任务继续工作。支持 Codex、OpenAI、DeepSeek、GLM 和 Claude。
 
-[![Check](https://github.com/Hanlen/tabby-codex-agent/actions/workflows/check.yml/badge.svg)](https://github.com/Hanlen/tabby-codex-agent/actions/workflows/check.yml)
-[![Version](https://img.shields.io/badge/version-0.1.0-8b9cf6?style=flat-square)](package.json)
+[![Check](https://github.com/Hanlen/tabby-ai-tools/actions/workflows/check.yml/badge.svg)](https://github.com/Hanlen/tabby-ai-tools/actions/workflows/check.yml)
+[![npm](https://img.shields.io/npm/v/tabby-ai-tools?color=8b9cf6&style=flat-square)](https://www.npmjs.com/package/tabby-ai-tools)
 [![Tabby plugin](https://img.shields.io/badge/Tabby-plugin-59d9b0?style=flat-square)](https://github.com/Eugeny/tabby)
 [![License: MIT](https://img.shields.io/badge/license-MIT-94a3b8?style=flat-square)](LICENSE)
 
 [快速开始](#快速开始) · [功能亮点](#功能亮点) · [使用指南](docs/guide.md) · [开发与验证](docs/development.md)
 
-![Tabby Codex Agent 界面示意：左侧 Codex 对话面板，右侧终端与标签，底部展示会话恢复、终端协作和持续目标三项能力](docs/assets/overview.png)
+![Tabby AI Tools 界面示意：左侧 Codex 对话面板，右侧终端与标签，底部展示会话恢复、终端协作和持续目标三项能力](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据现有面板功能绘制的界面示意，内容为示例；实际外观随 Tabby 主题和窗口尺寸变化。</sub>
 
@@ -33,15 +33,24 @@
 
 ### 1. 准备环境
 
-- 安装 [Tabby](https://github.com/Eugeny/tabby) 和 Node.js 20+（用于构建插件）。
-- 安装 Codex CLI，并在终端执行 `codex login` 完成登录。
-- 使用支持 `thread/goal/*` 的 CLI 版本；项目已有 `codex-cli 0.162.1` 的[验证记录](VALIDATION.md)。
+- 安装 [Tabby](https://github.com/Eugeny/tabby)。
+- 使用 Codex 本机登录模式时，安装 Codex CLI，并在终端执行 `codex login` 完成登录。使用支持 `thread/goal/*` 的 CLI 版本；项目已有 `codex-cli 0.162.1` 的[验证记录](VALIDATION.md)。
+- 使用 DeepSeek、GLM、OpenAI API 或 Claude API 时，只需准备对应的 API Key，无需安装 Codex CLI。
 
-### 2. 构建并安装
+### 2. 安装插件
+
+在 Tabby 打开 **Settings → Plugins**，搜索 **`tabby-ai-tools`**（或 `ai-tools`），点击安装，然后**完全退出并重启 Tabby**。
+
+插件通过 [npm](https://www.npmjs.com/package/tabby-ai-tools) 分发。新版本发布后，插件列表可能需要等待搜索索引更新。
+
+<details>
+<summary>从源码构建并安装（开发者）</summary>
+
+需要 Node.js 20+：
 
 ```bash
-git clone https://github.com/Hanlen/tabby-codex-agent.git
-cd tabby-codex-agent
+git clone https://github.com/Hanlen/tabby-ai-tools.git
+cd tabby-ai-tools
 npm ci
 npm run build
 ```
@@ -54,6 +63,8 @@ npm run install:tabby -- "<Tabby 插件目录路径>"
 
 将尖括号及其中的文字替换为实际路径，然后**完全退出并重启 Tabby**。安装后在插件设置的「已安装插件」中查看。
 
+</details>
+
 ### 3. 开始第一个任务
 
 1. 打开本地终端并进入项目目录。
@@ -64,13 +75,13 @@ npm run install:tabby -- "<Tabby 插件目录路径>"
 看看当前终端的报错，帮我定位原因并验证修复结果。
 ```
 
-默认自动查找 `codex`，使用当前本地终端目录和 Codex 默认模型。需要指定 CLI 路径、固定目录或权限时，打开 **Settings → AI Agent**。
+默认自动查找 `codex`，使用当前本地终端目录和 Codex 默认模型。需要指定 CLI 路径、固定目录或权限时，打开 **Settings → AI Tools**。
 
 > 默认权限为「工作目录可写」与「按需询问」。模型、推理强度和权限也可以在侧栏中调整，下一回合生效。
 
 ### 使用商业模型 API
 
-1. 构建并安装插件后，打开 **Settings → AI Agent → 添加 API 连接**。
+1. 安装插件后，打开 **Settings → AI Tools → 添加 API 连接**。
 2. 选择供应商，检查 Base URL。默认使用服务商官方端点，也可填写对应协议的代理地址。
 3. 选择密钥来源：默认可**直接输入 API Key**，无需启用 Vault，密钥保存在本地 Tabby 插件配置中。也可使用 Tabby 进程可读取的环境变量，或已启用的 **Tabby Vault**。
 4. 聚焦模型 ID 输入框会自动获取当前连接的模型列表，也可点击 **获取模型列表** 刷新，或手动填写完整模型 ID。获取列表无需先填写模型；若端点不提供列表，会显示错误原因并保留手动输入。
@@ -136,7 +147,7 @@ API 运行中的追加输入在下一次模型请求时处理。**API 连接之�
 | 找不到 CLI、桌面 PATH、NVM、Windows 启动路径 | [CLI 自动发现与启动排查](docs/guide.md#cli-自动发现与启动排查) |
 | 构建、测试、真实 Codex 烟测及 Windows 验证 | [开发与验证](docs/development.md) |
 | 已有实测结果与平台限制 | [VALIDATION.md](VALIDATION.md) |
-| 反馈问题或提出改进建议 | [GitHub Issues](https://github.com/Hanlen/tabby-codex-agent/issues) |
+| 反馈问题或提出改进建议 | [GitHub Issues](https://github.com/Hanlen/tabby-ai-tools/issues) |
 
 ## 参与开发
 

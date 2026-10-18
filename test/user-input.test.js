@@ -531,7 +531,7 @@ test('resume does not accept sessions created by another client', async () => {
   panel.cwd = '/project'
   panel.loading = false
   await panel.selectSession({ id: 'other', cwd: '/project', originator: 'codex_cli_rs' })
-  assert.match(panel.historyError, /Tabby AI Agent/)
+  assert.match(panel.historyError, /Tabby AI Tools/)
 })
 
 test('resume supports arrow selection and Enter while empty prompt remains unsent', () => {

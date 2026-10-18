@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1060" viewBox="0 0 1600 1060" role="img" aria-labelledby="title desc">
-<title id="title">Tabby Codex Agent — AI beside your terminal</title>
+<title id="title">Tabby AI Tools — AI beside your terminal</title>
 <desc id="desc">界面示意图，非运行截图。左侧展示 Codex 对话、任务状态和权限，右侧展示 Tabby 标签与示例终端。下方介绍按目录恢复会话、终端协作与持久目标。</desc>
 <defs>
   <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0d1724"/><stop offset="1" stop-color="#111323"/></linearGradient>
@@ -17,11 +17,11 @@ text{font-family:Inter,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#e8e
 <ellipse cx="340" cy="220" rx="750" ry="500" fill="url(#glow)"/>
 <rect x="66" y="60" width="46" height="46" rx="13" fill="#153b36" stroke="#275950"/>
 <text x="76" y="92" font-size="25" fill="#88edc8" style="fill:#88edc8" font-weight="700" class="mono">&gt;_</text>
-<text x="130" y="92" font-size="21" fill="#9daec1" style="fill:#9daec1" font-weight="600">TABBY / CODEX AGENT</text>
+<text x="130" y="92" font-size="21" fill="#9daec1" style="fill:#9daec1" font-weight="600">TABBY / AI TOOLS</text>
 <rect x="1312" y="65" width="220" height="33" rx="16" fill="#172431" stroke="#2d4153"/>
 <text x="1330" y="87" font-size="15" fill="#91dec3" style="fill:#91dec3" font-weight="600">LOCAL APP SERVER</text>
 <text x="64" y="191" font-size="70" font-weight="750">Your terminal.</text>
-<text x="590" y="191" font-size="70" fill="#85e8c5" style="fill:#85e8c5" font-weight="750">Now with Codex.</text>
+<text x="590" y="191" font-size="70" fill="#85e8c5" style="fill:#85e8c5" font-weight="750">Now with AI.</text>
 <text x="68" y="244" font-size="28" fill="#a6b6c9" style="fill:#a6b6c9">在终端旁对话，在上下文中行动。</text>
 <text x="68" y="284" font-size="18" fill="#8195ad" style="fill:#8195ad">常驻侧栏  /  会话恢复  /  终端协作</text>
 <g filter="url(#shadow)">
@@ -79,7 +79,7 @@ text{font-family:Inter,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#e8e
 <path d="M558 421H1535" stroke="#29364a"/>
 <text x="591" y="466" font-size="20" fill="#78dcba" style="fill:#78dcba" class="mono">~/workspace</text>
 <text x="591" y="501" font-size="21" fill="#dee7f4" style="fill:#dee7f4" class="mono">❯ npm test</text>
-<text x="591" y="552" font-size="18" fill="#91a7c4" style="fill:#91a7c4" class="mono">&gt; tabby-codex-agent@0.1.0 test</text>
+<text x="591" y="552" font-size="18" fill="#91a7c4" style="fill:#91a7c4" class="mono">&gt; tabby-ai-tools@0.1.0 test</text>
 <text x="591" y="585" font-size="18" fill="#91a7c4" style="fill:#91a7c4" class="mono">&gt; node scripts/run-tests.cjs</text>
 <text x="591" y="643" font-size="20" fill="#99dfc0" style="fill:#99dfc0" class="mono">✓  CLI discovery</text>
 <text x="591" y="679" font-size="20" fill="#99dfc0" style="fill:#99dfc0" class="mono">✓  JSONL transport &amp; streaming</text>

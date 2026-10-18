@@ -100,7 +100,7 @@
       button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') 停止自动转发
   .codex-history(*ngIf='historyOpen')
     .codex-history-heading
-      strong 当前目录的 Tabby AI Agent 会话
+      strong 当前目录的 Tabby AI Tools 会话
       .codex-history-actions
         button.btn.btn-link.btn-sm(type='button', (click)='loadSessions(true)', [disabled]='!canBrowseHistory') 刷新
         button.btn.btn-link.btn-sm(type='button', (click)='historyOpen = false', aria-label='关闭历史会话') ×

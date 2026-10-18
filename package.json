@@ -1,11 +1,28 @@
 {
-  "name": "tabby-codex-agent",
+  "name": "tabby-ai-tools",
   "version": "0.1.0",
-  "description": "A persistent Codex agent tab for Tabby",
+  "description": "A persistent AI agent sidebar for Tabby with Codex, OpenAI, DeepSeek, GLM, and Claude support",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hanlen/tabby-ai-tools.git"
+  },
+  "homepage": "https://github.com/Hanlen/tabby-ai-tools#readme",
+  "bugs": {
+    "url": "https://github.com/Hanlen/tabby-ai-tools/issues"
+  },
   "author": "tabby-ai contributors",
   "license": "MIT",
   "keywords": [
-    "tabby-plugin"
+    "tabby-plugin",
+    "tabby",
+    "ai",
+    "assistant",
+    "agent",
+    "codex",
+    "openai",
+    "deepseek",
+    "glm",
+    "claude"
   ],
   "main": "dist/index.js",
   "scripts": {

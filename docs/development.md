@@ -11,7 +11,7 @@ npm test
 npm run build
 ```
 
-CI 使用 Node.js 20，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-codex-agent tabby --debug` 加载插件。
+CI 使用 Node.js 20，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
 
 ## 测试范围与平台说明
 
