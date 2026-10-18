@@ -10,7 +10,7 @@ Module._load = function (request, parent, isMain) {
   if (request === '@angular/core') return { Component: () => target => target, Input: () => () => {}, Output: () => () => {}, ViewChild: () => () => {}, EventEmitter: class {} }
   if (request === 'tabby-core') return { ConfigService: class {} }
   if (request === 'tabby-terminal') return { BaseTerminalTabComponent: class {} }
-  if (request === './codex.service' || request === './terminal-output.service' || request === './tab-tools') return {}
+  if (request === './codex.service' || request === './terminal-output.service' || request === './tab-tools' || request === './agent-backend.service') return {}
   if (request.endsWith('.pug') || request.endsWith('.css')) return ''
   return originalLoad.call(this, request, parent, isMain)
 }
@@ -24,6 +24,114 @@ const { answersComplete, formatAnswers, isUserInputMethod } = require('../src/us
 Module._load = originalLoad
 require.extensions['.ts'] = originalTsLoader
 const fakeTabTools = { releaseOwner: () => {}, getControl: () => undefined, controls$: { value: [] } }
+
+test('API panels bind independent connections and keep model and history settings scoped to their profile', async () => {
+  const { EventEmitter } = require('node:events')
+  const profiles = [
+    { id: 'one', name: 'DeepSeek', model: 'deepseek-test', reasoningEffort: '', threads: {} },
+    { id: 'two', name: 'Claude', model: 'claude-test', reasoningEffort: '', threads: {} },
+  ]
+  const settings = { model: 'codex-model', threads: { '/project': 'codex-thread' }, apiProfiles: profiles }
+  const closed = []
+  const factory = { defaultProfileId: 'one', create: id => ({ profile: { ...profiles.find(profile => profile.id === id) },
+    client: Object.assign(new EventEmitter(), { close: () => closed.push(id) }) }) }
+  const config = { store: { codexAgent: settings } }
+  const first = new CodexPanelComponent(config, {}, { run: fn => fn() }, {}, fakeTabTools, factory)
+  const second = new CodexPanelComponent(config, {}, { run: fn => fn() }, {}, fakeTabTools, factory)
+  first.loading = false
+  first.cwd = '/project'
+  first.reconnect = async () => { first.settings.threads[first.cwd] = 'api-thread-two' }
+  first.settings.threads['/project'] = 'api-thread-one'
+  assert.equal(first.currentModel, 'deepseek-test')
+  await first.selectConnection('two')
+  assert.equal(first.currentModel, 'claude-test')
+  assert.equal(second.currentModel, 'deepseek-test')
+  assert.equal(settings.threads['/project'], 'codex-thread')
+  assert.equal(profiles[0].threads['/project'], 'api-thread-one')
+  assert.equal(profiles[1].threads['/project'], 'api-thread-two')
+  assert.deepEqual(closed, ['one'])
+  first.busy = true
+  await first.selectConnection('one')
+  assert.equal(first.profileId, 'two', 'connection cannot change during a turn')
+})
+
+test('switching API connections imports the active conversation before releasing its backend', async () => {
+  const { EventEmitter } = require('node:events')
+  const profiles = [{ id: 'one', threads: {} }, { id: 'two', threads: { '/project': 'old-target-thread' } }]
+  const context = { cwd: '/project', messages: [{ role: 'user', content: 'Original task' }] }
+  const steps = []
+  const backends = profiles.map(profile => ({ profile,
+    client: Object.assign(new EventEmitter(), { close: () => steps.push('close-' + profile.id) }),
+    connect: async () => steps.push('connect-' + profile.id),
+    exportContext: async id => { assert.equal(id, 'active-thread'); steps.push('export'); return context },
+    importContext: async (value, cwd) => { assert.equal(value, context); assert.equal(cwd, '/project'); steps.push('import'); return 'transferred-thread' },
+  }))
+  const factory = { defaultProfileId: 'one', create: id => backends[profiles.findIndex(profile => profile.id === id)] }
+  const panel = new CodexPanelComponent({ store: { codexAgent: { apiProfiles: profiles } } }, {}, { run: fn => fn() }, {}, fakeTabTools, factory)
+  panel.loading = false
+  panel.cwd = '/project'
+  panel.threadId = 'active-thread'
+  panel.reconnect = async () => {
+    assert.equal(panel.settings.threads['/project'], 'transferred-thread', 'current context replaces an older conversation on the target connection')
+    steps.push('restore')
+  }
+  await panel.selectConnection('two')
+  assert.deepEqual(steps, ['export', 'connect-two', 'import', 'restore', 'close-one'])
+  assert.equal(panel.loading, false)
+  assert.equal(panel.profileId, 'two')
+})
+
+test('failed API context migration preserves the current conversation and connection', async () => {
+  const { EventEmitter } = require('node:events')
+  const profiles = [{ id: 'one', threads: {} }, { id: 'two', threads: {} }]
+  const closed = []
+  const backends = profiles.map(profile => ({ profile,
+    client: Object.assign(new EventEmitter(), { close: () => closed.push(profile.id) }),
+    connect: async () => {}, exportContext: async () => ({}),
+    importContext: async () => { throw new Error('Cannot save transferred context') },
+  }))
+  const factory = { defaultProfileId: 'one', create: id => backends[profiles.findIndex(profile => profile.id === id)] }
+  const panel = new CodexPanelComponent({ store: { codexAgent: { apiProfiles: profiles } } }, {}, { run: fn => fn() }, {}, fakeTabTools, factory)
+  panel.loading = false
+  panel.connected = true
+  panel.threadId = 'active-thread'
+  panel.entries = [{ id: 'one', kind: 'user', text: 'Keep my task' }]
+  await panel.selectConnection('two')
+  assert.equal(panel.profileId, 'one')
+  assert.equal(panel.threadId, 'active-thread')
+  assert.equal(panel.entries[0].text, 'Keep my task')
+  assert.equal(panel.connected, true)
+  assert.equal(panel.loading, false)
+  assert.match(panel.connectionError, /Cannot save transferred context/)
+  assert.deepEqual(closed, ['two'])
+})
+
+test('a failed restore after API migration rolls back the panel and saved thread index', async () => {
+  const { EventEmitter } = require('node:events')
+  const profiles = [{ id: 'one', threads: { '/project': 'active-thread' } }, { id: 'two', threads: { '/project': 'older-target' } }]
+  const closed = []
+  const backends = profiles.map(profile => ({ profile,
+    client: Object.assign(new EventEmitter(), { close: () => closed.push(profile.id) }),
+    connect: async () => {}, exportContext: async () => ({}), importContext: async () => 'transferred-thread',
+  }))
+  const factory = { defaultProfileId: 'one', create: id => backends[profiles.findIndex(profile => profile.id === id)] }
+  const panel = new CodexPanelComponent({ store: { codexAgent: { apiProfiles: profiles } }, save: async () => {} }, {}, { run: fn => fn() }, {}, fakeTabTools, factory)
+  panel.loading = false
+  panel.connected = true
+  panel.cwd = '/project'
+  panel.threadId = 'active-thread'
+  panel.entries = [{ id: 'one', kind: 'user', text: 'Keep this context' }]
+  panel.reconnect = async () => { panel.connected = false; panel.status = '会话恢复失败：disk error'; return false }
+  await panel.selectConnection('two')
+  assert.equal(panel.profileId, 'one')
+  assert.equal(panel.threadId, 'active-thread')
+  assert.equal(panel.entries[0].text, 'Keep this context')
+  assert.equal(panel.connected, true)
+  assert.equal(panel.loading, false)
+  assert.equal(profiles[1].threads['/project'], 'older-target')
+  assert.match(panel.connectionError, /disk error/)
+  assert.deepEqual(closed, ['two'])
+})
 
 test('top model summary resolves defaults and keeps the running model until the next turn', () => {
   const settings = { model: '', reasoningEffort: '' }
@@ -45,6 +153,21 @@ test('top model summary resolves defaults and keeps the running model until the 
   settings.model = settings.reasoningEffort = ''
   assert.equal(panel.currentModel, 'Codex 默认')
   assert.equal(panel.currentReasoningEffort, '默认')
+})
+
+test('late tool results reply to the original backend after a connection switch', async () => {
+  let finishTool
+  const responses = []
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {
+    client: { respond: id => responses.push(['old', id]) },
+  }, { run: callback => callback() }, {}, { call: () => new Promise(resolve => { finishTool = resolve }) })
+  panel.threadId = 'old-thread'
+  panel.handleEvent({ id: 1, method: 'item/tool/call', params: { threadId: 'old-thread', namespace: 'tabby_tabs', tool: 'read_tab', arguments: { tabId: 'one' } } })
+  panel.codex = { client: { respond: id => responses.push(['new', id]) } }
+  panel.threadId = 'new-thread'
+  finishTool({ text: 'old output' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(responses, [['old', 1]])
 })
 
 test('a rejected send shows quota guidance, restores the prompt and permits retry', async () => {
@@ -739,6 +862,73 @@ test('/status shows thread details before a slow rate-limit response completes',
   await opening
   assert.equal(panel.statusLoading, false)
   assert.equal(panel.ordinaryUsageLabel, '可用')
+})
+
+test('context details render on click and on each asynchronous result without another UI event', async () => {
+  let finishThread, finishGoal, failLimits
+  const thread = new Promise(resolve => { finishThread = resolve })
+  const goal = new Promise(resolve => { finishGoal = resolve })
+  const limits = new Promise((resolve, reject) => { failLimits = reject })
+  let rendered
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {
+    client: { request: method => method === 'thread/read' ? thread : limits },
+    getGoal: () => goal,
+  }, { run: callback => {
+    const result = callback()
+    // Model the view refresh at an Angular zone boundary, with no scroll event.
+    rendered = { open: panel.statusOpen, history: panel.historyOpen, loading: panel.statusLoading,
+      model: panel.threadStatus?.model, goal: panel.goalStatus, error: panel.statusError }
+    return result
+  } }, {}, fakeTabTools)
+  panel.connected = true
+  panel.threadId = 'thread-1'
+  panel.historyOpen = true
+  const opening = panel.toggleStatus()
+  assert.deepEqual(rendered, { open: true, history: false, loading: true, model: undefined, goal: '', error: '' })
+
+  finishThread({ thread: { model: 'current' } })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(rendered.model, 'current')
+  assert.equal(rendered.loading, true)
+
+  finishGoal({ status: 'active' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(rendered.goal, 'active')
+  assert.equal(rendered.loading, true)
+
+  failLimits(new Error('offline'))
+  await opening
+  assert.match(rendered.error, /读取额度失败：offline/)
+  assert.equal(rendered.loading, false)
+
+  await panel.toggleStatus()
+  assert.equal(rendered.open, false)
+})
+
+test('successful rate limits refresh the view while other status queries are still pending', async () => {
+  let finishThread
+  const thread = new Promise(resolve => { finishThread = resolve })
+  let rendered
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {
+    client: { request: method => method === 'thread/read' ? thread : Promise.resolve({
+      ordinaryUsageAllowed: true, rateLimits: { primary: { usedPercent: 25 }, secondary: null },
+    }) },
+    getGoal: async () => null,
+  }, { run: callback => {
+    const result = callback()
+    rendered = { loading: panel.statusLoading, usage: panel.ordinaryUsageLabel, limits: panel.statusRateLimits }
+    return result
+  } }, {}, fakeTabTools)
+  panel.connected = true
+  panel.threadId = 'thread-1'
+  const opening = panel.openStatus()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(rendered.loading, true)
+  assert.equal(rendered.usage, '可用')
+  assert.equal(rendered.limits.primary.usedPercent, 25)
+  finishThread({ thread: {} })
+  await opening
+  assert.equal(rendered.loading, false)
 })
 
 test('/status reports a disconnected session as unavailable', async () => {

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.cjs",
     "smoke:codex": "node scripts/smoke-codex.cjs",
+    "smoke:context": "node scripts/smoke-context.cjs",
     "prepack": "npm run build",
     "install:tabby": "node scripts/install-local.mjs"
   },

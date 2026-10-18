@@ -89,6 +89,48 @@ test('Codex dynamic tool definitions contain the Tabby operations', () => {
   assert.deepEqual(TAB_TOOLS[0].tools.map(tool => tool.name), ['list_tabs', 'read_tab', 'select_tab', 'send_input', 'release_tab', 'interact_tab'])
 })
 
+test('stopping an API turn while process detection is pending prevents a late terminal command', async () => {
+  const terminal = new FakeTerminal('Local', [])
+  let finishDetection
+  terminal.session.getChildProcesses = () => new Promise(resolve => { finishDetection = resolve })
+  const tools = new TabbyTabToolsService({ tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() },
+    { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) })
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id
+    const controller = new AbortController()
+    const sending = tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'api-session', signal: controller.signal })
+    controller.abort()
+    finishDetection([])
+    await assert.rejects(sending, /stopped/)
+    assert.deepEqual(terminal.sent, [])
+    assert.deepEqual(tools.controls$.value, [])
+  } finally { tools.ngOnDestroy() }
+})
+
+test('read_tab waits for fresh output and can be stopped without reading the terminal', async () => {
+  const terminal = new FakeTerminal('Build', ['building'])
+  const tools = new TabbyTabToolsService({ tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() },
+    { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) })
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id
+    const reading = tools.call('read_tab', { tabId, waitMs: 30 })
+    terminal.frontend.xterm.buffer.active.getLine = () => ({ translateToString: () => 'build passed' })
+    assert.equal((await reading).text, 'build passed')
+
+    let read = false
+    terminal.frontend.xterm.buffer.active.getLine = () => { read = true; return { translateToString: () => '' } }
+    const controller = new AbortController()
+    const stopped = tools.call('read_tab', { tabId, waitMs: 30000 }, { owner: 'api-session', signal: controller.signal })
+    controller.abort()
+    await assert.rejects(stopped, /stopped/)
+    assert.equal(read, false)
+
+    const closed = tools.call('read_tab', { tabId, waitMs: 30 })
+    tools.app.tabs = []
+    await assert.rejects(closed, /no longer open/)
+  } finally { tools.ngOnDestroy() }
+})
+
 test('existing foreground process is preserved until the user approves interruption', async () => {
   const terminal = new FakeTerminal('Build', ['compiling'])
   terminal.children = [{ pid: 123, command: 'npm run build' }]

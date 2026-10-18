@@ -131,3 +131,19 @@ test('an in-flight startup failure after destruction does not report or restart'
   assert.equal(env.notifications.length, 0)
   assert.equal(env.timers.size, 0)
 })
+
+test('API default never starts or retries Codex until a Codex panel is explicitly used', async t => {
+  const env = setup(t)
+  env.config.store.codexAgent.defaultProfileId = 'api-profile'
+  env.runtime.start()
+  env.ready()
+  assert.deepEqual(env.calls, [])
+  env.client.emit('disconnected', new Error('no CLI'))
+  assert.equal(env.timers.size, 0)
+  assert.equal(env.notifications.length, 0)
+  // A user can still open Codex alongside an API panel.
+  env.client.emit('connected')
+  env.client.emit('disconnected', new Error('used CLI crashed'))
+  assert.equal(await env.tick(), 1000)
+  assert.deepEqual(env.calls, ['codex'])
+})

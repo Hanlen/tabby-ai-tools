@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
-const SETTING_HELP = '请在 Tabby Settings → Codex AI → Codex CLI 可执行文件（codexAgent.executable）中设置有效文件路径或命令名。'
+const SETTING_HELP = '请在 Tabby Settings → AI Agent → Codex CLI 可执行文件（codexAgent.executable）中设置有效文件路径或命令名。'
 const WINDOWS_EXTENSIONS = ['.exe', '.com', '.cmd', '.bat']
 
 export interface ExecutableContext {
