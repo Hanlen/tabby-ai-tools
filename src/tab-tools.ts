@@ -8,6 +8,7 @@ export interface ControlledTab { tabId: string; title: string; owner: string; co
 export interface TakeoverRequest { tabId: string; title: string; processes: string[]; purpose: string; unknown: boolean; verifyIdle?: boolean }
 export interface TabToolContext {
   owner: string
+  signal?: AbortSignal
   confirmTakeover?: (request: TakeoverRequest) => Promise<'interrupt' | 'proceed' | 'cancel'>
 }
 
@@ -26,7 +27,7 @@ export const TAB_TOOLS = [{
   description: 'Inspect and operate tabs in the current Tabby window. List tabs first to obtain their current IDs.',
   tools: [
     { type: 'function', name: 'list_tabs', description: 'List every open Tabby tab, including terminal panes inside split tabs.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-    { type: 'function', name: 'read_tab', description: 'Read the visible terminal screen and scrollback, or text from another Tabby tab. Does not execute anything.', inputSchema: { type: 'object', properties: { tabId: { type: 'string' }, maxLines: { type: 'integer', minimum: 1, maximum: 300 } }, required: ['tabId'], additionalProperties: false } },
+    { type: 'function', name: 'read_tab', description: 'Read the visible terminal screen and scrollback, or text from another Tabby tab. Does not execute anything. Use waitMs (1000–10000) when waiting for command output instead of repeatedly reading immediately. Defaults to 1000 ms for an AI-controlled terminal, otherwise 0.', inputSchema: { type: 'object', properties: { tabId: { type: 'string' }, maxLines: { type: 'integer', minimum: 1, maximum: 300 }, waitMs: { type: 'integer', minimum: 0, maximum: 30000 } }, required: ['tabId'], additionalProperties: false } },
     { type: 'function', name: 'select_tab', description: 'Switch the Tabby window to a tab or split terminal pane.', inputSchema: { type: 'object', properties: { tabId: { type: 'string' } }, required: ['tabId'], additionalProperties: false } },
     { type: 'function', name: 'send_input', description: 'Send input to a terminal. Before a new command, inspect the tab and any running process. If an existing process is needed for the task, set foregroundTaskNeeded=true and do not replace it. If unrelated, set false and explain purpose; the user must approve interruption. Set mode=stdin only to interact with a process already owned by this turn. A submitted command locks user input until it exits or the user releases the tab.', inputSchema: { type: 'object', properties: { tabId: { type: 'string' }, text: { type: 'string' }, submit: { type: 'boolean' }, mode: { type: 'string', enum: ['command', 'stdin'] }, purpose: { type: 'string' }, foregroundTaskNeeded: { type: 'boolean' } }, required: ['tabId', 'text'], additionalProperties: false } },
     { type: 'function', name: 'release_tab', description: 'Release a terminal tab after your command is finished so the user can type in it again.', inputSchema: { type: 'object', properties: { tabId: { type: 'string' } }, required: ['tabId'], additionalProperties: false } },
@@ -171,6 +172,8 @@ export class TabbyTabToolsService implements OnDestroy {
   }
 
   async call (name: string, args: any, context?: TabToolContext): Promise<any> {
+    const checkStopped = () => { if (context?.signal?.aborted) throw new Error('Agent task was stopped; command was not sent') }
+    checkStopped()
     this.refresh()
     if (name === 'list_tabs') return this.allTabs().map(tab => ({
       id: this.id(tab), title: tab.title, type: tab instanceof BaseTerminalTabComponent ? 'terminal' : 'other',
@@ -179,6 +182,18 @@ export class TabbyTabToolsService implements OnDestroy {
       controlledByAI: tab instanceof BaseTerminalTabComponent ? this.controlled.has(tab) : undefined,
     }))
     if (!args || typeof args.tabId !== 'string') throw new Error('tabId is required')
+    if (name === 'read_tab') {
+      const current = this.find(args.tabId)
+      const waitMs = Math.max(0, Math.min(30000, Number(args.waitMs ?? (current instanceof BaseTerminalTabComponent && this.controlled.has(current) ? 1000 : 0)) || 0))
+      if (waitMs) await new Promise<void>((resolve, reject) => {
+        const signal = context?.signal
+        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('Agent task was stopped')) }
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, waitMs)
+        signal?.addEventListener('abort', abort, { once: true })
+        if (signal?.aborted) abort()
+      })
+      checkStopped()
+    }
     const tab = this.find(args.tabId)
     if (name === 'release_tab') {
       if (!context?.owner) throw new Error('No active Codex session owns this tab')
@@ -235,6 +250,7 @@ export class TabbyTabToolsService implements OnDestroy {
       if (existing) return { sent: false, blocked: true, reason: 'A command already owns this tab. Use stdin mode to interact with it, or wait for it to finish before starting another command.' }
       const session = tab.session
       const running = await this.processes(tab)
+      checkStopped()
       if (running?.length || running === null) {
         if (args.foregroundTaskNeeded === true) return { sent: false, blocked: true, reason: 'Existing foreground task is needed; wait for it or interact using stdin mode if this session owns it.', runningProcesses: running }
         if (running?.length && args.foregroundTaskNeeded !== false) return { sent: false, blocked: true, reason: 'Inspect the existing process and decide whether the current task needs it before sending a new command.', runningProcesses: running }
@@ -243,6 +259,7 @@ export class TabbyTabToolsService implements OnDestroy {
         if (choice === 'cancel') return { sent: false, cancelled: true, tabId: args.tabId }
         if (tab.session !== session || this.controlled.has(tab)) throw new Error('The terminal changed while awaiting confirmation; command was not sent')
         const current = await this.processes(tab)
+        checkStopped()
         if (running !== null && current === null) throw new Error('Process status became unavailable; inspect the tab again')
         if (running !== null && current !== null && current.length && JSON.stringify(current) !== JSON.stringify(running)) throw new Error('The running process changed while awaiting confirmation; inspect the tab again')
         if (choice === 'interrupt') {
@@ -263,6 +280,7 @@ export class TabbyTabToolsService implements OnDestroy {
           }
         } else if (choice !== 'proceed' || current !== null && current.length) throw new Error('The terminal is still occupied; command was not sent')
       }
+      checkStopped()
       if (this.controlled.has(tab)) throw new Error('The terminal was taken by another command while awaiting confirmation')
       if (tab.session !== session) throw new Error('The terminal session changed before the command was sent')
       if (!tab.session?.open) throw new Error('The terminal session closed before the command was sent')

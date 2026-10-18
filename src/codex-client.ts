@@ -60,7 +60,7 @@ export class CodexClient extends EventEmitter {
       detached: process.platform !== 'win32',
     }) as ChildProcessWithoutNullStreams
     let stderr = ''
-    const failure = (error: Error): Error => new Error(`${error.message}\nCodex CLI: ${executable}${stderr.trim() ? `\n${stderr.trim()}` : ''}\n请检查 Settings → Codex AI → codexAgent.executable。`)
+    const failure = (error: Error): Error => new Error(`${error.message}\nCodex CLI: ${executable}${stderr.trim() ? `\n${stderr.trim()}` : ''}\n请检查 Settings → AI Agent → codexAgent.executable。`)
     const streamError = (error: NodeJS.ErrnoException): void => {
       // A process that exits during startup may close stdin before its stderr
       // has drained. Let 'close' report the exit and the actual CLI error.

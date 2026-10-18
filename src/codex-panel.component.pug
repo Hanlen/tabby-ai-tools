@@ -1,19 +1,38 @@
 .codex-agent
   .codex-header
     .codex-heading
-      strong Codex
+      strong {{agentLabel}}
       small([attr.title]='cwd || "未设置工作目录"') {{shortCwd}}
     .codex-actions
-      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnect()', [disabled]='loading || busy', [attr.title]='loading ? "Codex 正在连接" : connected ? "Codex 已连接" : "Codex 未连接，点击重连"', [attr.aria-label]='"Codex " + connectionLabel + "，点击重连"')
+      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnectAgent()', [disabled]='loading || busy || !!request || modelSaving', [attr.title]='loading ? "正在连接" : apiMode ? "应用 API 连接配置并恢复会话" : "重新连接 Codex"', [attr.aria-label]='agentLabel + " " + connectionLabel + "，点击重连"')
         i.fas([class.fa-link]='connected', [class.fa-unlink]='!connected', aria-hidden='true')
       button.codex-details-toggle.btn.btn-outline-secondary.btn-sm(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.aria-label]='statusOpen ? "收起状态详情" : "展开状态详情"', title='展开或收起状态详情') 详情
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='closeRequested.emit()', title='收起侧栏', aria-label='收起侧栏') ×
-  button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving', [attr.title]='"当前模型：" + currentModel + "；reasoning：" + currentReasoningEffort + "；点击切换，下回合生效"', aria-label='当前模型与 reasoning 等级，点击切换')
-    span.codex-current-model {{currentModel}}
-    span.codex-current-reasoning reasoning: {{currentReasoningEffort}}
+  select.codex-profile-select.form-control.form-control-sm([ngModel]='profileId', (ngModelChange)='selectConnection($event)', [disabled]='loading || busy || !!request || modelSaving', aria-label='选择 AI 连接')
+    option(value='') Codex（本机登录）
+    option(*ngFor='let profile of apiProfiles', [value]='profile.id') {{profile.name}} · {{profile.provider}}
+  small.codex-detail-error(*ngIf='connectionError') {{connectionError}}
+  .codex-model-controls
+    button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving || (apiMode && busy)', [attr.title]='"当前模型：" + currentModel + "；reasoning：" + currentReasoningEffort + "；点击切换，下回合生效"', aria-label='当前模型与 reasoning 等级，点击切换')
+      span.codex-current-model {{currentModel}}
+      span.codex-current-reasoning(*ngIf='!apiMode') reasoning: {{currentReasoningEffort}}
+    .codex-api-thinking(*ngIf='apiMode')
+      label([attr.for]='"api-thinking-" + threadId') Thinking
+      select.form-control.form-control-sm(*ngIf='supportsThinkingToggle', [id]='"api-thinking-" + threadId', [ngModel]='apiThinking', (ngModelChange)='setApiThinking($event, settings.reasoningEffort)', [disabled]='loading || busy || !!request || modelSaving', aria-label='Thinking 模式')
+        option(value='default') 服务商默认
+        option(value='enabled') 开启
+        option(value='disabled') 关闭
+      select.form-control.form-control-sm(*ngIf='deepseekMode', [ngModel]='settings.reasoningEffort', (ngModelChange)='setApiThinking(apiThinking, $event)', [disabled]='loading || busy || !!request || modelSaving || apiThinking === "disabled"', aria-label='Thinking 等级')
+        option(value='') 默认等级
+        option(value='low') Low · 较快
+        option(value='high') High · 深入
+        option(value='max') Max · 最大
+        option(*ngIf='settings.reasoningEffort && !["low", "high", "max"].includes(settings.reasoningEffort)', [value]='settings.reasoningEffort') {{settings.reasoningEffort}}
+      input.form-control.form-control-sm(*ngIf='!deepseekMode', [value]='settings.reasoningEffort', (change)='setApiThinking(apiThinking, $event.target.value)', [disabled]='loading || busy || !!request || modelSaving', placeholder='推理强度（可选）', aria-label='Thinking 推理强度')
+  small.codex-detail-error(*ngIf='apiMode && modelError', role='alert') {{modelError}}
   .codex-summary
     button.codex-status(type='button', [class.codex-done]='status === "任务已完成"', (click)='toggleStatus()', [attr.title]='status', [attr.aria-expanded]='statusOpen', [attr.aria-label]='"任务状态：" + status + "；展开或收起详情"') {{status}}
-    button.codex-summary-item.codex-context-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', title='上下文使用占比；点击查看 token 用量和会话累计')
+    button.codex-summary-item.codex-context-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='apiMode ? "上次 API 请求输入占上下文窗口的比例；下一次请求可能增加；点击查看详情" : "上下文使用占比；点击查看 token 用量和会话累计"')
       span(*ngIf='contextWindowTokens !== null && contextUsedTokens !== null') 上下文 {{contextPercent | number:'1.0-0'}}%
       span(*ngIf='contextWindowTokens === null || contextUsedTokens === null') 上下文 —
     .codex-control-summary([class.codex-control-active]='controlledTabs.length > 0')
@@ -25,12 +44,14 @@
       strong 当前状态
       .codex-detail-actions
         button.btn.btn-link.btn-sm(type='button', (click)='openStatus()', [disabled]='statusLoading', aria-label='刷新状态详情') 刷新
-        button.btn.btn-link.btn-sm(type='button', (click)='statusOpen = false', aria-label='关闭状态详情') ×
+        button.btn.btn-link.btn-sm(type='button', (click)='toggleStatus()', aria-label='关闭状态详情') ×
     small(*ngIf='statusLoading') 正在更新…
     small.codex-detail-error(*ngIf='statusError') {{statusError}}
     .codex-detail-grid
       span 连接
       strong {{connectionLabel}}
+      span(*ngIf='apiMode') 供应商
+      strong(*ngIf='apiMode') {{agentLabel}} · API
       span 任务状态
       strong.codex-detail-status {{status}}
       span 工作目录
@@ -43,27 +64,27 @@
       strong {{threadStateLabel}}
       span 当前模型（查询时）
       strong {{threadStatus?.model || '未上报'}}
-      span 下回合模型
+      span {{apiMode ? '配置中的模型（重连生效）' : '下回合模型'}}
       strong {{settings.model || 'Codex 默认配置'}}
       span 当前推理强度（查询时）
       strong {{threadStatus?.reasoningEffort || '未上报'}}
       span 下回合推理强度
       strong {{settings.reasoningEffort || 'Codex 默认配置'}}
-      span 上下文
+      span {{apiMode ? '上次请求输入' : '上下文'}}
       strong(*ngIf='contextUsedTokens !== null && contextWindowTokens !== null') {{contextUsedTokens | number:'1.0-0'}} / {{contextWindowTokens | number:'1.0-0'}} tokens（{{contextPercent | number:'1.0-0'}}%）
       strong(*ngIf='contextUsedTokens === null || contextWindowTokens === null') 未上报
-      span 会话累计
+      span {{apiMode ? '已上报用量累计' : '会话累计'}}
       strong {{sessionTotalTokens === null ? '未上报' : (sessionTotalTokens | number:'1.0-0') + ' tokens'}}
-      span {{rateLimitLabel(statusRateLimits?.primary)}}
-      strong {{rateLimitValue(statusRateLimits?.primary)}}
-      span(*ngIf='statusRateLimits?.secondary') {{rateLimitLabel(statusRateLimits?.secondary)}}
-      strong(*ngIf='statusRateLimits?.secondary') {{rateLimitValue(statusRateLimits?.secondary)}}
-      span 普通用量
-      strong {{ordinaryUsageLabel}}
+      span(*ngIf='!apiMode') {{rateLimitLabel(statusRateLimits?.primary)}}
+      strong(*ngIf='!apiMode') {{rateLimitValue(statusRateLimits?.primary)}}
+      span(*ngIf='!apiMode && statusRateLimits?.secondary') {{rateLimitLabel(statusRateLimits?.secondary)}}
+      strong(*ngIf='!apiMode && statusRateLimits?.secondary') {{rateLimitValue(statusRateLimits?.secondary)}}
+      span(*ngIf='!apiMode') 普通用量
+      strong(*ngIf='!apiMode') {{ordinaryUsageLabel}}
       span 目标
       strong {{goalLabel}}
-      span 下回合文件权限
-      strong {{settings.sandbox === 'read-only' ? '只读' : settings.sandbox === 'workspace-write' ? '工作区可写' : '完全访问'}}
+      span {{apiMode ? '下回合工具策略' : '下回合文件权限'}}
+      strong {{apiMode ? (settings.sandbox === 'read-only' ? '只读：禁止终端输入和控件操作' : '可操作终端：使用终端账户权限') : (settings.sandbox === 'read-only' ? '只读' : settings.sandbox === 'workspace-write' ? '工作区可写' : '完全访问')}}
       span 下回合审批
       strong {{settings.approvalPolicy === 'on-request' ? '按需' : settings.approvalPolicy === 'untrusted' ? '不可信时' : '不询问'}}
     .codex-detail-section
@@ -104,7 +125,7 @@
       .codex-feed-content(#chatContent='')
         .codex-entry(*ngFor='let entry of entries', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"')
           .codex-entry-header
-            .codex-role {{entry.kind === 'user' ? '你' : entry.kind === 'tool' ? '工具输出' : entry.kind === 'system' ? '系统' : 'Codex'}}
+            .codex-role {{entry.kind === 'user' ? '你' : entry.kind === 'tool' ? '工具输出' : entry.kind === 'system' ? '系统' : '助手'}}
             button.btn.btn-link.btn-sm.codex-copy(type='button', (click)='copyEntry(entry)', [attr.aria-label]="'复制' + (entry.kind === 'user' ? '你的消息' : 'Codex 消息')") {{copiedEntryId === entry.id ? '已复制' : '复制'}}
           .codex-text {{entry.text}}
     button.codex-jump-latest(type='button', *ngIf='showJumpToLatest', (click)='jumpToLatest()', aria-label='回到最新消息并恢复自动滚动', title='回到底部并恢复自动滚动')
@@ -136,6 +157,29 @@
       button.btn.btn-primary.btn-sm(type='button', (click)='decide("accept")', [disabled]='isUserInputRequest() && !canSubmitRequest()') {{isUserInputRequest() ? '提交答案' : '允许'}}
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decide("decline")') {{isUserInputRequest() ? '跳过' : '拒绝'}}
   .codex-compose
+    .codex-workflows(*ngIf='workflowPanelOpen')
+      .codex-detail-heading
+        strong 当前目录的任务流程
+        .codex-detail-actions
+          button.btn.btn-link.btn-sm(type='button', (click)='openWorkflows()', [disabled]='workflowLoading') 刷新
+          button.btn.btn-link.btn-sm(type='button', (click)='workflowPanelOpen = false', aria-label='关闭任务流程库') ×
+      small(*ngIf='workflowLoading') 正在读取本地流程…
+      small.codex-detail-error(*ngIf='workflowError', role='status') {{workflowError}}
+      small(*ngIf='!workflowLoading && !workflowError && !workflows.length') 完成并核对一次终端任务后，流程会自动归档。在设置中管理流程和偏好。
+      .codex-workflow-list
+        .codex-workflow(*ngFor='let workflow of workflows')
+          button.codex-workflow-heading(type='button', (click)='expandedWorkflowId = expandedWorkflowId === workflow.id ? "" : workflow.id', [attr.aria-expanded]='expandedWorkflowId === workflow.id')
+            strong {{workflow.title}}
+            small {{workflow.enabled ? '已启用' : '已停用'}} · 完成 {{workflow.successes}} 次
+          pre(*ngIf='expandedWorkflowId === workflow.id') {{workflowText(workflow)}}
+          button.btn.btn-outline-secondary.btn-sm(type='button', (click)='useWorkflow(workflow)', [disabled]='busy || !workflow.enabled') 填入任务
+    .codex-memory-notice(*ngIf='memoryNotice', role='status') {{memoryNotice}}
+    .codex-memory-actions
+      button.btn.btn-link.btn-sm(type='button', (click)='openWorkflows()') 任务流程
+      label
+        input(type='checkbox', [(ngModel)]='skipTaskMemory', [disabled]='busy')
+        | 本次不检索记忆
+    small.codex-permission-notice(*ngIf='apiMode') API 工具操作使用终端账户权限；追加输入在下一次模型请求时处理。Thinking 可在上方调整，下一回合生效。
     .codex-send-notice(*ngIf='sendNotice', role='alert') {{sendNotice}}
     button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='goalStatus === "active" && !busy', (click)='continueTask()') 继续当前目标
     .codex-slash-menu(*ngIf='visibleSlashCommands.length && !request && !loading', role='listbox', aria-label='命令')
@@ -145,12 +189,17 @@
     .codex-model-picker(*ngIf='modelPickerOpen')
       .codex-model-heading
         strong {{pendingModel ? '选择推理强度（Thinking level）' : '选择模型'}}
+        button.btn.btn-link.btn-sm(type='button', (click)='openModelPicker()', [disabled]='modelLoading || modelSaving', aria-label='刷新模型列表') 刷新
         button.btn.btn-link.btn-sm(type='button', (click)='modelPickerOpen = false', aria-label='关闭模型选择') ×
       small(*ngIf='modelLoading') 正在读取模型…
       small.codex-model-error(*ngIf='modelError') {{modelError}}
       small(*ngIf='!modelLoading && !pendingModel') 当前：{{settings.model || 'Codex 默认'}} · {{settings.reasoningEffort || '默认推理强度'}}
+      .codex-model-manual(*ngIf='apiMode && !pendingModel')
+        input.form-control.form-control-sm([(ngModel)]='apiModelDraft', placeholder='手动输入模型 ID', aria-label='手动输入 API 模型 ID', [disabled]='modelSaving')
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='chooseModel(apiModelDraft)', [disabled]='modelLoading || modelSaving || !apiModelDraft.trim()') 应用
+      small(*ngIf='!modelLoading && !pendingModel && !modelError && !models.length') 未获取到可用模型，请手动填写模型 ID。
       .codex-model-list(*ngIf='!modelLoading && !pendingModel')
-        button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') 当前 Codex 默认（{{defaultModel.model}}）
+        button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') {{apiMode ? '当前 API 配置' : '当前 Codex 默认'}}（{{defaultModel.model}}）
         button.codex-model-option(type='button', *ngFor='let model of otherModels', [class.codex-model-selected]='settings.model === model.model', [disabled]='modelSaving || permissionsSaving', [attr.title]='model.description || model.model', (click)='selectModel(model.model)')
           span {{model.displayName || model.model}}
           small {{model.model}}
@@ -164,16 +213,16 @@
     .codex-compose-toolbar
       .codex-permissions(aria-label='执行权限')
         .codex-permission-field
-          label(for='codex-sandbox') 文件
+          label(for='codex-sandbox') {{apiMode ? '工具' : '文件'}}
           select#codex-sandbox.form-control.form-control-sm([ngModel]='settings.sandbox', (ngModelChange)='setSandbox($event)', [disabled]='permissionsSaving || loading', title='文件访问权限；下一回合生效')
             option(value='read-only') 只读
-            option(value='workspace-write') 工作区可写
-            option(value='danger-full-access') 完全访问
+            option(value='workspace-write') {{apiMode ? '终端操作' : '工作区可写'}}
+            option(value='danger-full-access') {{apiMode ? '终端操作（无隔离）' : '完全访问'}}
         .codex-permission-field
           label(for='codex-approval') 审批
           select#codex-approval.form-control.form-control-sm([ngModel]='settings.approvalPolicy', (ngModelChange)='setApprovalPolicy($event)', [disabled]='permissionsSaving || loading', title='操作审批策略；下一回合生效')
             option(value='on-request') 按需
-            option(value='untrusted') 不可信时
+            option(value='untrusted') {{apiMode ? '操作时询问' : '不可信时'}}
             option(value='never') 不询问
       .codex-compose-actions
         button.btn.btn-outline-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') 停止

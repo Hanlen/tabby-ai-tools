@@ -34,6 +34,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate-windows.ps1 -Executa
 
 `npm test` 通过 `scripts/run-tests.cjs` 显式枚举项目 `test/*.test.js`，以参数数组执行 `node --test`，避免不同 Node 版本对目录入口的解析差异，不扫描 node_modules。Windows 测试夹具的 NODE_OPTIONS preload 路径统一转换为正斜杠，避免反斜杠被解释为转义。
 
+`test/api-agent.test.js` 使用本地 HTTP/SSE 夹具测试真实请求格式、按连接显示的测试进度、鉴权错误、取消、非 SSE 响应，以及在服务端延迟结束请求时首个正文片段已经触发视图刷新。还覆盖 API/Codex 往返迁移、分页历史导出、首次原生消息前的重启恢复和目标延迟激活。真实供应商连通性与 Tabby 桌面 UI 需单独验证。
+
+模型列表测试覆盖四种供应商的 GET 鉴权、分页去重、错误脱敏、不跟随重定向、无模型配置时获取列表、刷新与配置变更失效，以及关闭连接时取消请求。实现遵循 [DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/)与 [Claude 模型列表及分页](https://platform.claude.com/docs/en/api/models/list)的接口；不提供模型列表的端点保留手动输入模型 ID。
+
+可运行 `npm run smoke:context`（或 `npm run smoke:context -- /path/to/codex`）验证本机真实 Codex 的上下文导入、恢复、历史导出及目标保留。该脚本不发送 `turn/start`，并检查导入不会自动启动回合；测试线程在退出时归档，不调用模型或执行工具。
+
 用户已在 Windows Node v24.13.0 验证无 PATH 的真实 Codex 自动发现、初始化、6 条流式增量、completed 和 marker，以及 cmd/bat 两项测试。显式枚举全部测试的旧结果为 89 通过、2 项夹具失败、1 项 POSIX 跳过；修正后的 exe / auto discovery 夹具和 npm test 入口待 Windows 重跑。本次验证的具体平台、命令和结果见 [VALIDATION.md](../VALIDATION.md)。
 
 实现依据：[Tabby 插件开发说明](https://github.com/Eugeny/tabby/blob/master/HACKING.md)、[Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server)及 [Codex Goal 官方说明](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)。

@@ -12,6 +12,9 @@ import { CodexSettingsComponent, CodexSettingsTabProvider } from './settings'
 import { CodexTerminalOutputService } from './terminal-output.service'
 import { CodexSidebarService } from './sidebar.service'
 import { TabbyTabToolsService } from './tab-tools'
+import { AgentBackendFactory } from './agent-backend.service'
+import { AgentSecretsService } from './agent-secrets.service'
+import { TaskMemoryService } from './task-memory.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
@@ -19,6 +22,9 @@ import { TabbyTabToolsService } from './tab-tools'
   entryComponents: [CodexPanelComponent, CodexSettingsComponent],
   providers: [
     CodexService,
+    AgentBackendFactory,
+    AgentSecretsService,
+    TaskMemoryService,
     CodexRuntimeService,
     CodexTerminalOutputService,
     TabbyTabToolsService,

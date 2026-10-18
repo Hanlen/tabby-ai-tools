@@ -15,6 +15,7 @@ export class CodexRuntimeService implements OnDestroy {
   private retryTimer?: ReturnType<typeof setTimeout>
   private retryDelay = 1000
   private errorReported = false
+  private codexUsed = false
 
   constructor (
     private config: ConfigService,
@@ -44,6 +45,8 @@ export class CodexRuntimeService implements OnDestroy {
   private async connect (): Promise<void> {
     if (this.stopped) return
     this.clearRetry()
+    // API users do not need Codex installed. A manually opened Codex panel opts in.
+    if (this.config.store.codexAgent.defaultProfileId && !this.codexUsed) return
     const executable = this.configuredExecutable
     this.executable = executable
     try {
@@ -52,13 +55,14 @@ export class CodexRuntimeService implements OnDestroy {
       if (this.stopped || executable !== this.configuredExecutable) return
       if (!this.errorReported) {
         this.errorReported = true
-        this.notifications.error('Codex 后台服务启动失败', `${error.message}。请检查 Settings → Codex AI → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`)
+        this.notifications.error('Codex 后台服务启动失败', `${error.message}。请检查 Settings → AI Agent → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`)
       }
       this.scheduleRetry()
     }
   }
 
   private readonly onConnected = (): void => {
+    this.codexUsed = true
     this.clearRetry()
     this.retryDelay = 1000
     this.errorReported = false
@@ -68,6 +72,7 @@ export class CodexRuntimeService implements OnDestroy {
 
   private scheduleRetry (): void {
     if (this.stopped || !this.configReady || this.retryTimer) return
+    if (this.config.store.codexAgent.defaultProfileId && !this.codexUsed) return
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined
       void this.connect()

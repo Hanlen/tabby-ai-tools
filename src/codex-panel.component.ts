@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewChild } from '@angular/core'
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewChild } from '@angular/core'
 import { ConfigService } from 'tabby-core'
 import { CodexModel, CodexService, SavedSession } from './codex.service'
 import { AgentSettings } from './config'
@@ -11,6 +11,10 @@ import { CodexTerminalOutputService } from './terminal-output.service'
 import { ControlledTab, TabbyTabToolsService, TakeoverRequest } from './tab-tools'
 import { UserQuestion, answersComplete, formatAnswers, isUserInputMethod } from './user-input'
 import { ChatScroll } from './chat-scroll'
+import { AgentBackendFactory } from './agent-backend.service'
+import { AgentBackend, ApiProfile } from './agent-types'
+import { readThreadHistory } from './agent-history'
+import { TaskWorkflow, workflowInstructions } from './task-memory'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 const OUTPUT_BATCH_LIMIT = 2000
@@ -33,6 +37,9 @@ interface RateLimitSnapshot { primary: RateLimitWindowSnapshot | null; secondary
   styles: [require('./codex-panel.component.css')],
 })
 export class CodexPanelComponent implements AfterViewInit, OnDestroy {
+  private codex: AgentBackend
+  profileId = ''
+  connectionError = ''
   @Input() cwd = ''
   @Input() sourceTerminal?: BaseTerminalTabComponent<any>
   @Output() closeRequested = new EventEmitter<void>()
@@ -42,6 +49,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   showJumpToLatest = false
   private chatScroll?: ChatScroll
   prompt = ''
+  memoryNotice = ''
+  skipTaskMemory = false
+  workflowPanelOpen = false
+  workflowLoading = false
+  workflowError = ''
+  workflows: TaskWorkflow[] = []
+  expandedWorkflowId = ''
   private promptHistory: string[] | null = null
   private promptHistoryIndex = 0
   private promptDraft = ''
@@ -77,6 +91,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   modelLoading = false
   modelSaving = false
   modelError = ''
+  apiModelDraft = ''
+  private modelListSequence = 0
   sendNotice = ''
   private sendAttempt = 0
   models: CodexModel[] = []
@@ -99,7 +115,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private outputFlushing = false
   private sourceBound = false
   private allowSourceRecovery = true
-  private readonly onEvent = (event: RpcMessage) => this.zone.run(() => this.handleEvent(event))
+  private readonly onEvent = (event: RpcMessage) => this.zone.run(() => {
+    this.handleEvent(event)
+    // Node HTTP callbacks/async iterators can run outside Electron's patched tasks.
+    // Flush streamed text without waiting for a click, scroll or the final response.
+    this.changeDetector?.detectChanges()
+  })
   private readonly onConnected = () => this.zone.run(() => {
     if (this.status.startsWith('连接中断')) this.status = 'Codex 已重新连接，正在恢复会话…'
     if (!this.loading) void this.reconnect()
@@ -121,7 +142,47 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.status = `连接中断：${error.message}。任务尚未确认完成，可重新连接。`
   })
 
-  get settings (): AgentSettings { return this.config.store.codexAgent as AgentSettings }
+  get apiProfiles (): ApiProfile[] { return this.config.store.codexAgent.apiProfiles || [] }
+  get apiMode (): boolean { return !!this.codex.profile }
+  get agentLabel (): string { return this.codex.profile?.name || 'Codex' }
+  get settings (): AgentSettings {
+    return this.connectionSettings(this.profileId, this.codex)
+  }
+  private connectionSettings (id: string, backend: AgentBackend): AgentSettings {
+    const base = this.config.store.codexAgent as AgentSettings
+    const profile = this.apiProfiles.find(p => p.id === id) || backend.profile
+    if (!profile) return base
+    if (!profile.threads) profile.threads = {}
+    return new Proxy(base, {
+      get: (target, key: keyof AgentSettings) => key === 'model' || key === 'reasoningEffort' ? profile[key] : key === 'threads' || key === 'tabToolThreads' ? profile.threads : target[key],
+      set: (target, key: keyof AgentSettings, value) => {
+        if (key === 'model' || key === 'reasoningEffort') profile[key] = value
+        else (target as any)[key] = value
+        return true
+      },
+    })
+  }
+  get apiThinking (): ApiProfile['thinking'] { return this.apiProfiles.find(p => p.id === this.profileId)?.thinking || this.codex.profile?.thinking || 'default' }
+  get deepseekMode (): boolean { return this.codex.profile?.provider === 'deepseek' }
+  get supportsThinkingToggle (): boolean { return !!this.codex.profile && this.codex.profile.provider !== 'openai' }
+
+  async setApiThinking (thinking: ApiProfile['thinking'], effort: string): Promise<void> {
+    const configured = this.apiProfiles.find(p => p.id === this.profileId)
+    const runtime = this.codex.profile
+    if (!configured || !runtime || this.loading || this.busy || this.request || this.modelSaving) return
+    const previous = { thinking: configured.thinking, reasoningEffort: configured.reasoningEffort }
+    this.modelSaving = true
+    configured.thinking = thinking
+    configured.reasoningEffort = effort
+    try {
+      await this.config.save()
+      Object.assign(runtime, { thinking, reasoningEffort: effort })
+      this.zone.run(() => { this.modelError = ''; this.status = 'Thinking 设置已保存，下一回合生效' })
+    } catch (error: any) {
+      Object.assign(configured, previous)
+      this.zone.run(() => { this.modelError = `保存 Thinking 设置失败：${error.message}` })
+    } finally { this.zone.run(() => { this.modelSaving = false; this.changeDetector?.detectChanges() }) }
+  }
   get canBrowseHistory (): boolean { return !this.loading && !this.historyLoading && this.codex.client.isConnected }
   get slashCommands (): { command: string; description: string }[] {
     if (!this.prompt.startsWith('/') || this.prompt.includes(' ') || this.prompt.includes('\n')) return []
@@ -130,22 +191,45 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       { command: '/new', description: '新会话' },
       { command: '/resume', description: '历史会话' },
       { command: '/status', description: '当前状态' },
+      { command: '/workflows', description: '当前目录的任务流程库' },
+      { command: '/remember', description: '记住一条当前目录的操作偏好' },
       { command: '/help', description: '查看命令' },
     ].filter(item => item.command.startsWith(this.prompt.toLowerCase()))
   }
   get defaultModel (): CodexModel | undefined { return this.models.find(model => model.isDefault) }
   get otherModels (): CodexModel[] { return this.models.filter(model => !model.isDefault) }
   get currentModel (): string {
+    if (this.codex.profile) return this.codex.profile.model
     const runtime = this.codex.getThreadConfiguration?.(this.threadId)
     const reported = runtime?.model || (this.threadStatus?.threadId === this.threadId ? this.threadStatus.model : '')
     return (this.busy ? reported || this.settings.model : this.settings.model || reported) || 'Codex 默认'
   }
   get currentReasoningEffort (): string {
+    if (this.codex.profile) return this.codex.profile.reasoningEffort || '服务商默认'
     const runtime = this.codex.getThreadConfiguration?.(this.threadId)
     const reported = runtime?.reasoningEffort || (this.threadStatus?.threadId === this.threadId ? this.threadStatus.reasoningEffort : '')
     return (this.busy ? reported || this.settings.reasoningEffort : this.settings.reasoningEffort || reported) || '默认'
   }
   get visibleSlashCommands (): { command: string; description: string }[] { return this.slashMenuOpen ? this.slashCommands : [] }
+  workflowText (workflow: TaskWorkflow): string { return workflowInstructions(workflow) }
+  async openWorkflows (): Promise<void> {
+    this.workflowPanelOpen = true
+    this.workflowLoading = true
+    this.workflowError = ''
+    try {
+      const memory = this.agents?.memory
+      if (!memory) throw new Error('任务流程库暂不可用')
+      const data = await memory.library.store.read()
+      this.workflows = data.workflows.filter(workflow => workflow.cwd === this.cwd)
+    } catch (error: any) { this.workflowError = error.message }
+    finally { this.zone.run(() => { this.workflowLoading = false; this.changeDetector?.detectChanges() }) }
+  }
+  useWorkflow (workflow: TaskWorkflow): void {
+    this.onPromptChanged(workflow.objective)
+    this.skipTaskMemory = false
+    this.workflowPanelOpen = false
+    this.memoryNotice = `已填入流程任务：${workflow.title}；修改参数后发送`
+  }
   onPromptChanged (value: string): void {
     this.resetPromptHistory()
     this.prompt = value
@@ -231,7 +315,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const path = this.cwd.replace(/[\\/]+$/, '')
     return path.split(/[\\/]/).pop() || this.cwd || '未设置目录'
   }
-  get connectionLabel (): string { return this.loading ? '连接中' : this.connected ? '已连接' : '未连接' }
+  get connectionLabel (): string { return this.loading ? '连接中' : this.connected ? (this.apiMode ? '已就绪' : '已连接') : '未连接' }
   get turnLabel (): string { return !this.connected ? '不可用' : this.request ? '等待确认' : this.busy ? '执行中' : '空闲' }
   get goalLabel (): string {
     return ({ active: '进行中', complete: '已完成', paused: '已暂停', blocked: '受阻', usageLimited: '用量受限', budgetLimited: '预算受限' } as Record<string, string>)[this.goalStatus] || (this.goalStatus || '无')
@@ -281,17 +365,22 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async openModelPicker (): Promise<void> {
+    const backend = this.codex
+    const sequence = ++this.modelListSequence
+    const current = () => sequence === this.modelListSequence && this.codex === backend
     this.modelPickerOpen = true
     this.modelLoading = true
     this.modelError = ''
     this.pendingModel = undefined
+    this.models = []
+    this.apiModelDraft = this.apiMode ? this.settings.model : ''
     try {
-      const models = await this.codex.listModels()
-      this.zone.run(() => { this.models = models })
+      const models = await backend.listModels()
+      if (current()) this.zone.run(() => { this.models = models; this.changeDetector?.detectChanges() })
     } catch (error: any) {
-      this.zone.run(() => { this.modelError = `读取模型失败：${error.message}` })
+      if (current()) this.zone.run(() => { this.modelError = `读取模型失败：${error.message}` })
     } finally {
-      this.zone.run(() => { this.modelLoading = false })
+      if (current()) this.zone.run(() => { this.modelLoading = false; this.changeDetector?.detectChanges() })
     }
   }
 
@@ -307,7 +396,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async chooseModel (model: string, effort?: string): Promise<void> {
-    if (this.modelLoading || this.modelSaving || this.permissionsSaving) return
+    if (this.modelLoading || this.modelSaving || this.permissionsSaving || (this.apiMode && (this.busy || !!this.request))) return
+    model = model.trim()
     if (!model) {
       const defaultModel = this.defaultModel
       if (!defaultModel) {
@@ -322,7 +412,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.modelError = '此模型不支持所选推理强度，请重新选择'
       return
     }
-    const reasoningEffort = effort ?? (model === this.settings.model && supported.some(option => option.reasoningEffort === this.settings.reasoningEffort)
+    const reasoningEffort = effort ?? (model === this.settings.model && (!supported.length || supported.some(option => option.reasoningEffort === this.settings.reasoningEffort))
       ? this.settings.reasoningEffort : selected?.defaultReasoningEffort || '')
     if (model === this.settings.model && reasoningEffort === (this.settings.reasoningEffort || '')) {
       this.modelPickerOpen = false
@@ -341,6 +431,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.pendingModel = undefined
         this.status = `模型已设为 ${model} · 推理强度 ${reasoningEffort || '默认'}，下一回合生效`
       })
+      if (this.apiMode) await this.selectConnection(this.profileId, true)
     } catch (error: any) {
       this.zone.run(() => {
         this.settings.model = previous
@@ -368,48 +459,52 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         else await this.toggleHistory()
         break
       case '/status': await this.openStatus(); break
-      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/help'; break
+      case '/workflows': await this.openWorkflows(); break
+      case '/remember': this.status = '用法：/remember 操作偏好；例如 /remember 此项目优先使用 pnpm'; break
+      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/workflows、/remember 偏好、/help'; break
     }
   }
 
   async toggleStatus (): Promise<void> {
-    if (this.statusOpen) this.statusOpen = false
+    if (this.statusOpen) this.zone.run(() => { this.statusOpen = false })
     else await this.openStatus()
   }
 
   async openStatus (): Promise<void> {
     const requestId = ++this.statusRequest
-    this.statusOpen = true
-    this.historyOpen = false
-    this.statusLoading = false
-    this.statusError = ''
+    // Tabby can dispatch interactions outside Angular; show the card before querying.
+    this.zone.run(() => {
+      this.statusOpen = true
+      this.historyOpen = false
+      this.statusLoading = this.connected && !!this.threadId
+      this.statusError = ''
+    })
     if (!this.connected || !this.threadId) return
     const threadId = this.threadId
-    this.statusLoading = true
     const current = () => requestId === this.statusRequest && threadId === this.threadId && this.statusOpen
-    const report = (label: string, error: any) => {
+    const report = (label: string, error: any) => this.zone.run(() => {
       if (current()) this.statusError += `${this.statusError ? '；' : ''}${label}：${error?.message || error}`
-    }
+    })
     await Promise.all([
-      this.codex.client.request('thread/read', { threadId, includeTurns: false }).then(result => {
+      this.codex.client.request('thread/read', { threadId, includeTurns: false }).then(result => this.zone.run(() => {
         if (current()) this.threadStatus = {
           threadId,
           model: result.thread?.model || this.codex.getThreadConfiguration?.(threadId)?.model || null,
           reasoningEffort: result.thread?.reasoningEffort ?? this.codex.getThreadConfiguration?.(threadId)?.reasoningEffort ?? null,
           state: result.thread?.status?.type || '',
         }
-      }).catch(error => report('读取会话状态失败', error)),
-      this.codex.getGoal(threadId).then(goal => {
+      })).catch(error => report('读取会话状态失败', error)),
+      this.codex.getGoal(threadId).then(goal => this.zone.run(() => {
         if (current()) this.goalStatus = goal?.status || ''
-      }).catch(error => report('读取目标状态失败', error)),
-      this.codex.client.request('account/rateLimits/read', {}).then(result => {
+      })).catch(error => report('读取目标状态失败', error)),
+      this.codex.client.request('account/rateLimits/read', {}).then(result => this.zone.run(() => {
         if (current()) {
           this.ordinaryUsageAllowed = result.ordinaryUsageAllowed ?? null
           this.statusRateLimits = result.rateLimitsByLimitId?.codex || result.rateLimits || undefined
         }
-      }).catch(error => report('读取额度失败', error)),
+      })).catch(error => report('读取额度失败', error)),
     ])
-    if (current()) this.statusLoading = false
+    this.zone.run(() => { if (current()) this.statusLoading = false })
   }
 
   private clearTokenUsage (): void {
@@ -429,11 +524,102 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   constructor (
     public config: ConfigService,
-    private codex: CodexService,
+    codex: CodexService,
     private zone: NgZone,
     private terminalOutput: CodexTerminalOutputService,
     private tabTools: TabbyTabToolsService,
-  ) {}
+    private agents: AgentBackendFactory,
+    private changeDetector?: ChangeDetectorRef,
+  ) {
+    this.profileId = agents?.defaultProfileId || ''
+    this.codex = agents ? agents.create(this.profileId) : codex
+  }
+
+  async selectConnection (id: string, reload = false): Promise<void> {
+    if (!this.agents || this.loading || this.busy || this.request || (!reload && id === this.profileId)) return
+    this.connectionError = ''
+    const previous = { codex: this.codex, profileId: this.profileId, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
+      entries: this.entries, goalStatus: this.goalStatus, latestTurnStatus: this.latestTurnStatus, sessions: this.sessions, models: this.models,
+      historyOpen: this.historyOpen, modelPickerOpen: this.modelPickerOpen, connected: this.connected, busy: this.busy, status: this.status,
+      threadStatus: this.threadStatus, statusRateLimits: this.statusRateLimits, ordinaryUsageAllowed: this.ordinaryUsageAllowed,
+      contextUsedTokens: this.contextUsedTokens, contextWindowTokens: this.contextWindowTokens, sessionTotalTokens: this.sessionTotalTokens }
+    this.loading = true
+    let backend: AgentBackend | undefined
+    let targetThreads: Record<string, string> | undefined
+    let previousSavedId: string | undefined
+    let targetSettings: AgentSettings | undefined
+    let previousToolId: string | undefined
+    let targetCwd = this.cwd
+    try {
+      backend = this.agents.create(id)
+      targetSettings = this.connectionSettings(id, backend)
+      targetCwd = this.cwd || targetSettings.cwd || os.homedir()
+      targetThreads = targetSettings.threads
+      previousSavedId = targetThreads[targetCwd]
+      previousToolId = targetSettings.tabToolThreads?.[targetCwd]
+      let transferredId = ''
+      if (this.threadId && this.codex.exportContext && backend.importContext) {
+        const context = await this.codex.exportContext(this.threadId)
+        // Prepare the new connection before releasing the current conversation.
+        await backend.connect(targetSettings)
+        transferredId = await backend.importContext(context, targetCwd, targetSettings)
+      }
+      this.codex.client.off('event', this.onEvent)
+      this.codex.client.off('connected', this.onConnected)
+      this.codex.client.off('disconnected', this.onDisconnect)
+      this.codex = backend
+      this.profileId = id
+      this.cwd = targetCwd
+      if (transferredId) this.settings.threads[this.cwd] = transferredId
+      this.threadId = ''
+      this.turnId = ''
+      this.entries = []
+      this.goalStatus = ''
+      this.latestTurnStatus = ''
+      this.sessions = []
+      this.models = []
+      this.modelLoading = false
+      this.historyOpen = false
+      this.modelPickerOpen = false
+      this.clearTokenUsage()
+      this.codex.client.on('event', this.onEvent)
+      this.codex.client.on('connected', this.onConnected)
+      this.codex.client.on('disconnected', this.onDisconnect)
+      if (await this.reconnect(transferredId || undefined) === false) throw new Error(this.status)
+      this.tabTools.releaseOwner(previous.threadId)
+      this.agents?.memory?.activeLibrary?.forgetRun(previous.threadId)
+      this.memoryNotice = ''
+      this.workflowPanelOpen = false
+      if (previous.codex.profile) previous.codex.client.close()
+    } catch (error: any) {
+      const indexesChanged = targetThreads?.[targetCwd] !== previousSavedId || targetSettings?.tabToolThreads?.[targetCwd] !== previousToolId
+      if (targetThreads) {
+        if (previousSavedId === undefined) delete targetThreads[targetCwd]
+        else targetThreads[targetCwd] = previousSavedId
+      }
+      if (targetSettings?.tabToolThreads) {
+        if (previousToolId === undefined) delete targetSettings.tabToolThreads[targetCwd]
+        else targetSettings.tabToolThreads[targetCwd] = previousToolId
+      }
+      if (this.codex !== previous.codex) {
+        this.codex.client.off('event', this.onEvent)
+        this.codex.client.off('connected', this.onConnected)
+        this.codex.client.off('disconnected', this.onDisconnect)
+        Object.assign(this, previous)
+        this.codex.client.on('event', this.onEvent)
+        this.codex.client.on('connected', this.onConnected)
+        this.codex.client.on('disconnected', this.onDisconnect)
+        await this.config.save().catch(() => undefined)
+      } else if (indexesChanged) await this.config.save().catch(() => undefined)
+      if (backend?.profile && backend !== previous.codex) backend.client.close()
+      this.zone.run(() => { this.connectionError = error.message })
+    } finally { this.zone.run(() => { this.loading = false; this.changeDetector?.detectChanges() }) }
+  }
+
+  async reconnectAgent (): Promise<void> {
+    if (this.apiMode) await this.selectConnection(this.profileId, true)
+    else await this.reconnect()
+  }
 
   ngAfterViewInit (): void {
     this.zone.runOutsideAngular(() => {
@@ -532,7 +718,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  async reconnect (): Promise<void> {
+  async reconnect (preparedThreadId?: string): Promise<boolean> {
     this.statusRequest++
     this.statusLoading = false
     this.threadStatus = undefined
@@ -541,13 +727,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const previousThreadId = this.threadId
     this.loading = true
     this.connected = false
-    this.status = this.codex.client.isConnected ? '正在恢复会话…' : '正在连接 Codex…'
+    this.status = this.codex.client.isConnected ? '正在恢复会话…' : `正在连接 ${this.agentLabel}…`
     try {
       await this.codex.connect(this.settings)
       this.status = '正在恢复会话…'
       this.cwd = this.cwd || this.settings.cwd || os.homedir()
       const savedId = this.settings.threads[this.cwd]
-      this.threadId = await this.codex.openThread(this.cwd, this.settings, savedId)
+      this.threadId = preparedThreadId || await this.codex.openThread(this.cwd, this.settings, savedId)
       if (this.threadId !== previousThreadId) this.clearTokenUsage()
       const upgraded = !!savedId && savedId !== this.threadId
       this.settings.threads[this.cwd] = this.threadId
@@ -557,49 +743,21 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.goalStatus = goal?.status || ''
       this.connected = true
       this.status = upgraded ? '已创建支持访问所有 Tabby 标签的新会话' : this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '就绪'
+      return true
     } catch (error: any) {
       const serverConnected = this.codex.client.isConnected
       this.connected = false
       this.status = `${serverConnected ? '会话恢复失败' : '连接失败'}：${error.message}`
+      return false
     } finally {
-      this.loading = false
+      this.zone.run(() => { this.loading = false })
     }
   }
 
   private async readHistory (threadId: string): Promise<HistorySnapshot> {
-    let notice = ''
-    const metadata = await this.codex.client.request('thread/read', { threadId, includeTurns: false })
-    let turns: any[] = []
-    try {
-      if (metadata.thread?.historyMode === 'paginated') {
-        let cursor: string | null = null
-        const seenCursors = new Set<string>()
-        do {
-          const page: { data: any[]; nextCursor: string | null } = await this.codex.client.request('thread/turns/list', {
-            threadId, cursor, limit: 100, sortDirection: 'desc', itemsView: 'full',
-          })
-          turns.unshift(...(page.data || []).slice().reverse())
-          cursor = page.nextCursor || null
-          if (cursor) {
-            if (seenCursors.has(cursor)) throw new Error('历史分页返回了重复游标')
-            seenCursors.add(cursor)
-          }
-        } while (cursor)
-      } else {
-        const result = await this.codex.client.request('thread/read', { threadId, includeTurns: true })
-        turns = result.thread?.turns || []
-      }
-    } catch (error: any) {
-      const message = String(error?.message || error)
-      if (message.includes('not materialized yet') && message.includes('before first user message')) {
-        turns = []
-      } else if (message.includes('list_turns is not supported yet') || message.includes('thread/turns/list is not supported yet')) {
-        notice = 'Codex 当前无法读取旧消息；会话已连接，新消息仍可正常使用。'
-        turns = []
-      } else {
-        throw error
-      }
-    }
+    const history = await readThreadHistory(this.codex.client, threadId)
+    const turns = [...(await this.codex.inheritedTurns?.(threadId) || []), ...history.turns]
+    const notice = history.notice
     const entries: ChatEntry[] = []
     for (const turn of turns) {
       for (const item of turn.items || []) {
@@ -607,11 +765,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           entries.push({ id: item.id, kind: 'user', text: (item.content || []).filter((x: any) => x.type === 'text').map((x: any) => x.text).join('\n') })
         } else if (item.type === 'agentMessage' && item.text) {
           entries.push({ id: item.id, kind: 'agent', text: item.text })
+        } else if (item.type === 'commandExecution') {
+          entries.push({ id: item.id, kind: 'tool', text: `$ ${item.command || ''}\n${item.aggregatedOutput || ''}` })
         }
       }
     }
     const lastTurn = turns[turns.length - 1]
-    const runtimeState = metadata.thread?.status?.type
+    const runtimeState = history.thread.status?.type
     const busy = lastTurn?.status === 'inProgress' && (!runtimeState || runtimeState === 'active')
     return { entries, busy, turnId: busy ? lastTurn.id : '', notice }
   }
@@ -708,7 +868,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.status = this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '已切换到历史会话'
       this.historyOpen = false
       this.statusOpen = false
-      if (oldId && oldId !== restoredId) void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
+      if (oldId && oldId !== restoredId) {
+        this.agents?.memory?.activeLibrary?.forgetRun(oldId)
+        this.memoryNotice = ''
+        this.workflowPanelOpen = false
+        void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
+      }
     } catch (error: any) {
       this.connected = oldConnected && this.codex.client.isConnected
       this.status = this.connected ? oldStatus : `连接中断：${error.message}`
@@ -721,8 +886,22 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   async send (): Promise<void> {
     const text = this.prompt.trim()
     if (!text || this.loading || this.request) return
+    if (this.apiMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
+      this.status = '此 API 连接已移除，请选择其他连接'
+      return
+    }
     if (text.startsWith('/')) {
       const [command, ...args] = text.split(/\s+/)
+      if (command.toLowerCase() === '/remember' && args.length) {
+        try {
+          const memory = this.agents?.memory
+          if (!memory) throw new Error('任务流程库暂不可用')
+          await memory.library.addPreference(args.join(' '), this.cwd)
+          this.prompt = ''
+          this.status = '已记住当前目录的操作偏好，可在设置 → 任务流程与偏好中管理'
+        } catch (error: any) { this.status = `保存偏好失败：${error.message}` }
+        return
+      }
       if (command.toLowerCase() === '/model' && args.length) {
         this.resetPromptHistory()
         this.prompt = ''
@@ -730,7 +909,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         if (!this.modelError) await this.selectModel(args.join(' '))
         return
       }
-      if (['/model', '/new', '/resume', '/status', '/help'].includes(command.toLowerCase()) && !args.length) {
+      if (['/model', '/new', '/resume', '/status', '/workflows', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {
         await this.runSlashCommand(command.toLowerCase())
         return
       }
@@ -753,7 +932,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       await this.ensureSource()
       if (this.busy && this.turnId) {
         await this.codex.steer(this.threadId, this.turnId, text)
-        this.status = '已追加到当前任务'
+        this.status = this.apiMode ? '已排队，将在下一次模型请求时处理' : '已追加到当前任务'
         return
       }
       this.busy = true
@@ -765,9 +944,27 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.outputCursor = output.cursor
       this.outputSentThisTurn = output.length
       try {
+        let memoryContext = ''
+        let matchedWorkflow: TaskWorkflow | undefined
+        this.memoryNotice = ''
+        const memory = this.agents?.memory
+        if (memory?.enabled && !this.skipTaskMemory) {
+          try {
+            const suggestion = await memory.library.prepare(this.threadId, text, this.cwd, this.goalStatus !== 'active')
+            memoryContext = suggestion.context
+            matchedWorkflow = suggestion.workflow
+            if (matchedWorkflow) this.memoryNotice = `参考流程：${matchedWorkflow.title} · 此前完成 ${matchedWorkflow.successes} 次`
+            else if (suggestion.preferences.length) this.memoryNotice = `已参考 ${suggestion.preferences.length} 条操作偏好`
+          } catch { this.memoryNotice = '读取流程库失败，本次按普通任务继续；可在设置中检查流程库' }
+        } else {
+          memory?.activeLibrary?.forgetRun(this.threadId)
+          if (this.skipTaskMemory) this.memoryNotice = '本次跳过流程与偏好复用'
+        }
+        this.skipTaskMemory = false
         if (this.goalStatus !== 'active') await this.codex.setGoal(this.threadId, text, this.settings.goalTokenBudget)
         this.goalStatus = 'active'
-        const startedTurnId = await this.codex.startTurn(this.threadId, text, this.cwd, this.settings, output.message)
+        const startedTurnId = await this.codex.startTurn(this.threadId, text, this.cwd, this.settings, [output.message, memoryContext].filter(Boolean).join('\n\n'))
+        if (matchedWorkflow) void memory?.library.used(matchedWorkflow.id).catch(() => undefined)
         if (this.busy) this.turnId = startedTurnId
         this.scheduleOutputFlush()
       } catch (error) { this.outputCursor = previousCursor; throw error }
@@ -779,6 +976,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async continueTask (): Promise<void> {
     if (!this.threadId || this.busy) return
+    if (this.apiMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
+      this.status = '此 API 连接已移除，请选择其他连接'
+      return
+    }
     this.sendNotice = ''
     this.sendAttempt++
     try {
@@ -845,7 +1046,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === newId)
       this.clearTokenUsage()
-      if (oldId && oldId !== newId) void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
+      if (oldId && oldId !== newId) {
+        this.agents?.memory?.activeLibrary?.forgetRun(oldId)
+        this.memoryNotice = ''
+        this.workflowPanelOpen = false
+        void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
+      }
       this.historyOpen = false
       this.statusOpen = false
       this.connected = true
@@ -910,10 +1116,16 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const p = event.params
     if (event.id !== undefined) {
       if (event.method === 'item/tool/call') {
-        void (p.namespace === 'tabby_tabs' ? this.tabTools.call(p.tool, p.arguments, { owner: this.threadId, confirmTakeover: request => this.confirmTakeover(request) }) : Promise.reject(new Error('Unknown tool namespace'))).then(result => {
-          this.codex.client.respond(event.id!, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
+        // A stopped tool can finish after the user has selected another backend.
+        const client = this.codex.client
+        const owner = this.threadId
+        const memory = this.agents?.memory
+        const token = memory?.enabled ? memory.activeLibrary?.token(owner) : undefined
+        void (p.namespace === 'tabby_tabs' ? this.tabTools.call(p.tool, p.arguments, { owner: this.threadId, signal: p.signal, confirmTakeover: request => this.confirmTakeover(request) }) : Promise.reject(new Error('Unknown tool namespace'))).then(result => {
+          if (memory?.enabled) memory.activeLibrary?.record(owner, token, p.tool, p.arguments, result)
+          client.respond(event.id!, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
         }, error => {
-          this.codex.client.respond(event.id!, { success: false, contentItems: [{ type: 'inputText', text: String(error?.message || error) }] })
+          client.respond(event.id!, { success: false, contentItems: [{ type: 'inputText', text: String(error?.message || error) }] })
         })
       } else if (event.method === 'item/commandExecution/requestApproval' || event.method === 'item/fileChange/requestApproval') {
         this.request = { id: event.id, method: event.method, title: p.reason || p.command || 'Codex 请求授权', answers: {}, otherAnswers: {} }
@@ -953,7 +1165,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         break
       case 'item/agentMessage/delta':
         this.sendNotice = ''
+        if (this.apiMode && !this.request) this.status = '正在接收回复…'
         this.append(p.itemId, 'agent', p.delta || '')
+        break
+      case 'agent/progress':
+        if (!this.request) this.status = p.phase === 'thinking' ? `模型正在思考…（已接收 ${p.receivedChars} 字符）`
+          : p.phase === 'tools' ? '正在接收工具调用…' : '等待模型响应…'
+        break
+      case 'agent/notice':
+        this.entries.push({ id: `notice-${Date.now()}`, kind: 'system', text: p.message })
         break
       case 'item/commandExecution/outputDelta':
         this.append(p.itemId, 'tool', p.delta || '')
@@ -1007,6 +1227,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           this.sendNotice = ''
           void this.refreshGoal()
         }
+        if (this.apiMode && p.turn.status === 'interrupted') this.status += '；已发送到终端的命令可能仍在运行，请检查终端'
         break
       case 'error':
         this.showSendError(p.error, '执行错误', p.turnId, p.willRetry === true)
@@ -1043,12 +1264,29 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   private async refreshGoal (): Promise<void> {
+    const backend = this.codex
+    const threadId = this.threadId
+    const memory = this.agents?.memory
+    const token = memory?.enabled ? memory.activeLibrary?.token(threadId) : undefined
     try {
-      const goal = await this.codex.getGoal(this.threadId)
-      this.goalStatus = goal?.status || ''
-      this.updateCompletion()
+      const goal = await backend.getGoal(threadId)
+      this.zone.run(() => {
+        if (this.codex !== backend || this.threadId !== threadId) return
+        this.goalStatus = goal?.status || ''
+        this.updateCompletion()
+      })
+      if (memory?.enabled && this.codex === backend && this.threadId === threadId && !this.busy) {
+        try {
+          const outcome = this.entries.filter(entry => entry.kind === 'agent').slice(-1)[0]?.text || ''
+          const workflow = await memory.activeLibrary?.finish(threadId, token, this.latestTurnStatus, goal?.status || '', outcome)
+          if (workflow && this.codex === backend && this.threadId === threadId && !this.busy) this.zone.run(() => {
+            this.memoryNotice = `已归档流程：${workflow.title}，下次类似任务可复用`
+            this.changeDetector?.detectChanges()
+          })
+        } catch { this.zone.run(() => { this.memoryNotice = '任务已完成，但流程归档失败；可在设置中检查流程库' }) }
+      }
     } catch (error: any) {
-      this.status = `无法确认完成状态：${error.message}`
+      this.zone.run(() => { if (this.codex === backend && this.threadId === threadId) this.status = `无法确认完成状态：${error.message}` })
     }
   }
 
@@ -1143,6 +1381,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
+    this.modelListSequence++
     this.chatScroll?.destroy()
     this.cancelTakeover()
     this.tabTools.releaseOwner(this.threadId)
@@ -1154,5 +1394,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.codex.client.off('event', this.onEvent)
     this.codex.client.off('connected', this.onConnected)
     this.codex.client.off('disconnected', this.onDisconnect)
+    if (this.apiMode) this.codex.client.close()
   }
 }

@@ -1,4 +1,5 @@
 import { ConfigProvider } from 'tabby-core'
+import type { ApiProfile } from './agent-types'
 
 export interface AgentSettings {
   executable: string
@@ -10,6 +11,9 @@ export interface AgentSettings {
   goalTokenBudget: number
   threads: Record<string, string>
   tabToolThreads: Record<string, string>
+  defaultProfileId?: string
+  apiProfiles?: ApiProfile[]
+  taskMemoryEnabled?: boolean
 }
 
 export class CodexConfigProvider extends ConfigProvider {
@@ -24,6 +28,9 @@ export class CodexConfigProvider extends ConfigProvider {
       goalTokenBudget: 0,
       threads: {},
       tabToolThreads: {},
+      defaultProfileId: '',
+      apiProfiles: [],
+      taskMemoryEnabled: true,
     } as AgentSettings,
   }
 }
