@@ -15,6 +15,8 @@ import { TabbyTabToolsService } from './tab-tools'
 import { AgentBackendFactory } from './agent-backend.service'
 import { AgentSecretsService } from './agent-secrets.service'
 import { TaskMemoryService } from './task-memory.service'
+import { TabbyCapabilitiesService } from './tabby-capabilities.service'
+import { ScheduledTasksService } from './scheduled-tasks.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
@@ -25,9 +27,11 @@ import { TaskMemoryService } from './task-memory.service'
     AgentBackendFactory,
     AgentSecretsService,
     TaskMemoryService,
+    ScheduledTasksService,
     CodexRuntimeService,
     CodexTerminalOutputService,
     TabbyTabToolsService,
+    TabbyCapabilitiesService,
     CodexSidebarService,
     { provide: ConfigProvider, useClass: CodexConfigProvider, multi: true },
     { provide: ToolbarButtonProvider, useClass: CodexToolbarButtonProvider, multi: true },
@@ -35,5 +39,5 @@ import { TaskMemoryService } from './task-memory.service'
   ],
 })
 export default class CodexAgentModule {
-  constructor (runtime: CodexRuntimeService) { runtime.start() }
+  constructor (runtime: CodexRuntimeService, schedules: ScheduledTasksService) { runtime.start(); schedules.start() }
 }

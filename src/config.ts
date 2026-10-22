@@ -11,6 +11,7 @@ export interface AgentSettings {
   goalTokenBudget: number
   threads: Record<string, string>
   tabToolThreads: Record<string, string>
+  tabToolVersions?: Record<string, number>
   defaultProfileId?: string
   apiProfiles?: ApiProfile[]
   taskMemoryEnabled?: boolean
@@ -28,6 +29,7 @@ export class CodexConfigProvider extends ConfigProvider {
       goalTokenBudget: 0,
       threads: {},
       tabToolThreads: {},
+      tabToolVersions: {},
       defaultProfileId: '',
       apiProfiles: [],
       taskMemoryEnabled: true,

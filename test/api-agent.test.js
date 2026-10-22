@@ -33,6 +33,9 @@ const { AgentSecretsService } = require('../src/agent-secrets.service.ts')
 const { AgentBackendFactory } = require('../src/agent-backend.service.ts')
 const { CodexService } = require('../src/codex.service.ts')
 const { CodexPanelComponent } = require('../src/codex-panel.component.ts')
+const { ScheduledTaskStore } = require('../src/scheduled-tasks.ts')
+const { ScheduledWorkflowRunner } = require('../src/scheduled-workflow-runner.ts')
+const { ScheduledTasksService } = require('../src/scheduled-tasks.service.ts')
 const { CodexSettingsComponent } = require('../src/settings.ts')
 Module._load = originalLoad
 require.extensions['.ts'] = originalTsLoader
@@ -850,21 +853,16 @@ test('HTTP errors redact bodies and never follow credential-bearing redirects', 
   assert.throws(() => apiUrl('https://user:pass@example.com', 'messages'), /凭据/)
 })
 
-test('API credentials accept explicit direct input and preserve legacy environment/Vault sources', async () => {
-  const secretRecords = []
-  const vault = { isEnabled: () => false, getSecret: async () => null,
-    addSecret: async secret => secretRecords.push(secret), updateSecret: async (old, secret) => secretRecords.push(secret) }
+test('API credentials use plugin configuration/environment and never access legacy Vault', async () => {
+  const vault = new Proxy({}, { get: () => assert.fail('Vault must never be accessed') })
   const secrets = new AgentSecretsService(vault)
   assert.equal(await secrets.read({ keySource: 'direct', apiKey: ' direct-secret ', useVault: true }), 'direct-secret')
   await assert.rejects(secrets.read({ keySource: 'direct', apiKey: ' ' }), /填写 API Key/)
   await assert.rejects(secrets.read({ keySource: 'environment', apiKey: 'unused', apiKeyEnv: 'TABBY_AGENT_TEST_MISSING_KEY' }), /未设置环境变量/)
   await assert.rejects(secrets.read({ useVault: false, apiKeyEnv: 'TABBY_AGENT_TEST_MISSING_KEY' }), /未设置环境变量/)
-  await assert.rejects(secrets.save({ id: 'one' }, 'secret'), /启用 Vault/)
-  vault.isEnabled = () => true
-  await secrets.save({ id: 'one' }, 'secret')
-  assert.deepEqual(secretRecords[0].key, { profileId: 'one' })
-  vault.getSecret = async () => secretRecords[0]
-  assert.equal(await secrets.read({ id: 'one', useVault: true }), 'secret')
+  await assert.rejects(secrets.read({ id: 'one', useVault: true }), /不再访问 Vault/)
+  await assert.rejects(secrets.read({ id: 'one', keySource: 'vault' }), /直接输入 API Key 或环境变量/)
+
 })
 
 for (const source of ['openai', 'deepseek', 'glm', 'claude']) {
@@ -1315,7 +1313,7 @@ test('settings switch the editor without changing the default or discarding edit
   let saves = 0
   const component = new CodexSettingsComponent({ store: { codexAgent: settings }, save: async () => { saves++ } }, {}, zone)
   assert.equal(component.selectedProfile, second)
-  component.keyDrafts.second = 'unsaved-vault-key'
+  second.apiKey = 'plugin-managed-key'
   second.name = 'Edited name'
   component.advancedOpen = true
   component.selectProfile(first.id)
@@ -1326,7 +1324,7 @@ test('settings switch the editor without changing the default or discarding edit
   assert.equal(component.selectedProfile, undefined)
   component.selectProfile(second.id)
   assert.equal(component.selectedProfile.name, 'Edited name')
-  assert.equal(component.keyDrafts.second, 'unsaved-vault-key')
+  assert.equal(second.apiKey, 'plugin-managed-key')
   assert.equal(saves, 0, 'editor navigation must not save or change configuration')
   component.setDefault(first.id)
   assert.equal(settings.defaultProfileId, first.id)
@@ -1341,12 +1339,11 @@ test('settings select new connections and keep a valid editor when removing sele
   const component = new CodexSettingsComponent({ store: { codexAgent: settings }, save: async () => {} }, {}, zone)
   const controller = new AbortController()
   component.testing.set(second.id, controller)
-  component.keyDrafts.second = 'draft'
   component.removeProfile(second)
   assert.equal(controller.signal.aborted, true)
   assert.equal(settings.defaultProfileId, '')
   assert.equal(component.selectedProfile, first)
-  assert.equal(component.keyDrafts.second, undefined)
+  assert.equal(settings.apiProfiles.some(profile => profile.id === second.id), false)
   component.addProfile()
   const added = component.selectedProfile
   assert.ok(added.id)
@@ -1376,4 +1373,413 @@ test('settings handle an empty list and select a neighboring connection after de
   component.selectProfile('b')
   component.removeProfile(profiles[1])
   assert.equal(component.selectedProfile.id, 'c')
+})
+
+test('Tabby capability tools and bundled skill reach every API provider', async t => {
+  for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+    const f = await fixture(t, provider, (req, res, round) => {
+      const system = req.body.instructions || req.body.system || req.body.messages[0].content
+      assert.match(system, /Tabby application skill/)
+      const names = req.body.tools.map(tool => tool.name || tool.function?.name)
+      for (const name of ['get_capabilities', 'read_window', 'open_profile', 'manage_profile', 'split_tab', 'run_command']) assert.ok(names.includes(name))
+      reply(provider, res, round, round === 1 ? { name: 'get_capabilities', args: {} } : null)
+    })
+    let called = false
+    f.agent.on('event', event => {
+      if (event.method === 'item/tool/call') {
+        assert.equal(event.params.tool, 'get_capabilities')
+        called = true
+        f.agent.respond(event.id, { success: true, contentItems: [{ text: '{"profileProviders":[]}' }] })
+      }
+    })
+    const completed = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, 'Discover Tabby', '/workspace', settings)
+    assert.equal((await completed).status, 'completed')
+    assert.equal(called, true)
+  }
+})
+
+for (const sandbox of ['read-only', 'workspace-write']) {
+  test(`Tabby command dispatch follows the API permission policy: ${sandbox}`, async t => {
+    const f = await fixture(t, 'deepseek', (req, res, round) => {
+      if (sandbox === 'read-only') assert.equal(req.body.tools.some(tool => ['run_command', 'write_config', 'interact_window', 'manage_profile'].includes(tool.function.name)), false)
+      reply('deepseek', res, round, round === 1 ? { name: 'run_command', args: { commandId: 'command-1' } } : null)
+    })
+    const calls = []
+    f.agent.on('event', event => {
+      if (event.method === 'item/commandExecution/requestApproval') { calls.push('approval'); f.agent.respond(event.id, { decision: 'decline' }) }
+      if (event.method === 'item/tool/call') { calls.push('execute'); f.agent.respond(event.id, { success: true }) }
+    })
+    const completed = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, 'Run a Tabby command', '/workspace', { ...settings, sandbox })
+    assert.equal((await completed).status, 'completed')
+    assert.deepEqual(calls, sandbox === 'read-only' ? [] : ['approval'])
+  })
+}
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  test(`${provider}: scheduling from chat uses the task namespace without terminal approval or execution`, async t => {
+    const f = await fixture(t, provider, (_req, res, round) => reply(provider, res, round, round === 1
+      ? { name: 'scheduled_task_create', args: { title: '巡检', instructions: '检查服务并根据输出处理故障', scheduleType: 'interval', intervalMinutes: 5 } } : undefined))
+    const tools = []
+    f.agent.on('event', event => {
+      if (event.id === undefined) return
+      tools.push(event)
+      assert.equal(event.method, 'item/tool/call')
+      assert.equal(event.params.namespace, 'tabby_tasks')
+      f.agent.respond(event.id, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ id: 'saved-task', nextRunAt: '2026-10-23T01:00:00Z' }) }] })
+    })
+    const done = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, '每五分钟执行服务巡检', '/workspace', settings)
+    assert.equal((await done).status, 'completed')
+    assert.equal(tools.length, 1)
+    assert.equal(tools[0].params.tool, 'scheduled_task_create')
+  })
+
+  test(`${provider}: scheduled runner feeds observed results back through real provider tool rounds`, async t => {
+    const plan = [
+      { name: 'read_tab', args: { tabId: 'fresh', waitMs: 0 } },
+      { name: 'send_input', args: { tabId: 'fresh', text: 'restart-app', submit: true } },
+      { name: 'read_tab', args: { tabId: 'fresh', waitMs: 0 } },
+      { name: 'scheduled_task_finish', args: { status: 'completed', evidence: 'After restart: healthy' } },
+    ]
+    const f = await fixture(t, provider, (req, res, round) => {
+      assert.ok(req.body.tools.some(tool => (tool.function?.name || tool.name) === 'scheduled_task_finish'))
+      if (round === 2) assert.match(JSON.stringify(req.body), /unhealthy/)
+      if (round === 4) assert.match(JSON.stringify(req.body), /healthy/)
+      reply(provider, res, round, plan[round - 1])
+    })
+    const scheduledStore = new ScheduledTaskStore(path.join(f.root, 'schedules'))
+    const task = await scheduledStore.create({ title: '服务巡检', instructions: 'Check app; restart only if unhealthy, then verify health.', scheduleType: 'interval', intervalMinutes: 5 }, '/workspace', f.profile.id, { ...settings, model: f.profile.model })
+    const claim = await scheduledStore.claim('fixture-window', Date.now(), task.id, '/workspace')
+    const calls = []
+    await new ScheduledWorkflowRunner(scheduledStore, task, claim.run, f.agent, {
+      call: async name => { calls.push(name); return name === 'read_tab' ? { text: calls.length === 1 ? 'unhealthy' : 'healthy' } : { sent: true, submitted: true } },
+      release: () => {}, approval: approval => { if (approval) assert.fail('scheduled runs must not request user approval') },
+    }).execute()
+    assert.deepEqual(calls, ['read_tab', 'send_input', 'read_tab'])
+    const record = (await scheduledStore.read()).runs[0]
+    assert.equal(record.status, 'completed')
+    assert.match(record.summary, /healthy/)
+    assert.ok(record.totalTokens > 0)
+    assert.equal(record.threadId === f.id, false, 'scheduled execution must have a fresh conversation')
+    assert.ok(record.entries.some(entry => /restart-app/.test(entry.text)))
+  })
+}
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  test(`${provider}: interactive agent attachment and Shift+Left retain tool arguments and approval policy`, async t => {
+    const plan = [
+      { name: 'attach_process', args: { tabId: 'agent', expectedProcess: 'codex', purpose: 'supervise the requested agent' } },
+      { name: 'send_keys', args: { tabId: 'agent', key: 'Left', shift: true } },
+    ]
+    const f = await fixture(t, provider, (req, res, round) => {
+      const names = req.body.tools.map(tool => tool.function?.name || tool.name)
+      assert.ok(names.includes('send_keys'))
+      assert.ok(names.includes('attach_process'))
+      reply(provider, res, round, plan[round - 1])
+    })
+    const approvals = [], operations = []
+    f.agent.on('event', event => {
+      if (event.id === undefined) return
+      if (event.method === 'item/commandExecution/requestApproval') {
+        approvals.push(event.params.reason)
+        f.agent.respond(event.id, { decision: 'accept' })
+      } else {
+        assert.equal(event.params.namespace, 'tabby_tabs')
+        operations.push({ name: event.params.tool, args: event.params.arguments })
+        f.agent.respond(event.id, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ sent: true }) }] })
+      }
+    })
+    const done = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, 'Control the existing Codex agent and follow its prompt to press Shift+Left', '/workspace', settings)
+    assert.equal((await done).status, 'completed')
+    assert.deepEqual(operations, plan)
+    assert.equal(approvals.length, 2)
+    assert.match(approvals[1], /send_keys/)
+  })
+}
+
+// This model stub derives each response from the tool results on the wire, rather
+// than a round-number plan. It verifies feedback plumbing, not model reasoning.
+function feedbackResults (provider, body) {
+  const messages = provider === 'openai' ? body.input : body.messages
+  const results = []
+  for (const message of messages) {
+    if (message.type === 'function_call_output') results.push(JSON.parse(message.output))
+    else if (message.role === 'tool') results.push(JSON.parse(message.content))
+    else if (message.role === 'user' && Array.isArray(message.content)) {
+      for (const block of message.content) if (block.type === 'tool_result') results.push(JSON.parse(block.content))
+    }
+  }
+  return results
+}
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  for (const variant of ['left-enter', 'down-tab', 'text-only']) {
+    test(`${provider}: same user goal follows changing agent output (${variant}) and waits without typing`, async t => {
+      let controlled = false
+      let screen = variant === 'left-enter' ? 'Press Shift+Left to select staging.'
+        : variant === 'down-tab' ? 'Press Down to select staging.' : 'Question: which branch should I test?'
+      let previousOperation = ''
+      let waitingReads = 0
+      let observedWaiting = false
+      const inputs = []
+      const f = await fixture(t, provider, (req, res, round) => {
+        assert.ok(round < 25, 'the supervisor must finish, not loop')
+        const latest = feedbackResults(provider, req.body).at(-1)
+        let next
+        if (latest?.recorded) {
+          reply(provider, res, round)
+          return
+        } else if (!latest || latest.sent || latest.attached) next = { name: 'read_tab', args: { tabId: 'agent', waitMs: 0 } }
+        else if (!latest.controlledByAI) next = { name: 'attach_process', args: { tabId: 'agent', expectedProcess: 'codex', purpose: '完成用户指定的 staging/release 测试' } }
+        else if (/Tests passed/.test(latest.text)) next = { name: 'scheduled_task_finish', args: { status: 'completed', evidence: latest.text } }
+        else if (/Please wait/.test(latest.text)) next = { name: 'read_tab', args: { tabId: 'agent', waitMs: 1000 } }
+        else if (/^Question:/.test(latest.text)) next = { name: 'send_input', args: { tabId: 'agent', mode: 'stdin', text: /branch/.test(latest.text) ? 'release' : 'staging', submit: true } }
+        else {
+          const match = latest.text.match(/Press (Shift\+Left|Down|Enter|Tab)/)
+          assert.ok(match, 'a key may only be chosen from the observed current prompt')
+          next = { name: 'send_keys', args: { tabId: 'agent', key: match[1].replace('Shift+', ''), ...(match[1].startsWith('Shift+') ? { shift: true } : {}) } }
+        }
+        reply(provider, res, round, next)
+      })
+      f.profile.maxIterations = 0
+      const scheduledStore = new ScheduledTaskStore(path.join(f.root, 'feedback-schedules'))
+      const task = await scheduledStore.create({ title: '根据 Agent 反馈完成任务', instructions: '控制已运行的 Codex，在 staging 测试 release 分支；根据它当前的输出判断并响应，直到验证测试通过。', scheduleType: 'interval', intervalMinutes: 5 },
+        '/workspace', f.profile.id, { ...settings, executable: 'codex', model: f.profile.model, reasoningEffort: '', approvalPolicy: 'never' })
+      assert.doesNotMatch(task.instructions, /Shift|Left|Down|Enter|Tab/)
+      const { run } = await scheduledStore.claim('feedback-window', Date.now(), task.id, '/workspace')
+      await new ScheduledWorkflowRunner(scheduledStore, task, run, f.agent, {
+        call: async (name, args) => {
+          if (name === 'attach_process') { controlled = true; previousOperation = name; return { attached: true } }
+          if (name === 'read_tab') {
+            if (/Please wait/.test(screen)) {
+              if (observedWaiting) assert.ok(args.waitMs > 0, 'wait when the agent asks for time')
+              observedWaiting = true
+              if (args.waitMs > 0) waitingReads++
+              if (waitingReads === 2) screen = 'Tests passed: staging / release.'
+            }
+            previousOperation = name
+            return { tabId: 'agent', text: screen, runningProcesses: ['codex'], controlledByAI: controlled }
+          }
+          assert.equal(previousOperation, 'read_tab', 'each input must be decided after reading the new output')
+          previousOperation = name
+          if (name === 'send_keys') {
+            const requested = screen.match(/Press (Shift\+Left|Down|Enter|Tab)/)?.[1]
+            const actual = (args.shift ? 'Shift+' : '') + args.key
+            assert.equal(actual, requested, 'keys must change with the observed agent prompt')
+            inputs.push(actual)
+            screen = /select staging/.test(screen)
+              ? variant === 'left-enter' ? 'Staging selected. Press Enter to continue.' : 'Staging selected. Press Tab to continue.'
+              : 'Question: which environment should I use?'
+          } else {
+            assert.equal(name, 'send_input')
+            assert.equal(args.mode, 'stdin')
+            assert.equal(args.text, /branch/.test(screen) ? 'release' : 'staging')
+            inputs.push('answer:' + args.text)
+            screen = 'Running tests. Please wait; do not type.'
+          }
+          return { sent: true }
+        }, release: () => {}, approval: request => { if (request) assert.fail('the fixture is configured for unattended operations') },
+      }).execute()
+      const record = (await scheduledStore.read()).runs[0]
+      assert.equal(record.status, 'completed', record.summary)
+      assert.equal(waitingReads, 2)
+      assert.deepEqual(inputs, variant === 'left-enter' ? ['Shift+Left', 'Enter', 'answer:staging']
+        : variant === 'down-tab' ? ['Down', 'Tab', 'answer:staging'] : ['answer:release'])
+      assert.match(record.summary, /Tests passed/)
+      assert.ok(record.entries.some(entry => entry.kind === 'output' && /Please wait/.test(entry.text)))
+    })
+  }
+}
+
+test('model connection metadata omits stored keys, endpoints and foreground conversation IDs', () => {
+  const config = { store: { codexAgent: { model: 'native-model', reasoningEffort: 'high', apiProfiles: [{ id: 'private-api', name: 'Reasoning', provider: 'claude', model: 'configured-model', reasoningEffort: 'high', apiKey: 'secret-key-never-expose', baseUrl: 'https://private-endpoint.invalid', apiKeyEnv: 'PRIVATE_API_KEY', threads: { '/project': 'foreground-id' } }] } } }
+  const factory = new AgentBackendFactory(config, {}, {}, {})
+  const metadata = factory.modelConnections()
+  assert.equal(metadata[1].model, 'configured-model')
+  assert.doesNotMatch(JSON.stringify(metadata), /secret-key|private-endpoint|PRIVATE_API_KEY|foreground-id/)
+})
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  test(`${provider}: conversation discovers model candidates and updates only its scheduled task`, async t => {
+    let taskId
+    const f = await fixture(t, provider, (req, res, round) => {
+      if (req.method === 'GET') {
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ data: [{ id: 'reasoning-candidate', description: 'Multi-step reasoning and tool use for complex diagnosis.', effort: { supported_levels: ['high'], default_level: 'high' } }], has_more: false }))
+        return
+      }
+      const probe = req.body.tools.find(tool => (tool.function?.name || tool.name) === 'confirm')
+      if (probe) {
+        const schema = probe.function?.parameters || probe.parameters || probe.input_schema
+        reply(provider, res, round, { name: 'confirm', args: { nonce: schema.properties.nonce.enum[0] } })
+        return
+      }
+      const latest = feedbackResults(provider, req.body).at(-1)
+      let next
+      if (!latest) next = { name: 'scheduled_task_models', args: { profileId: 'analysis-profile' } }
+      else if (latest.result?.models) {
+        const candidate = latest.result.models.find(model => model.description.includes('Multi-step reasoning'))
+        assert.ok(candidate, 'use actual candidate metadata returned by the model discovery tool')
+        next = { name: 'scheduled_task_set_model', args: { taskId, profileId: 'analysis-profile', model: candidate.model, reasoningEffort: 'high', reason: '任务需要多步诊断；候选描述支持多步推理和工具调用。没有价格与延迟对比数据。' } }
+      }
+      reply(provider, res, round, next)
+    })
+    const config = { store: { codexAgent: { executable: 'codex', model: 'native-default', reasoningEffort: '', defaultProfileId: f.profile.id, ...settings,
+      apiProfiles: [f.profile, { ...f.profile, id: 'analysis-profile', name: 'Analysis connection', model: 'configured-alternative' }], threads: { '/workspace': f.id } } } }
+    const configBefore = JSON.stringify(config.store)
+    const factory = new AgentBackendFactory(config, {}, { read: async () => 'fixture-secret' }, { getConfigPath: () => path.join(f.root, 'config.yaml') })
+    const scheduler = new ScheduledTasksService(config, { getConfigPath: () => path.join(f.root, 'config.yaml') }, factory,
+      { call: async () => assert.fail('selection cannot execute terminal operations') }, {})
+    const task = await scheduler.store.create({ title: '复杂诊断任务', instructions: '根据服务输出反复分析并验证修复结果', scheduleType: 'interval', intervalMinutes: 5 }, '/workspace', f.profile.id, { ...settings, model: f.profile.model })
+    taskId = task.id
+    f.agent.on('event', event => {
+      if (event.id === undefined) return
+      assert.equal(event.params.namespace, 'tabby_tasks')
+      scheduler.call(event.params.tool, event.params.arguments, '/workspace', f.profile.id, { ...settings, model: f.profile.model }).then(result => {
+        f.agent.respond(event.id, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
+      }, error => f.agent.respondError(event.id, error.message))
+    })
+    const done = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, '给这个复杂诊断的定时任务选择适合多步推理的模型，并说明依据。', '/workspace', settings)
+    assert.equal((await done).status, 'completed')
+    const updated = (await scheduler.store.read()).tasks[0]
+    assert.equal(updated.profileId, 'analysis-profile')
+    assert.equal(updated.settings.model, 'reasoning-candidate')
+    assert.equal(updated.settings.reasoningEffort, 'high')
+    assert.equal(updated.settings.approvalPolicy, settings.approvalPolicy)
+    assert.match(updated.modelSelectionReason, /多步推理/)
+    assert.equal(JSON.stringify(config.store), configBefore)
+    assert.equal(f.agent.profile.model, 'test-model')
+  })
+}
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  for (const failure of ['http-error', 'no-tool-call']) {
+    test(`${provider}: candidate readiness ${failure} tests and selects the plugin default before saving`, async t => {
+      const tested = []
+      const f = await fixture(t, provider, (req, res, round) => {
+        if (req.method === 'GET') {
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ data: [{ id: 'candidate-model', effort: { supported_levels: ['high'] } }] }))
+          return
+        }
+        tested.push(req.body.model)
+        const probe = req.body.tools.find(tool => (tool.function?.name || tool.name) === 'confirm')
+        assert.ok(probe)
+        if (req.body.model === 'candidate-model') {
+          const effort = req.body.reasoning?.effort || req.body.output_config?.effort || req.body.reasoning_effort
+          assert.equal(effort, 'high')
+          if (failure === 'http-error') {
+            res.writeHead(429, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ error: { message: 'rate limited token=do-not-save-this' } }))
+          } else reply(provider, res, round)
+          return
+        }
+        const schema = probe.function?.parameters || probe.parameters || probe.input_schema
+        reply(provider, res, round, { name: 'confirm', args: { nonce: schema.properties.nonce.enum[0] } })
+      })
+      const config = { store: { codexAgent: { executable: 'codex', model: 'native-default', reasoningEffort: '', defaultProfileId: f.profile.id, ...settings, apiProfiles: [f.profile] } } }
+      const before = JSON.stringify(config.store)
+      const platform = { getConfigPath: () => path.join(f.root, 'config.yaml') }
+      const factory = new AgentBackendFactory(config, {}, { read: async () => 'fixture-secret' }, platform)
+      const scheduler = new ScheduledTasksService(config, platform, factory, { call: async () => assert.fail('probe must not operate any terminal') }, {})
+      const created = await scheduler.call('scheduled_task_create', { title: '质量优先任务', instructions: '根据结果分析服务状态', scheduleType: 'interval', intervalMinutes: 5,
+        profileId: f.profile.id, model: 'candidate-model', reasoningEffort: 'high', selectionReason: '用户指定候选模型和 high' }, '/workspace', f.profile.id, { ...settings, model: f.profile.model })
+      assert.deepEqual(tested, ['candidate-model', 'test-model'])
+      assert.equal(created.result.settings.model, 'test-model')
+      assert.equal(created.result.settings.reasoningEffort, '')
+      assert.equal(created.result.modelCheck.fallbackUsed, true)
+      assert.equal(created.result.modelCheck.requestedModel, 'candidate-model')
+      assert.equal(created.result.modelCheck.selectedModel, 'test-model')
+      assert.equal(created.result.modelCheck.totalTokens, failure === 'no-tool-call' ? 30 : 15)
+      assert.ok(created.result.modelCheck.candidateError)
+      assert.doesNotMatch(JSON.stringify(await scheduler.store.read()), /do-not-save-this/)
+      assert.equal(JSON.stringify(config.store), before)
+      assert.equal(f.agent.profile.model, 'test-model')
+    })
+  }
+}
+
+for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  for (const fixAuthorized of [false, true]) {
+    test(`${provider}: supervisor preserves ${fixAuthorized ? 'authorized review-fix-verify' : 'review-only'} scope and receives the shared skill`, async t => {
+      // The model response is a protocol fixture, not an evaluation of real model judgment.
+      const operations = []
+      const f = await fixture(t, provider, (req, res, round) => {
+        const system = provider === 'openai' ? req.body.instructions : provider === 'claude' ? req.body.system : req.body.messages[0].content
+        assert.ok(system.includes(require('../src/tabby-knowledge.json').skill))
+        const latest = feedbackResults(provider, req.body).at(-1)
+        let next
+        if (!latest || latest.sent) next = { name: 'read_tab', args: { tabId: 'agent', waitMs: 0 } }
+        else if (fixAuthorized && latest.text.includes('Review: P1/P2 confirmed; awaiting fix.')) next = { name: 'send_input', args: {
+          tabId: 'agent', mode: 'stdin', text: '用户已授权修复：请实际修改确认的 P1/P2，运行回归测试，再审查并修复新增的确认问题；保留已有改动，不提交推送。', submit: true,
+        } }
+        reply(provider, res, round, next)
+      })
+      f.agent.on('event', event => {
+        if (event.id === undefined) return
+        if (event.method === 'item/commandExecution/requestApproval') {
+          assert.equal(fixAuthorized, true)
+          f.agent.respond(event.id, { decision: 'accept' })
+          return
+        }
+        const { tool, arguments: input } = event.params
+        const args = typeof input === 'string' ? JSON.parse(input) : input
+        operations.push(tool)
+        if (tool === 'send_input') {
+          assert.equal(fixAuthorized, true)
+          assert.equal(args.mode, 'stdin')
+          assert.equal(args.submit, true)
+          assert.match(args.text, /实际修改.*回归测试.*再审查/)
+        } else assert.equal(tool, 'read_tab')
+        const result = tool === 'read_tab' ? { text: operations.includes('send_input') ? 'Changes applied; tests passed; re-review has no confirmed P0/P1/P2.' : 'Review: P1/P2 confirmed; awaiting fix.', controlledByAI: true }
+          : { sent: true }
+        f.agent.respond(event.id, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
+      })
+      const done = turnFinished(f.agent)
+      await f.agent.startTurn(f.id, fixAuthorized ? '监督这个 Agent，修复已确认的 P1/P2 并验证，不要只给 review。' : '只审查这个 Agent 的结果并报告，不修改代码。', '/workspace', settings)
+      assert.equal((await done).status, 'completed')
+      assert.deepEqual(operations, fixAuthorized ? ['read_tab', 'send_input', 'read_tab'] : ['read_tab'])
+    })
+  }
+}
+
+test('settings manage all scheduled workspaces and require ended runs and explicit deletion confirmation', async t => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tabby-settings-schedules-'))
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }))
+  const config = { store: { codexAgent: { apiProfiles: [] } } }
+  const scheduler = new ScheduledTasksService(config, { getConfigPath: () => path.join(root, 'config.yaml') }, {}, {}, {})
+  const args = { title: '巡检', instructions: '检查并验证服务状态', scheduleType: 'interval', intervalMinutes: 5 }
+  const saved = { ...settings, executable: 'codex', model: '', reasoningEffort: '' }
+  const first = await scheduler.store.create(args, '/one', '', saved)
+  const second = await scheduler.store.create(args, '/two', '', saved)
+  const component = new CodexSettingsComponent(config, {}, zone, { markForCheck () {}, detectChanges () {} }, undefined, scheduler)
+  t.after(() => component.ngOnDestroy())
+  await component.openSchedules()
+  assert.equal(component.schedulesOpen, true)
+  assert.equal(component.memoryOpen, false)
+  assert.deepEqual(component.scheduleData.tasks.map(task => task.cwd), ['/one', '/two'])
+  await component.scheduleAction('delete', first)
+  assert.equal((await scheduler.store.read()).tasks.length, 2, 'unconfirmed clicks do not delete')
+  const claim = await scheduler.store.claim('another-window', Date.now(), first.id, first.cwd)
+  await scheduler.refresh()
+  component.scheduleDeleteId = first.id
+  await component.scheduleAction('delete', first)
+  assert.match(component.scheduleNotice, /先停止/)
+  await scheduler.store.mutateRun(claim.run.id, claim.run.owner, run => { run.status = 'completed'; run.finishedAt = Date.now() })
+  await scheduler.refresh()
+  await component.scheduleAction('delete', first)
+  assert.match(component.scheduleNotice, /已删除/)
+  assert.deepEqual(component.scheduleData.tasks.map(task => task.id), [second.id])
+  assert.equal(component.scheduleData.runs.length, 0)
+  await component.scheduleAction('toggle', second)
+  assert.equal(component.scheduleData.tasks[0].enabled, false)
+  component.selectProfile('')
+  assert.equal(component.schedulesOpen, false)
+  assert.equal(component.scheduleDeleteId, '')
+  component.ngOnDestroy()
+  assert.equal(scheduler.changes$.observers.length, 0)
 })

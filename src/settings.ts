@@ -11,12 +11,22 @@ import { discoverApiModels } from './api-models'
 import type { CodexModel } from './codex.service'
 import { TaskMemoryService } from './task-memory.service'
 import { TaskWorkflow, TaskPreference, workflowInstructions } from './task-memory'
+import { Subscription } from 'rxjs'
+import { ScheduledTasksService } from './scheduled-tasks.service'
+import { ScheduleDocument, ScheduledTask, ScheduledRun, activeRun } from './scheduled-tasks'
 
 @Component({ template: require('./settings.pug'), styles: [require('./settings.css')] })
 export class CodexSettingsComponent implements OnDestroy {
   selectedProfileId = ''
   advancedOpen = false
   memoryOpen = false
+  schedulesOpen = false
+  scheduleLoading = false
+  scheduleSaving = false
+  scheduleNotice = ''
+  scheduleDeleteId = ''
+  scheduleData: ScheduleDocument = { version: 1, tasks: [], runs: [] }
+  private scheduleSubscription?: Subscription
   memoryLoading = false
   memorySaving = false
   memoryNotice = ''
@@ -32,9 +42,7 @@ export class CodexSettingsComponent implements OnDestroy {
   preferenceScope = 'global'
   preferenceCwd = ''
   readonly providerNames: Record<ApiProvider, string> = { openai: 'OpenAI', deepseek: 'DeepSeek', glm: 'GLM · 智谱', claude: 'Claude' }
-  keyDrafts: Record<string, string> = {}
   notice = ''
-  savingKey = false
   connectionTests: Record<string, { running: boolean; notice: string }> = {}
   modelLists: Record<string, { running: boolean; notice: string; models: CodexModel[] }> = {}
   private fetchingModels = new Map<string, AbortController>()
@@ -43,18 +51,77 @@ export class CodexSettingsComponent implements OnDestroy {
   get settings (): AgentSettings { return this.config.store.codexAgent as AgentSettings }
   get profiles (): ApiProfile[] { return this.settings.apiProfiles || [] }
   get selectedProfile (): ApiProfile | undefined { return this.profiles.find(profile => profile.id === this.selectedProfileId) }
-  constructor (public config: ConfigService, private secrets: AgentSecretsService, private zone: NgZone, private changeDetector?: ChangeDetectorRef, private memory?: TaskMemoryService) {
+  constructor (public config: ConfigService, private secrets: AgentSecretsService, private zone: NgZone, private changeDetector?: ChangeDetectorRef, private memory?: TaskMemoryService, private schedules?: ScheduledTasksService) {
     this.selectedProfileId = this.profiles.find(profile => profile.id === this.settings.defaultProfileId)?.id || this.profiles[0]?.id || ''
+    this.scheduleSubscription = this.schedules?.changes$.subscribe(data => this.zone.run(() => {
+      if (this.destroyed) return
+      this.scheduleData = data
+      if (!data.tasks.some(task => task.id === this.scheduleDeleteId)) this.scheduleDeleteId = ''
+      this.changeDetector?.markForCheck()
+    }))
   }
   selectProfile (id: string): void {
     this.memoryOpen = false
+    this.schedulesOpen = false
+    this.scheduleDeleteId = ''
     this.selectedProfileId = id
     this.advancedOpen = false
   }
   async openMemory (): Promise<void> {
+    this.schedulesOpen = false
+    this.scheduleDeleteId = ''
     this.memoryOpen = true
     this.memoryNotice = ''
     await this.refreshMemory()
+  }
+  async openSchedules (): Promise<void> {
+    this.memoryOpen = false
+    this.schedulesOpen = true
+    this.scheduleDeleteId = ''
+    await this.refreshSchedules()
+  }
+  async refreshSchedules (): Promise<void> {
+    this.scheduleLoading = true
+    this.scheduleNotice = ''
+    try {
+      if (!this.schedules) throw new Error('定时任务暂不可用')
+      await this.schedules.refresh()
+    } catch (error: any) { this.scheduleNotice = `读取失败：${error.message}` }
+    finally { this.zone.run(() => { this.scheduleLoading = false; if (!this.destroyed) this.changeDetector?.detectChanges() }) }
+  }
+  scheduleDescription (task: ScheduledTask): string {
+    const s = task.schedule
+    return s.type === 'daily' ? `每日 ${s.time}（${s.timezone}）` : s.type === 'interval' ? `每 ${s.minutes} 分钟` : `单次 ${this.scheduleTime(s.at)}`
+  }
+  scheduleTime (time?: number | null): string { return time ? new Date(time).toLocaleString() : '无后续计划' }
+  scheduleRun (task: ScheduledTask): ScheduledRun | undefined { return this.scheduleData.runs.find(run => run.taskId === task.id && activeRun(run)) }
+  scheduleLastRun (task: ScheduledTask): ScheduledRun | undefined { return this.scheduleData.runs.find(run => run.id === task.lastRunId) }
+  scheduleStatus (task: ScheduledTask): string {
+    if (this.scheduleRun(task)) return '运行中'
+    const run = this.scheduleLastRun(task)
+    if (!task.enabled && run && run.status !== 'completed') return '已暂停 · 需检查执行记录'
+    return task.enabled ? '已启用' : task.schedule.type === 'at' && task.nextRunAt === null ? '单次已触发' : '已暂停'
+  }
+  async scheduleAction (action: 'toggle' | 'stop' | 'delete', task: ScheduledTask): Promise<void> {
+    if (this.scheduleSaving || !this.schedules) return
+    if (action === 'delete' && this.scheduleDeleteId !== task.id) return
+    this.scheduleSaving = true
+    this.scheduleNotice = ''
+    try {
+      if (action === 'delete') {
+        await this.schedules.remove(task.id, task.cwd)
+        this.scheduleDeleteId = ''
+        this.scheduleNotice = '任务及执行记录已删除，重启后不会重新加载'
+      } else if (action === 'toggle') {
+        await this.schedules.setEnabled(task.id, task.cwd, !task.enabled)
+        this.scheduleNotice = task.enabled ? '已暂停后续触发' : '已恢复定时'
+      } else {
+        const run = this.scheduleRun(task)
+        if (run) this.schedules.stopRun(run.id)
+        this.scheduleNotice = '已请求停止，请等待本次运行结束后再删除'
+      }
+    } catch (error: any) { this.scheduleNotice = `操作失败：${error.message}` }
+    finally { this.zone.run(() => { this.scheduleSaving = false; if (!this.destroyed) this.changeDetector?.detectChanges() }) }
   }
   async refreshMemory (): Promise<void> {
     this.memoryLoading = true
@@ -141,7 +208,6 @@ export class CodexSettingsComponent implements OnDestroy {
     this.settings.apiProfiles = this.profiles.filter(item => item.id !== profile.id)
     if (this.settings.defaultProfileId === profile.id) this.settings.defaultProfileId = ''
     if (this.selectedProfileId === profile.id) this.selectProfile(this.profiles[Math.min(index, this.profiles.length - 1)]?.id || '')
-    delete this.keyDrafts[profile.id]
     delete this.connectionTests[profile.id]
     this.save()
   }
@@ -159,8 +225,7 @@ export class CodexSettingsComponent implements OnDestroy {
   changeKeySource (profile: ApiProfile, source: ApiKeySource): void {
     this.clearModelList(profile)
     profile.keySource = source
-    profile.useVault = source === 'vault'
-    delete this.keyDrafts[profile.id]
+    profile.useVault = false
     this.save()
   }
   clearModelList (profile: ApiProfile): void {
@@ -187,17 +252,6 @@ export class CodexSettingsComponent implements OnDestroy {
       update(false, models.length ? `已获取 ${models.length} 个模型，可选择或手动输入模型 ID` : '服务端未返回可用模型，请手动填写模型 ID', models)
     } catch (error: any) { update(false, `获取模型列表失败：${error.message}`) }
     finally { if (this.fetchingModels.get(profile.id) === controller) this.fetchingModels.delete(profile.id) }
-  }
-  async saveKey (profile: ApiProfile): Promise<void> {
-    if (this.savingKey) return
-    this.savingKey = true
-    try {
-      await this.secrets.save(profile, this.keyDrafts[profile.id] || '')
-      this.clearModelList(profile)
-      this.keyDrafts[profile.id] = ''
-      this.notice = '密钥已保存到 Tabby Vault'
-    } catch (error: any) { this.notice = error.message }
-    finally { this.zone.run(() => { this.savingKey = false }) }
   }
   async testProfile (profile: ApiProfile): Promise<void> {
     if (this.testing.has(profile.id)) return
@@ -228,6 +282,7 @@ export class CodexSettingsComponent implements OnDestroy {
   cancelTest (profile: ApiProfile): void { this.testing.get(profile.id)?.abort() }
   ngOnDestroy (): void {
     this.destroyed = true
+    this.scheduleSubscription?.unsubscribe()
     for (const controller of this.testing.values()) controller.abort()
     for (const controller of this.fetchingModels.values()) controller.abort()
   }

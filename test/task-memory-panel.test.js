@@ -137,3 +137,22 @@ test('/remember persists a workspace preference without model inference and /wor
   assert.equal(f.panel.workflowPanelOpen, false)
   assert.equal(f.sent.length, 0)
 })
+
+for (const api of [false, true]) {
+  test(`${api ? 'API' : 'Codex'} panel routes scheduling tools to the scheduler without executing terminal commands`, async t => {
+    const f = await setup(t, api)
+    const calls = []
+    f.panel.agents.scheduler = { call: async (...args) => { calls.push(args); return { result: { id: 'saved-task' } } }, refresh: async () => {} }
+    const args = { title: '每天巡检', instructions: '检查服务，按输出决定后续操作', scheduleType: 'daily', time: '09:00', timezone: 'Asia/Shanghai' }
+    f.panel.handleEvent({ id: 45, method: 'item/tool/call', params: { threadId: 'thread', namespace: 'tabby_tasks', tool: 'scheduled_task_create', arguments: args } })
+    await flush()
+    assert.equal(calls.length, 1)
+    assert.deepEqual(calls[0].slice(0, 4), ['scheduled_task_create', args, '/project', api ? 'deepseek' : ''])
+    assert.equal(f.tools.length, 0)
+    assert.equal(f.replies[0][1].success, true)
+    assert.match(f.replies[0][1].contentItems[0].text, /saved-task/)
+    await f.panel.runSlashCommand('/schedules')
+    assert.equal(f.panel.schedulePanelOpen, true)
+    assert.equal(f.sent.length, 0)
+  })
+}

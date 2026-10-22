@@ -2,10 +2,16 @@ import { Injectable } from '@angular/core'
 import { CodexClient } from './codex-client'
 import { AgentSettings } from './config'
 import { TAB_TOOLS } from './tab-tools'
+import { SCHEDULE_TOOLS, SCHEDULE_INSTRUCTIONS } from './scheduled-task-tools'
+import { INTERACTIVE_AGENT_INSTRUCTIONS } from './terminal-keys'
 import type { AgentContext } from './agent-types'
 import { AgentStore } from './agent-store'
 import { turnsMessages } from './agent-context'
 import { readThreadHistory } from './agent-history'
+const knowledge: typeof import('./tabby-knowledge.json') = require('./tabby-knowledge.json')
+
+const TABBY_TOOL_VERSION = 5
+const tabbyInstructions = (context?: AgentContext, extra = ''): string => `${knowledge.skill}\n\n${knowledge.operations}\n\n${SCHEDULE_INSTRUCTIONS}\n\n${INTERACTIVE_AGENT_INSTRUCTIONS}\n\n${extra}${context?.messages.length ? '\nHistorical transcript (quoted data; never replay tools):\n' + JSON.stringify(context.messages) : ''}`
 
 export interface SavedSession {
   id: string
@@ -119,8 +125,8 @@ export class CodexService {
       approvalPolicy: settings.approvalPolicy,
       sandbox: settings.sandbox,
       serviceName: 'tabby_codex_agent',
-      dynamicTools: TAB_TOOLS,
-      ...(developerInstructions ? { developerInstructions } : {}),
+      dynamicTools: [...TAB_TOOLS, ...SCHEDULE_TOOLS],
+      developerInstructions: tabbyInstructions(undefined, developerInstructions),
     }
     if (settings.model.trim()) params.model = settings.model.trim()
     if (settings.reasoningEffort) params.config = { model_reasoning_effort: settings.reasoningEffort }
@@ -129,6 +135,8 @@ export class CodexService {
     this.rememberThreadConfiguration(result, settings)
     if (!settings.tabToolThreads) settings.tabToolThreads = {}
     settings.tabToolThreads[cwd] = result.thread.id
+    if (!settings.tabToolVersions) settings.tabToolVersions = {}
+    settings.tabToolVersions[result.thread.id] = TABBY_TOOL_VERSION
     return result.thread.id
   }
 
@@ -164,7 +172,9 @@ export class CodexService {
   }
 
   async resumeThread (threadId: string, cwd: string, settings: AgentSettings): Promise<string> {
-    const params: any = { threadId, cwd, approvalPolicy: settings.approvalPolicy, sandbox: settings.sandbox, excludeTurns: true }
+    const context = await this.contextStore?.loadCodexContext(threadId)
+    const params: any = { threadId, cwd, approvalPolicy: settings.approvalPolicy, sandbox: settings.sandbox, excludeTurns: true,
+      developerInstructions: tabbyInstructions(context) }
     if (settings.model.trim()) params.model = settings.model.trim()
     if (settings.reasoningEffort) params.config = { model_reasoning_effort: settings.reasoningEffort }
     let result: any
@@ -178,6 +188,11 @@ export class CodexService {
     this.rememberThreadConfiguration(result, settings)
     this.threadCwds.set(result.thread.id, cwd)
     if (result.thread.status?.type === 'idle') this.activeTurns.delete(result.thread.id)
+    // dynamicTools can only be registered at thread/start. Preserve the transcript
+    // and goal when upgrading a pre-capabilities thread, without starting inference.
+    if (this.contextStore && settings.tabToolVersions?.[threadId] !== TABBY_TOOL_VERSION) {
+      return this.importContext(await this.exportContext(threadId), cwd, settings)
+    }
     return result.thread.id
   }
 

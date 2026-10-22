@@ -100,6 +100,13 @@
   .editor-heading > .default-badge, .editor-default { margin-left: 40px; }
 }
 [data-provider='memory'] { --provider-rgb: 70, 159, 154; }
+[data-provider='schedules'] { --provider-rgb: 109, 139, 164; }
+.schedule-manager { overflow-wrap: anywhere; }
+.schedule-summary { margin: 12px 0; white-space: pre-wrap; font-size: 12px; }
+.schedule-details { margin-top: 12px; font-size: 12px; }
+.schedule-details summary { cursor: pointer; }
+.schedule-details pre { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; font-family: inherit; }
+.schedule-delete { margin-top: 12px; padding: 12px; border: 1px solid var(--settings-border); border-radius: 8px; font-size: 12px; }
 .memory-enable { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 13px; cursor: pointer; }
 .memory-enable input { flex: none; margin: 0; }
 .memory-manager .settings-section { margin-top: 24px; }

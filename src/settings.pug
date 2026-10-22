@@ -18,7 +18,7 @@
         strong 连接
         span.settings-count {{profiles.length + 1}}
       .connection-list
-        button.connection-item(type='button', *ngFor='let profile of profiles; trackBy: trackProfile', (click)='selectProfile(profile.id)', [class.connection-selected]='!memoryOpen && selectedProfileId === profile.id', [attr.aria-pressed]='!memoryOpen && selectedProfileId === profile.id', [attr.data-provider]='profile.provider', aria-controls='agent-connection-editor')
+        button.connection-item(type='button', *ngFor='let profile of profiles; trackBy: trackProfile', (click)='selectProfile(profile.id)', [class.connection-selected]='!memoryOpen && !schedulesOpen && selectedProfileId === profile.id', [attr.aria-pressed]='!memoryOpen && !schedulesOpen && selectedProfileId === profile.id', [attr.data-provider]='profile.provider', aria-controls='agent-connection-editor')
           span.provider-mark(aria-hidden='true') {{providerNames[profile.provider].slice(0, 1)}}
           span.connection-info
             span.connection-name-row
@@ -26,7 +26,7 @@
               span.default-badge(*ngIf='settings.defaultProfileId === profile.id') 默认
             span.connection-provider {{providerNames[profile.provider]}}
             span.connection-model([title]='profile.model') {{profile.model || '未设置模型'}}
-        button.connection-item.connection-local(type='button', (click)='selectProfile("")', [class.connection-selected]='!memoryOpen && !selectedProfile', [attr.aria-pressed]='!memoryOpen && !selectedProfile', data-provider='codex', aria-controls='agent-connection-editor')
+        button.connection-item.connection-local(type='button', (click)='selectProfile("")', [class.connection-selected]='!memoryOpen && !schedulesOpen && !selectedProfile', [attr.aria-pressed]='!memoryOpen && !schedulesOpen && !selectedProfile', data-provider='codex', aria-controls='agent-connection-editor')
           span.provider-mark(aria-hidden='true') C
           span.connection-info
             span.connection-name-row
@@ -39,9 +39,48 @@
         span.connection-info
           span.connection-name 任务流程与偏好
           span.connection-provider 归档 · 复用 · 操作习惯
-      p.connection-nav-hint.settings-muted 点击连接切换配置
-    section#agent-connection-editor.settings-editor([attr.data-provider]='memoryOpen ? "memory" : selectedProfile?.provider || "codex"', aria-label='当前连接配置')
-      ng-container(*ngIf='memoryOpen; else connectionEditor')
+      button.connection-item.connection-memory(type='button', (click)='openSchedules()', [class.connection-selected]='schedulesOpen', [attr.aria-pressed]='schedulesOpen', data-provider='schedules', aria-controls='agent-connection-editor')
+        span.provider-mark(aria-hidden='true') T
+        span.connection-info
+          span.connection-name 定时任务
+          span.connection-provider 后台执行 · 计划与删除
+      p.connection-nav-hint.settings-muted 点击项目切换配置
+    section#agent-connection-editor.settings-editor([attr.data-provider]='schedulesOpen ? "schedules" : memoryOpen ? "memory" : selectedProfile?.provider || "codex"', aria-label='AI Tools 配置')
+      ng-container(*ngIf='schedulesOpen')
+        .editor-heading
+          span.provider-mark(aria-hidden='true') T
+          .editor-identity
+            .editor-eyebrow 本地计划 · {{scheduleData.tasks.length}} 个任务
+            h4 定时任务
+            .editor-model.settings-muted 无人值守运行 · 重启自动加载
+          button.btn.btn-outline-secondary.editor-default(type='button', (click)='refreshSchedules()', [disabled]='scheduleLoading || scheduleSaving') 刷新
+        .editor-body.schedule-manager
+          p.settings-muted 通过 AI 对话创建任务。这里显示所有工作目录的计划；Tabby 打开时执行，关闭期间错过的触发在重启后合并执行一次。运行中被退出打断的任务暂停待检查。
+          p.settings-muted 定时会话不询问审批，保留任务沙箱范围；遇到提问会结合任务目标查找信息并自动决策；需要额外授权时停止并留档。
+          p.settings-notice(role='status', aria-live='polite', *ngIf='scheduleNotice') {{scheduleNotice}}
+          p.settings-muted(role='status', *ngIf='scheduleLoading') 正在读取定时任务…
+          p.memory-empty.settings-muted(*ngIf='!scheduleLoading && !scheduleData.tasks.length') 暂无定时任务。可在对话中要求“每天北京时间 9 点检查服务并验证结果”。
+          article.memory-workflow(*ngFor='let task of scheduleData.tasks')
+            .memory-row
+              .memory-row-info
+                strong {{task.title}}
+                small.settings-muted {{task.cwd}}
+                small.settings-muted {{scheduleStatus(task)}} · {{scheduleDescription(task)}}
+                small.settings-muted 下次：{{scheduleTime(task.nextRunAt)}}
+              button.btn.btn-outline-secondary(type='button', (click)='scheduleAction("toggle", task)', [disabled]='scheduleSaving || scheduleLoading') {{task.enabled ? '暂停后续触发' : '恢复定时'}}
+              button.btn.btn-outline-secondary(type='button', *ngIf='scheduleRun(task)', (click)='scheduleAction("stop", task)', [disabled]='scheduleSaving') 停止本次运行
+              button.btn.btn-link.text-danger(type='button', (click)='scheduleDeleteId = task.id', [disabled]='scheduleSaving || scheduleLoading || !!scheduleRun(task)', [attr.aria-label]='"删除定时任务：" + task.title', [attr.aria-expanded]='scheduleDeleteId === task.id') 删除
+            p.settings-muted(*ngIf='scheduleRun(task)') 运行中的任务需先停止，等待结束后再删除；其他窗口的运行请到对应窗口停止。
+            p.schedule-summary(*ngIf='scheduleLastRun(task)?.summary') 最近结果：{{scheduleLastRun(task)?.summary}}
+            details.schedule-details
+              summary 任务要求
+              pre {{task.instructions}}
+            .schedule-delete(*ngIf='scheduleDeleteId === task.id', role='group', aria-label='确认删除定时任务')
+              p 确认删除“{{task.title}}”及其执行记录？删除后不再触发，无法恢复。
+              .memory-row
+                button.btn.btn-outline-danger(type='button', (click)='scheduleAction("delete", task)', [disabled]='scheduleSaving || !!scheduleRun(task)') 确认删除任务及记录
+                button.btn.btn-link(type='button', (click)='scheduleDeleteId = ""', [disabled]='scheduleSaving') 取消
+      ng-container(*ngIf='memoryOpen && !schedulesOpen')
         .editor-heading
           span.provider-mark(aria-hidden='true') M
           .editor-identity
@@ -115,7 +154,7 @@
             .memory-row.memory-preference-save
               button.btn.btn-outline-primary(type='button', (click)='savePreference()', [disabled]='memorySaving || !preferenceDraft.trim()') {{preferenceDraftId ? '保存偏好' : '添加偏好'}}
               button.btn.btn-link(type='button', *ngIf='preferenceDraftId', (click)='preferenceDraftId = ""; preferenceDraft = ""', [disabled]='memorySaving') 取消编辑
-      ng-template(#connectionEditor)
+      ng-container(*ngIf='!schedulesOpen && !memoryOpen')
         ng-container(*ngIf='selectedProfile as profile; else codexSettings')
           .editor-heading
             span.provider-mark(aria-hidden='true') {{providerNames[profile.provider].slice(0, 1)}}
@@ -165,21 +204,16 @@
                   select.form-control([id]='"api-source-" + profile.id', [ngModel]='keySource(profile)', (ngModelChange)='changeKeySource(profile, $event)')
                     option(value='direct') 直接输入
                     option(value='environment') 环境变量
-                    option(value='vault') Tabby Vault
+                    option(*ngIf='keySource(profile) === "vault"', value='vault', disabled='') 旧 Vault 配置（请选择其他来源）
                 .settings-field.settings-field-wide(*ngIf='keySource(profile) === "direct"')
                   label([attr.for]='"api-key-" + profile.id') API Key
                   input.form-control(type='password', [id]='"api-key-" + profile.id', [(ngModel)]='profile.apiKey', (ngModelChange)='modelConnectionChanged(profile)', autocomplete='off', spellcheck='false', [attr.aria-describedby]='"api-key-hint-" + profile.id')
-                  small.settings-muted([id]='"api-key-hint-" + profile.id') 保存在本地 Tabby 插件配置中，无需启用 Vault。
+                  small.settings-muted([id]='"api-key-hint-" + profile.id') 由插件保存在本地 Tabby 配置中。
                 .settings-field.settings-field-wide(*ngIf='keySource(profile) === "environment"')
                   label([attr.for]='"api-env-" + profile.id') 环境变量名
                   input.form-control([id]='"api-env-" + profile.id', [(ngModel)]='profile.apiKeyEnv', (ngModelChange)='modelConnectionChanged(profile)')
                   small.settings-muted 使用 Tabby 进程继承的环境变量，修改变量后需要重启 Tabby。
-                .settings-field.settings-field-wide(*ngIf='keySource(profile) === "vault"')
-                  label([attr.for]='"api-vault-" + profile.id') 保存密钥到 Vault
-                  .settings-input-action
-                    input.form-control(type='password', [id]='"api-vault-" + profile.id', [(ngModel)]='keyDrafts[profile.id]', autocomplete='new-password')
-                    button.btn.btn-outline-secondary(type='button', (click)='saveKey(profile)', [disabled]='savingKey || !keyDrafts[profile.id]') 保存密钥
-                  small.settings-muted 先在 Tabby 中启用 Vault。密钥不写入普通插件配置；输入框不会回显已保存的密钥。
+                p.settings-notice(*ngIf='keySource(profile) === "vault"', role='status') 插件不再访问 Vault。请选择直接输入或环境变量，并重新配置 API Key。
             .settings-advanced
               button.advanced-toggle(type='button', (click)='advancedOpen = !advancedOpen', [attr.aria-expanded]='advancedOpen', aria-controls='api-advanced-fields')
                 span.advanced-chevron(aria-hidden='true') {{advancedOpen ? '−' : '+'}}

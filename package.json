@@ -26,6 +26,10 @@
   ],
   "main": "dist/index.js",
   "scripts": {
+    "skill:bundle": "node scripts/bundle-tabby-skill.mjs",
+    "skill:check": "node scripts/bundle-tabby-skill.mjs --check",
+    "skill:update": "node scripts/update-tabby-knowledge.mjs",
+    "prebuild": "npm run skill:bundle",
     "build": "webpack --mode production",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.cjs",
@@ -38,6 +42,7 @@
     "dist",
     "README.md",
     "docs",
+    "skills",
     "VALIDATION.md"
   ],
   "devDependencies": {

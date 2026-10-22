@@ -27,6 +27,7 @@ export async function discoverApiModels (configured: ApiProfile, getKey: () => P
           ? item.effort.supported_levels.filter((value: unknown) => typeof value === 'string' && value)
           : profile.provider === 'deepseek' ? ['low', 'high', 'max'] : []
         models.set(item.id, { model: item.id, displayName: item.display_name || item.name || item.id,
+          description: typeof item.description === 'string' ? item.description.slice(0, 2000) : '',
           isDefault: item.id === profile.model,
           defaultReasoningEffort: levels.includes(item.effort?.default_level) ? item.effort.default_level : '',
           supportedReasoningEfforts: levels.map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort })) })

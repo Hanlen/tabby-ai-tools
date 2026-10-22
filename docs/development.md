@@ -43,3 +43,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate-windows.ps1 -Executa
 用户已在 Windows Node v24.13.0 验证无 PATH 的真实 Codex 自动发现、初始化、6 条流式增量、completed 和 marker，以及 cmd/bat 两项测试。显式枚举全部测试的旧结果为 89 通过、2 项夹具失败、1 项 POSIX 跳过；修正后的 exe / auto discovery 夹具和 npm test 入口待 Windows 重跑。本次验证的具体平台、命令和结果见 [VALIDATION.md](../VALIDATION.md)。
 
 实现依据：[Tabby 插件开发说明](https://github.com/Eugeny/tabby/blob/master/HACKING.md)、[Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server)及 [Codex Goal 官方说明](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)。
+
+## Tabby 能力 skill 与每周同步
+
+[`skills/tabby/SKILL.md`](../skills/tabby/SKILL.md) 是插件自带的操作知识入口，[操作路由](../skills/tabby/references/operations.md)区分直接工具、Tabby 命令提供者和设置控件。源码构建时将 skill 与官方快照合入 `src/tabby-knowledge.json`，再编译到 `dist/index.js`，因此离线安装也可使用。Codex 新线程和恢复线程注入相同知识，API 模式每次请求注入；旧版 Codex 工具线程在有本地上下文存储时迁移历史与目标，新建具备当前工具的线程，迁移不会启动推理。
+
+`TabbyCapabilitiesService` 通过公开的 `CommandProvider`、`ToolbarButtonProvider`、`TabContextMenuItemProvider`、`ProfilesService` 与设置提供者发现当前可用功能。未导出的 `CommandService` 不能作为插件依赖。第三方功能只有注册命令、配置档或可访问的标签控件时才能操作。所有修改工具共享只读检查，API 模式继续走已有审批流程。
+
+```bash
+npm run skill:update # 联网获取官方固定提交的功能摘要、公开 API 签名和快捷键
+npm run skill:bundle # 离线重新生成内嵌知识
+npm run skill:check  # 检查内嵌知识与 skill 文件是否一致
+```
+
+同步从官方 GitHub API 获取同一提交下的全部文件，并保留来源 URL、SHA-256 和 MIT 许可。任一下载失败时保留已有快照；内容未变时不产生仅时间戳的更新。模型只能按需将上游快照作为参考读取，同步脚本不执行上游代码。
+
+`.github/workflows/update-tabby-knowledge.yml` 在每周一 01:00 UTC（北京时间 09:00）运行，也支持手动触发。验证通过且有变化时创建或更新 `automation/tabby-capabilities` 分支的 PR。需要将工作流合入 GitHub 默认分支，并在仓库 Actions 设置启用工作流创建 Pull Request 的权限；本地修改尚不会触发定时任务。GitHub 调度可能延迟，公共仓库长时间无活动时也可能停用 schedule。PR 合并并发布插件后，用户升级才能得到新的打包资料；新增 API 适配仍需实现与验证。
+
+## Review 与已授权修复
+
+纯 review 请求只审查和报告，不能据此自动改码。用户明确要求 fix、修复确认问题或监督其他终端 Agent 完成修复后，交付应包含实际修改、相关回归和再次审查；范围内仍有确认的 P0/P1/P2 时继续修复，有外部阻碍则说明证据与未完成项。不能以 review 报告或修复计划代替已授权的修复，也不能从审查请求推断提交、推送、发布或权限变更授权。
+
+仓库没有独立的 review/fix 状态机或调度器；此规则放入共用 `skills/tabby/SKILL.md`，通过 bundle 注入 Codex 新建/恢复线程和全部 API 供应商请求。回归验证共用知识的实际传递，以及模拟监督 Agent 在 review-only 和 fix-authorized 两种请求下的工具往返、审批与验证反馈；它不是对真实模型决策的证明。终端与审查修复事故的根因、具体改动及验证边界见 [2026-10-22 修复记录](incidents/2026-10-22-review-fix.md)。

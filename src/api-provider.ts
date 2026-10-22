@@ -27,7 +27,7 @@ export class ApiProviderAdapter {
     return results.map(result => ({ role: 'tool', tool_call_id: result.id, content: result.result }))
   }
 
-  async generate (messages: any[], system: string, tools: ToolDefinition[], signal: AbortSignal, onText: (text: string) => void, onProgress?: (progress: StreamProgress) => void): Promise<ModelResult> {
+  async generate (messages: any[], system: string, tools: ToolDefinition[], signal: AbortSignal, onText: (text: string) => void, onProgress?: (progress: StreamProgress) => void, onUsage?: (totalTokens: number) => void): Promise<ModelResult> {
     const p = this.profile
     const openai = p.provider === 'openai'
     const claude = p.provider === 'claude'
@@ -73,12 +73,17 @@ export class ApiProviderAdapter {
         if (event.type === 'response.output_text.delta') onText(event.delta || '')
         if (event.type === 'response.reasoning_summary_text.delta') progress('thinking', event.delta || '')
         if (event.type === 'response.function_call_arguments.delta') progress('tools', event.delta || '')
+        if (['response.completed', 'response.failed', 'response.incomplete'].includes(event.type)) {
+          const usage = event.response?.usage
+          if (usage) {
+            usageReported = true
+            inputTokens = usage.input_tokens || 0; outputTokens = usage.output_tokens || 0
+            totalTokens = usage.total_tokens ?? inputTokens + outputTokens
+            onUsage?.(totalTokens)
+          }
+        }
         if (event.type === 'response.completed') {
           responseOutput = event.response?.output
-          const usage = event.response?.usage
-          usageReported = !!usage
-          inputTokens = usage?.input_tokens || 0; outputTokens = usage?.output_tokens || 0
-          totalTokens = usage?.total_tokens ?? inputTokens + outputTokens
           stop = 'end'
         }
         if (['response.failed', 'response.incomplete'].includes(event.type)) throw new Error('模型输出失败或达到输出上限；本轮未完成')
@@ -87,6 +92,7 @@ export class ApiProviderAdapter {
           const usage = event.message?.usage
           usageReported = !!usage
           inputTokens = (usage?.input_tokens || 0) + (usage?.cache_read_input_tokens || 0) + (usage?.cache_creation_input_tokens || 0)
+          onUsage?.(inputTokens + outputTokens)
         }
         if (event.type === 'content_block_start') blocks[event.index] = { ...event.content_block }
         if (event.type === 'content_block_delta') {
@@ -101,6 +107,7 @@ export class ApiProviderAdapter {
         if (event.type === 'message_delta') {
           stop = event.delta?.stop_reason || stop
           outputTokens = event.usage?.output_tokens || 0
+          onUsage?.(inputTokens + outputTokens)
         }
         if (event.type === 'message_stop') {
           claudeStopped = true
@@ -108,6 +115,12 @@ export class ApiProviderAdapter {
           if (!stop) throw new Error('Claude 流缺少 stop_reason')
         }
       } else {
+        if (event.usage) {
+          usageReported = true
+          inputTokens = event.usage.prompt_tokens || 0; outputTokens = event.usage.completion_tokens || 0
+          totalTokens = event.usage.total_tokens ?? inputTokens + outputTokens
+          onUsage?.(totalTokens)
+        }
         const choice = event.choices?.[0]
         const delta = choice?.delta
         if (delta?.content) { text += delta.content; onText(delta.content) }
@@ -122,11 +135,6 @@ export class ApiProviderAdapter {
           calls.set(part.index, call)
         }
         if (choice?.finish_reason) stop = choice.finish_reason
-        if (event.usage) {
-          usageReported = true
-          inputTokens = event.usage.prompt_tokens || 0; outputTokens = event.usage.completion_tokens || 0
-          totalTokens = event.usage.total_tokens ?? inputTokens + outputTokens
-        }
       }
     }
     if (signal.aborted) throw new Error('请求已停止')

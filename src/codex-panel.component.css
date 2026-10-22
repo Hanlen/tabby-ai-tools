@@ -130,3 +130,14 @@
 .codex-workflow-heading strong{overflow-wrap:anywhere}
 .codex-workflow-heading small{opacity:.7}
 .codex-workflow pre{max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit;font:inherit;user-select:text}
+.codex-schedules{align-self:stretch;display:flex;flex-direction:column;gap:8px;min-height:0;max-height:340px;border:1px solid rgba(127,127,127,.3);border-radius:6px;padding:8px;font-size:12px}
+.codex-schedule-list{overflow:auto;min-height:0}
+.codex-schedule{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid rgba(127,127,127,.25);overflow-wrap:anywhere}
+.codex-schedules pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit;font:inherit;user-select:text;margin:4px 0}
+.codex-schedules .btn{min-height:28px}
+.codex-schedules button:focus-visible,.codex-schedules summary:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.codex-scheduled-approval{border:1px solid currentColor;border-radius:4px;padding:6px;max-height:160px;overflow:auto;flex-shrink:0}
+.codex-scheduled-records details{padding:6px 0;border-top:1px solid rgba(127,127,127,.25)}
+.codex-scheduled-records summary{cursor:pointer;overflow-wrap:anywhere}
+.codex-scheduled-records small{display:block}
+.codex-run-entry{border-inline-start:2px solid rgba(127,127,127,.3);padding-inline-start:6px;margin-top:8px}
