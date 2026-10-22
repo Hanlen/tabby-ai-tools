@@ -15,6 +15,7 @@ import { AgentBackendFactory } from './agent-backend.service'
 import { AgentBackend, ApiProfile } from './agent-types'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions } from './task-memory'
+import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 const OUTPUT_BATCH_LIMIT = 2000
@@ -52,6 +53,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   memoryNotice = ''
   skipTaskMemory = false
   workflowPanelOpen = false
+  schedulePanelOpen = false
+  scheduleLoading = false
+  scheduleError = ''
+  selectedScheduledTaskId = ''
+  expandedScheduledRunId = ''
+  private scheduleSubscriptions = new Subscription()
   workflowLoading = false
   workflowError = ''
   workflows: TaskWorkflow[] = []
@@ -143,6 +150,54 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   })
 
   get apiProfiles (): ApiProfile[] { return this.config.store.codexAgent.apiProfiles || [] }
+  get scheduledTasks (): ScheduledTask[] { return this.agents?.scheduler?.changes$.value.tasks.filter(t => t.cwd === this.cwd) || [] }
+  get scheduledRuns (): ScheduledRun[] {
+    return (this.agents?.scheduler?.changes$.value.runs || []).filter(r => r.taskId === this.selectedScheduledTaskId).sort((a, b) => b.startedAt - a.startedAt)
+  }
+  get scheduledApproval () {
+    const approval = this.agents?.scheduler?.approvals$.value
+    const run = this.agents?.scheduler?.changes$.value.runs.find(r => r.id === approval?.runId)
+    return run && this.scheduledTasks.some(t => t.id === run.taskId) ? approval : undefined
+  }
+  get scheduledServiceError (): string { return this.agents?.scheduler?.error || '' }
+  scheduleTime (time?: number | null): string { return time ? new Date(time).toLocaleString() : '无后续计划' }
+  scheduleDescription (task: ScheduledTask): string {
+    const s = task.schedule
+    return s.type === 'daily' ? `每日 ${s.time}（${s.timezone}）` : s.type === 'interval' ? `每 ${s.minutes} 分钟` : `单次 ${this.scheduleTime(s.at)}`
+  }
+  scheduledConnectionLabel (task: ScheduledTask): string {
+    const profileId = task.modelCheck?.requestedProfileId ?? task.profileId
+    return profileId ? this.apiProfiles.find(p => p.id === profileId)?.name || '已移除的 API 连接' : 'Codex'
+  }
+  scheduledPermissionLabel (task: ScheduledTask): string {
+    const sandbox = { 'read-only': '只读', 'workspace-write': '工作区可写', 'danger-full-access': '完全访问' }[task.settings.sandbox]
+    return `无人值守 · 不询问 · ${sandbox}`
+  }
+  scheduledEntryLabel (kind: string): string { return ({ action: '操作', output: '执行结果', assistant: 'AI 说明', status: '状态' } as Record<string, string>)[kind] || kind }
+  scheduledRunLabel (run: ScheduledRun): string {
+    return { running: '执行中', waiting_approval: '等待审批', completed: '已完成', failed: '失败', interrupted: '已中断', needs_attention: '需人工处理' }[run.status]
+  }
+  scheduledTaskRunning (task: ScheduledTask): boolean {
+    return !!this.agents?.scheduler?.changes$.value.runs.some(r => r.taskId === task.id && ['running', 'waiting_approval'].includes(r.status))
+  }
+  async openSchedules (): Promise<void> {
+    this.schedulePanelOpen = true
+    await this.scheduleAction('refresh')
+  }
+  async scheduleAction (action: 'refresh' | 'toggle' | 'run' | 'stop', task?: ScheduledTask, run?: ScheduledRun): Promise<void> {
+    if (this.scheduleLoading) return
+    this.scheduleLoading = true; this.scheduleError = ''
+    try {
+      const scheduler = this.agents?.scheduler
+      if (!scheduler) throw new Error('定时任务服务不可用')
+      if (action === 'toggle' && task) await scheduler.setEnabled(task.id, this.cwd, !task.enabled)
+      else if (action === 'run' && task) await scheduler.runNow(task.id, this.cwd)
+      else if (action === 'stop' && run) scheduler.stopRun(run.id)
+      else await scheduler.refresh()
+    } catch (error: any) { this.scheduleError = String(error.message) }
+    finally { this.zone.run(() => { this.scheduleLoading = false; this.changeDetector?.detectChanges() }) }
+  }
+  decideScheduledApproval (accept: boolean): void { this.scheduledApproval?.decide(accept) }
   get apiMode (): boolean { return !!this.codex.profile }
   get agentLabel (): string { return this.codex.profile?.name || 'Codex' }
   get settings (): AgentSettings {
@@ -192,6 +247,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       { command: '/resume', description: '历史会话' },
       { command: '/status', description: '当前状态' },
       { command: '/workflows', description: '当前目录的任务流程库' },
+      { command: '/schedules', description: '定时 AI 任务与执行记录' },
       { command: '/remember', description: '记住一条当前目录的操作偏好' },
       { command: '/help', description: '查看命令' },
     ].filter(item => item.command.startsWith(this.prompt.toLowerCase()))
@@ -460,8 +516,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         break
       case '/status': await this.openStatus(); break
       case '/workflows': await this.openWorkflows(); break
+      case '/schedules': await this.openSchedules(); break
       case '/remember': this.status = '用法：/remember 操作偏好；例如 /remember 此项目优先使用 pnpm'; break
-      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/workflows、/remember 偏好、/help'; break
+      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/workflows、/schedules、/remember 偏好、/help'; break
     }
   }
 
@@ -634,6 +691,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async ngOnInit (): Promise<void> {
+    const scheduler = this.agents?.scheduler
+    if (scheduler) {
+      this.scheduleSubscriptions.add(scheduler.changes$.subscribe(() => this.zone.run(() => this.changeDetector?.detectChanges())))
+      this.scheduleSubscriptions.add(scheduler.approvals$.subscribe(() => this.zone.run(() => this.changeDetector?.detectChanges())))
+    }
     if (this.sourceTerminal) this.bindSource(this.sourceTerminal)
     this.outputSubscription = this.terminalOutput.updates$.subscribe(terminal => {
       if (terminal === this.sourceTerminal) this.scheduleOutputFlush()
@@ -909,7 +971,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         if (!this.modelError) await this.selectModel(args.join(' '))
         return
       }
-      if (['/model', '/new', '/resume', '/status', '/workflows', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {
+      if (['/model', '/new', '/resume', '/status', '/workflows', '/schedules', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {
         await this.runSlashCommand(command.toLowerCase())
         return
       }
@@ -1121,7 +1183,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         const owner = this.threadId
         const memory = this.agents?.memory
         const token = memory?.enabled ? memory.activeLibrary?.token(owner) : undefined
-        void (p.namespace === 'tabby_tabs' ? this.tabTools.call(p.tool, p.arguments, { owner: this.threadId, signal: p.signal, confirmTakeover: request => this.confirmTakeover(request) }) : Promise.reject(new Error('Unknown tool namespace'))).then(result => {
+        const operation = p.namespace === 'tabby_tasks'
+          ? this.agents?.scheduler?.call(p.tool, p.arguments, this.cwd, this.profileId, this.settings, p.signal) || Promise.reject(new Error('定时任务服务不可用'))
+          : p.namespace === 'tabby_tabs' ? this.tabTools.call(p.tool, p.arguments, { owner: this.threadId, signal: p.signal, readOnly: this.settings.sandbox === 'read-only', confirmTakeover: request => this.confirmTakeover(request) }) : Promise.reject(new Error('Unknown tool namespace'))
+        void operation.then(result => {
           if (memory?.enabled) memory.activeLibrary?.record(owner, token, p.tool, p.arguments, result)
           client.respond(event.id!, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
         }, error => {
@@ -1381,6 +1446,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.scheduleSubscriptions.unsubscribe()
     this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
     this.modelListSequence++
     this.chatScroll?.destroy()

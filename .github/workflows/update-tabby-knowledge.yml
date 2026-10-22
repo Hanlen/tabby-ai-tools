@@ -1,0 +1,47 @@
+name: Update Tabby capabilities
+
+on:
+  schedule:
+    # Monday 09:00 Asia/Shanghai (GitHub schedules are UTC).
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tabby-capability-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run skill:update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm run skill:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/tabby-capabilities
+          commit-message: 'docs: refresh official Tabby capabilities'
+          title: 'docs: refresh official Tabby capabilities'
+          body: |
+            Refresh the bundled Tabby skill reference from a single pinned official commit.
+
+            Check source signatures for adapter changes before merging. This updates documentation;
+            new upstream APIs still need a compatible host adapter. Validated bundle, types, tests and build.
+          add-paths: |
+            skills/tabby/references/upstream.json
+            src/tabby-knowledge.json

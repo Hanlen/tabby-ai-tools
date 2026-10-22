@@ -31,10 +31,14 @@ test('old threads are upgraded and new threads retain Tabby tools on resume', as
   assert.equal(await service.openThread('/project', settings, 'old-thread'), 'tool-thread')
   assert.equal(calls[0].method, 'thread/start')
   assert.equal(calls[0].params.dynamicTools[0].name, 'tabby_tabs')
+  assert.ok(calls[0].params.developerInstructions.includes(require('../src/tabby-knowledge.json').skill))
+  assert.equal(calls[0].params.dynamicTools[1].name, 'tabby_tasks')
+  assert.ok(calls[0].params.dynamicTools[1].tools.some(tool => tool.name === 'scheduled_task_create'))
   assert.equal(settings.tabToolThreads['/project'], 'tool-thread')
   assert.equal(await service.openThread('/project', settings, 'tool-thread'), 'tool-thread')
   assert.equal(calls[1].method, 'thread/resume')
   assert.equal(calls[1].params.excludeTurns, true)
+  assert.ok(calls[1].params.developerInstructions.includes(require('../src/tabby-knowledge.json').skill))
 })
 
 test('session history lists this plugin\'s sessions for the current directory', async () => {
@@ -139,4 +143,37 @@ test('model list includes visible models across pages and chosen model reaches t
   assert.deepEqual((await service.listModels()).map(model => model.model), ['model-a', 'model-b'])
   await service.startTurn('thread-1', 'Do a task', '/project', { sandbox: 'workspace-write', approvalPolicy: 'on-request', model: 'model-b' })
   assert.equal(calls.at(-1).params.model, 'model-b')
+})
+
+test('resuming a pre-capabilities thread preserves context and upgrades tools without inference', async () => {
+  const service = new CodexService()
+  const calls = [], saved = new Map()
+  const transcript = [{ role: 'user', content: 'Keep the server running' }]
+  const oldContext = { sourceThreadId: 'api-source', sourceFingerprint: 'api', cwd: '/project', messages: transcript, turns: [], totalTokens: 12 }
+  service.setContextStore({
+    loadCodexContext: async id => id === 'old' ? oldContext : saved.get(id)?.context,
+    loadCodexContextRecord: async id => saved.get(id),
+    saveCodexContext: async (id, context, goalPending) => saved.set(id, { context, goalPending }),
+  })
+  service.client.request = async (method, params) => {
+    calls.push({ method, params })
+    if (method === 'thread/resume') return { thread: { id: 'old', status: { type: 'idle' } } }
+    if (method === 'thread/read') return { thread: { id: 'old', cwd: '/project', status: { type: 'idle' }, turns: [{ id: 'turn', status: 'completed', items: [{ id: 'answer', type: 'agentMessage', text: 'Server is running' }] }] } }
+    if (method === 'thread/goal/get') return { goal: { objective: 'Inspect server', status: 'active', tokenBudget: 100, tokensUsed: 20 } }
+    if (method === 'thread/start') return { thread: { id: 'upgraded' } }
+    if (method === 'thread/goal/set') return {}
+    throw new Error(`Unexpected request ${method}`)
+  }
+  const settings = { model: '', sandbox: 'workspace-write', approvalPolicy: 'on-request', tabToolThreads: { '/project': 'old' } }
+  assert.equal(await service.resumeThread('old', '/project', settings), 'upgraded')
+  assert.equal(saved.get('upgraded').context.messages[0].content, transcript[0].content)
+  assert.ok(saved.get('upgraded').context.messages.some(m => m.content === 'Server is running'))
+  assert.equal(saved.get('upgraded').goalPending, true)
+  assert.equal(settings.tabToolVersions.upgraded, 5)
+  assert.equal(settings.tabToolThreads['/project'], 'upgraded')
+  assert.equal(calls.some(c => c.method === 'turn/start'), false)
+  const start = calls.find(c => c.method === 'thread/start')
+  assert.match(start.params.developerInstructions, /Tabby application skill/)
+  assert.match(start.params.developerInstructions, /Keep the server running/)
+  assert.equal(calls.find(c => c.method === 'thread/goal/set').params.status, 'paused')
 })

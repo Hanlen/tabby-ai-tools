@@ -157,6 +157,52 @@
       button.btn.btn-primary.btn-sm(type='button', (click)='decide("accept")', [disabled]='isUserInputRequest() && !canSubmitRequest()') {{isUserInputRequest() ? '提交答案' : '允许'}}
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decide("decline")') {{isUserInputRequest() ? '跳过' : '拒绝'}}
   .codex-compose
+    .codex-schedules(*ngIf='schedulePanelOpen', aria-label='定时 AI 任务')
+      .codex-detail-heading
+        strong 定时任务与执行记录
+        .codex-detail-actions
+          button.btn.btn-link.btn-sm(type='button', (click)='scheduleAction("refresh")', [disabled]='scheduleLoading') 刷新
+          button.btn.btn-link.btn-sm(type='button', (click)='schedulePanelOpen = false', aria-label='关闭定时任务面板') ×
+      small 通过对话创建，例如“每天北京时间 9 点检查服务，异常时分析日志并修复，最多尝试 3 次，最后验证恢复”。仅在 Tabby 打开时执行。
+      small(*ngIf='scheduleLoading', role='status') 正在处理定时任务…
+      small.codex-detail-error(*ngIf='scheduleError || scheduledServiceError', role='alert') {{scheduleError || scheduledServiceError}}
+      .codex-scheduled-approval(*ngIf='scheduledApproval', role='status')
+        strong 定时任务等待你的审批
+        pre {{scheduledApproval.title}}
+        .codex-request-actions
+          button.btn.btn-primary.btn-sm(type='button', (click)='decideScheduledApproval(true)') 允许本次操作
+          button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decideScheduledApproval(false)') 拒绝并停止
+      .codex-schedule-list
+        small(*ngIf='!scheduleLoading && !scheduledTasks.length') 当前目录暂无定时任务。
+        article.codex-schedule(*ngFor='let task of scheduledTasks')
+          strong {{task.title}}
+          small {{task.enabled ? '已启用' : task.schedule.type === 'at' && task.nextRunAt === null ? '单次已触发' : '已暂停'}} · {{scheduleDescription(task)}}
+          small 下次：{{scheduleTime(task.nextRunAt)}} · {{scheduledConnectionLabel(task)}} · {{(task.modelCheck ? task.modelCheck.requestedModel : task.settings.model) || '默认模型'}}
+          small {{scheduledPermissionLabel(task)}}
+          small(*ngIf='task.modelSelectionReason') 选模说明：{{task.modelSelectionReason}}
+          small(*ngIf='task.modelCheck') {{task.modelCheck.fallbackUsed ? '首选测试失败，默认模型测试通过；运行时重试首选' : '模型测试通过'}} · {{scheduleTime(task.modelCheck.testedAt)}}
+          .codex-request-actions
+            button.btn.btn-outline-secondary.btn-sm(type='button', (click)='scheduleAction("toggle", task)', [disabled]='scheduleLoading') {{task.enabled ? '暂停后续触发' : '恢复定时'}}
+            button.btn.btn-outline-secondary.btn-sm(type='button', (click)='scheduleAction("run", task)', [disabled]='scheduleLoading || scheduledTaskRunning(task)') 立即运行
+            button.btn.btn-link.btn-sm(type='button', (click)='selectedScheduledTaskId = selectedScheduledTaskId === task.id ? "" : task.id', [attr.aria-expanded]='selectedScheduledTaskId === task.id') 执行记录
+          .codex-scheduled-records(*ngIf='selectedScheduledTaskId === task.id')
+            pre {{task.instructions}}
+            small(*ngIf='!scheduledRuns.length') 暂无执行记录。
+            details(*ngFor='let run of scheduledRuns', #runDetails='', (toggle)='expandedScheduledRunId = run.id')
+              summary {{scheduleTime(run.startedAt)}} · {{scheduledRunLabel(run)}}
+              p {{run.summary || '正在执行，尚未确认完成'}}
+              small 计划时间：{{scheduleTime(run.scheduledAt)}} · 结束：{{run.finishedAt ? scheduleTime(run.finishedAt) : '尚未结束'}}
+              small 运行 ID：{{run.id}} · 会话：{{run.threadId || '连接中'}}
+              small(*ngIf='run.model !== undefined') 本次模型：{{run.model || 'Codex 默认'}} · 推理强度：{{run.reasoningEffort || '默认'}}
+              small(*ngIf='run.modelSelectionReason') 选模说明：{{run.modelSelectionReason}}
+              small(*ngIf='run.modelCheck') 本次模型测试通过{{run.modelCheck.fallbackUsed ? ' · 已回退默认模型' : ''}}
+              small(*ngIf='run.probeTokens') 模型测试 Token：{{run.probeTokens}}
+              small(*ngIf='run.totalTokens !== undefined') Token：{{run.totalTokens}}
+              button.btn.btn-outline-danger.btn-sm(type='button', *ngIf='run.status === "running" || run.status === "waiting_approval"', (click)='scheduleAction("stop", undefined, run)', [disabled]='scheduleLoading') 停止本次运行
+              ng-container(*ngIf='runDetails.open')
+                .codex-run-entry(*ngFor='let entry of run.entries')
+                  small {{scheduleTime(entry.at)}} · {{scheduledEntryLabel(entry.kind)}}
+                  pre {{entry.text}}
     .codex-workflows(*ngIf='workflowPanelOpen')
       .codex-detail-heading
         strong 当前目录的任务流程
@@ -176,6 +222,7 @@
     .codex-memory-notice(*ngIf='memoryNotice', role='status') {{memoryNotice}}
     .codex-memory-actions
       button.btn.btn-link.btn-sm(type='button', (click)='openWorkflows()') 任务流程
+      button.btn.btn-link.btn-sm(type='button', (click)='openSchedules()') 定时任务{{scheduledApproval ? ' · 待审批' : ''}}
       label
         input(type='checkbox', [(ngModel)]='skipTaskMemory', [disabled]='busy')
         | 本次不检索记忆
