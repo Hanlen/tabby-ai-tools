@@ -84,7 +84,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 ## 安装与开始使用
 
-1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完全退出并重启 Tabby。
+1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完成后点击设置页的重启提示（**Restart the app to apply changes**）；安装和升级均在重启后生效。
 2. 使用本机 Codex 登录，或在 **Settings → AI Tools** 添加 API 连接。
 3. 打开目标终端，点击工具栏机器人图标，输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。
 
