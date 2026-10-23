@@ -16,7 +16,9 @@
 
 ### 安装插件
 
-在 Tabby 打开 **Settings → Plugins**，搜索 **`tabby-ai-tools`**（或 `ai-tools`），安装后**完全退出并重启 Tabby**。插件通过 [npm](https://www.npmjs.com/package/tabby-ai-tools) 分发，新版本可能需要等待搜索索引更新。
+在 Tabby 打开 **Settings → Plugins**，搜索 **`tabby-ai-tools`**（或 `ai-tools`），安装完成后点击设置页的重启提示（**Restart the app to apply changes**）。安装和升级均在重启后生效；提示不会替你自动重启，可以先处理当前终端工作，再点击重启。这个提示由 Tabby 内置插件管理器提供。插件通过 [npm](https://www.npmjs.com/package/tabby-ai-tools) 分发，新版本可能需要等待搜索索引更新。
+
+插件目前不会自动下载或安装新版。需要更新时，在 **Settings → Plugins → Installed** 点击可用的升级按钮，再点击重启提示加载新版；npm 上发布新版本不会自动更改本机已安装的插件。
 
 从源码安装需要 Node.js 20+：
 
@@ -33,7 +35,7 @@ npm run build
 npm run install:tabby -- "<Tabby 插件目录路径>"
 ```
 
-完全退出并重启 Tabby，在 **已安装插件** 中确认 AI Tools。构建和安装会自动携带模型使用的 skill，无需单独安装。
+源码复制安装后，完全退出并重新打开 Tabby，在 **已安装插件** 中确认 AI Tools。本地复制脚本独立于 Tabby 进程运行，不会触发应用内插件管理器的重启提示。构建和安装会自动携带模型使用的 skill，无需单独安装。
 
 ### 开始第一个任务
 

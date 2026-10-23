@@ -13,6 +13,10 @@ npm run build
 
 CI 使用 Node.js 20，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
 
+### 安装后的重启提示
+
+Tabby 在应用内安装、升级插件后，已由[内置插件管理器](https://github.com/Eugeny/tabby/blob/master/tabby-plugin-manager/src/components/pluginsSettingsTab.component.ts)调用 `ConfigService.requestRestart()`。设置页据此显示“Restart the app to apply changes”，点击时通过 `HostAppService.relaunch()` 重启。首次安装时插件尚未加载，提示由宿主负责；本插件启动成功后不需要再次请求重启。`install:tabby` 是独立的文件复制脚本，无法直接调用 Tabby 进程内的注入服务，仍需用户手动重启。
+
 ## 界面翻译
 
 语言文件位于 `src/locales/`，支持的语言和区域代码映射在 `src/i18n.ts`，`AgentI18nService` 负责跟随 Tabby 的 `LocaleService` 或读取插件的独立语言设置。英语是回退语言；所有语言文件直接打包，运行时不访问翻译服务。默认 README 使用英语，中文保留在 `README.zh-CN.md`，两份都随 npm 包和本地安装分发。

@@ -84,7 +84,7 @@ Use `/schedules` to inspect plans and run records, pause or resume, run immediat
 
 ## Install and start
 
-1. In Tabby, open **Settings → Plugins**, find **`tabby-ai-tools`**, and install it. Fully quit and restart Tabby.
+1. In Tabby, open **Settings → Plugins**, find **`tabby-ai-tools`**, and install it. Click Tabby's **Restart the app to apply changes** prompt when ready; installations and updates take effect after the restart.
 2. Use your local Codex login, or add an API connection under **Settings → AI Tools**.
 3. Open the target terminal, click the robot icon, describe a task, and send with **Ctrl+Enter / Cmd+Enter**.
 
