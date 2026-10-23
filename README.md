@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.png">
-    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="640" height="320">
+    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.png">
+    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="640" height="320">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/overview.png)
+![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 

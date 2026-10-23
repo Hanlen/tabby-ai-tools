@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.png">
-    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.gif" alt="萌萌的小机器人敲着键盘，同时协调多个终端窗口中的任务" width="640" height="320">
+    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.png">
+    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="萌萌的小机器人敲着键盘，同时协调多个终端窗口中的任务" width="640" height="320">
   </picture>
 </p>
 
@@ -13,7 +13,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 0.2.1 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/overview.png)
+![Tabby AI Tools 0.2.1 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 

@@ -61,6 +61,53 @@ async function claim(t) {
 }
 const output = result => JSON.parse(result.contentItems[0].text)
 
+test('atomic schedule updates retry sharing violations without reapplying changes or removing the previous file', async t => {
+  const f = await fixture(t)
+  await f.store.create(args, '/project', '', settings)
+  const previous = await fs.promises.readFile(f.store.file, 'utf8')
+  const originalRename = fs.promises.rename
+  const failures = ['EPERM', 'EACCES', 'EBUSY']
+  let attempts = 0, changes = 0
+  t.mock.method(fs.promises, 'rename', async (from, to) => {
+    if (to === f.store.file) {
+      attempts++
+      if (failures.length) {
+        assert.equal(await fs.promises.readFile(to, 'utf8'), previous)
+        throw Object.assign(new Error('temporary sharing violation'), { code: failures.shift() })
+      }
+    }
+    return originalRename(from, to)
+  })
+  await f.store.update(data => { changes++; data.tasks[0].title = 'updated after retry' })
+  assert.equal(changes, 1)
+  assert.equal(attempts, 4)
+  assert.equal((await new ScheduledTaskStore(f.root).read()).tasks[0].title, 'updated after retry')
+  assert.deepEqual(await fs.promises.readdir(f.root), ['scheduled-tasks.json'])
+})
+
+test('permanent replacement errors are bounded, preserve the previous schedule and clean up the lock', async t => {
+  const f = await fixture(t)
+  await f.store.create(args, '/project', '', settings)
+  const previous = await fs.promises.readFile(f.store.file, 'utf8')
+  const originalRename = fs.promises.rename
+  let code = 'EIO', attempts = 0, changes = 0
+  const mock = t.mock.method(fs.promises, 'rename', async (from, to) => {
+    if (to === f.store.file) { attempts++; throw Object.assign(new Error('replacement failed'), { code }) }
+    return originalRename(from, to)
+  })
+  await assert.rejects(f.store.update(data => { changes++; data.tasks[0].title = 'must not persist' }), { code: 'EIO' })
+  assert.equal(attempts, 1)
+  code = 'EPERM'; attempts = 0
+  await assert.rejects(f.store.update(data => { changes++; data.tasks[0].title = 'still must not persist' }), { code: 'EPERM' })
+  assert.equal(attempts, 9)
+  assert.equal(changes, 2)
+  assert.equal(await fs.promises.readFile(f.store.file, 'utf8'), previous)
+  assert.deepEqual(await fs.promises.readdir(f.root), ['scheduled-tasks.json'])
+  mock.mock.restore()
+  await f.store.update(data => { data.tasks[0].title = 'recovered' })
+  assert.equal((await f.store.read()).tasks[0].title, 'recovered')
+})
+
 test('schedule validation requires explicit offsets, future instants, and valid intervals/timezones', () => {
   const now = Date.parse('2026-10-22T00:00:00Z')
   assert.throws(() => parseSchedule({ scheduleType: 'at', at: '2026-10-23T09:00:00' }, now), /ISO/)
