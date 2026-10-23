@@ -13,7 +13,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.0 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](docs/assets/overview.png)
+![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 

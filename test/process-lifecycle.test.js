@@ -79,8 +79,13 @@ require('readline').createInterface({input:process.stdin}).on('line',line=>{
   let alive = true
   try { process.kill(descendant, 0) } catch (error) { if (error.code === 'ESRCH') alive = false; else throw error }
   if (alive && process.platform === 'linux') {
-    const stat = fs.readFileSync(`/proc/${descendant}/stat`, 'utf8')
-    assert.match(stat.slice(stat.lastIndexOf(')') + 1), /^ Z /)
+    try {
+      const stat = fs.readFileSync(`/proc/${descendant}/stat`, 'utf8')
+      assert.match(stat.slice(stat.lastIndexOf(')') + 1), /^ Z /)
+    } catch (error) {
+      // The kernel can reap the zombie after kill(pid, 0) succeeds.
+      if (error.code !== 'ENOENT') throw error
+    }
   } else assert.equal(alive, false)
 })
 
