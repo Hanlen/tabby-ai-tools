@@ -1,6 +1,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const Module = require('node:module')
 const ts = require('typescript')
 const { spawn, spawnSync } = require('node:child_process')
@@ -22,9 +24,16 @@ Module._load = load; require.extensions['.ts'] = extension
 
 const available = process.platform === 'linux' && ['script', 'bash', 'less'].every(name => spawnSync('which', [name], { stdio: 'ignore' }).status === 0)
 test('real Linux PTY bash/less stays operable with unavailable enumeration and releases on command completion', { skip: available ? false : 'Requires Linux util-linux script, bash and less; not a Tabby/SSH E2E test', timeout: 10000 }, async t => {
-  const child = spawn('script', ['-qefc', 'stty rows 24 cols 80; exec bash --noprofile --norc -i', '/dev/null'], {
+  // Bash versions may discard an inherited PS1. Set the fixture's prompt in a
+  // private rc file so the test does not depend on the runner's Bash defaults.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-pty-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const rcfile = path.join(directory, 'bashrc')
+  fs.writeFileSync(rcfile, "PS1='PTY_PROMPT> '\n")
+  const quotedRcfile = "'" + rcfile.replace(/'/g, "'\\''") + "'"
+  const child = spawn('script', ['-qefc', `stty rows 24 cols 80; exec bash --noprofile --rcfile ${quotedRcfile} -i`, '/dev/null'], {
     detached: true, stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, TERM: 'xterm-256color', LESS: '', PS1: 'PTY_PROMPT> ', PS0: '\x1b]133;C\x07', PROMPT_COMMAND: "printf '\\033]133;D;0\\007\\033]133;A\\007'" },
+    env: { ...process.env, TERM: 'xterm-256color', LESS: '', PS0: '\x1b]133;C\x07', PROMPT_COMMAND: "printf '\\033]133;D;0\\007\\033]133;A\\007'" },
   })
   const terminal = new Terminal()
   const session = { open: true, output$: new Subject(), closed$: new Subject(), getChildProcesses: async () => [] }
