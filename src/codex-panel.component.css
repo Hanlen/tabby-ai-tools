@@ -7,7 +7,7 @@
 .codex-heading small{font-size:11px;opacity:.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .codex-actions{display:flex;align-items:center;gap:4px;flex:none}
 .codex-model-controls{display:flex;align-items:center;gap:4px;min-width:0;flex:none}
-.codex-model-summary{display:flex;align-items:center;flex-wrap:wrap;gap:2px 8px;flex:1;min-width:0;padding:2px 4px;border:0;border-radius:4px;background:rgba(127,127,127,.12);color:inherit;font:inherit;font-size:11px;text-align:left;cursor:pointer}
+.codex-model-summary{display:flex;align-items:center;flex-wrap:wrap;gap:2px 8px;flex:1;min-width:0;padding:2px 4px;border:0;border-radius:4px;background:rgba(127,127,127,.12);color:inherit;font:inherit;font-size:11px;text-align:start;cursor:pointer}
 .codex-model-summary:hover{background:rgba(127,127,127,.18)}
 .codex-current-model{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .codex-current-reasoning{white-space:nowrap;opacity:.8}
@@ -21,7 +21,7 @@
 .codex-connection:disabled{opacity:.8}
 .codex-summary{display:flex;align-items:center;gap:4px;min-width:0;flex:none;font-size:11px;line-height:20px}
 .codex-status,.codex-summary-item,.codex-release-all{font:inherit;color:inherit;cursor:pointer;border:0;border-radius:4px;padding:0 2px;background:transparent;white-space:nowrap}
-.codex-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left;background:rgba(127,127,127,.12);padding:0 4px}
+.codex-status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:start;background:rgba(127,127,127,.12);padding:0 4px}
 .codex-summary-item{flex:none}
 .codex-summary-item:hover,.codex-release-all:hover{background:rgba(127,127,127,.18)}
 .codex-control-summary{display:flex;align-items:center;gap:1px;flex:none}
@@ -60,7 +60,7 @@
 .codex-history-error{color:#d38a48}
 .codex-history-empty{padding:8px 0;opacity:.7}
 .codex-session-list{display:flex;flex-direction:column;gap:4px;min-height:0;overflow-y:auto}
-.codex-session{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;padding:7px 9px;border:1px solid rgba(127,127,127,.25);border-radius:5px;background:transparent;color:inherit;cursor:pointer}
+.codex-session{display:flex;flex-direction:column;gap:2px;text-align:start;width:100%;padding:7px 9px;border:1px solid rgba(127,127,127,.25);border-radius:5px;background:transparent;color:inherit;cursor:pointer}
 .codex-session:hover:not(:disabled){background:rgba(80,130,220,.12)}
 .codex-session-current{border-color:rgba(80,150,240,.65)}
 .codex-session-selected{background:rgba(80,130,220,.16)}
@@ -88,7 +88,7 @@
 .codex-takeover p{margin:0;overflow-wrap:anywhere}
 .codex-question p{margin:0}
 .codex-options{display:flex;flex-direction:column;align-items:stretch;gap:6px}
-.codex-option{display:flex;flex-direction:column;text-align:left;white-space:normal}
+.codex-option{display:flex;flex-direction:column;text-align:start;white-space:normal}
 .codex-option small{opacity:.8}
 .codex-compose{display:flex;flex-direction:column;gap:6px;flex:none;min-width:0;align-items:flex-end;container-type:inline-size}
 .codex-compose textarea{resize:vertical}
@@ -102,7 +102,7 @@
 }
 .codex-slash-menu,.codex-model-picker{align-self:stretch;border:1px solid rgba(127,127,127,.3);border-radius:6px;overflow:hidden}
 .codex-slash-menu{max-height:170px;overflow-y:auto}
-.codex-slash-option,.codex-model-option{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:5px 8px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.codex-slash-option,.codex-model-option{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:5px 8px;border:0;background:transparent;color:inherit;text-align:start;cursor:pointer}
 .codex-slash-option:hover,.codex-slash-active,.codex-model-option:hover,.codex-model-selected{background:rgba(80,130,220,.16)}
 .codex-slash-option span,.codex-model-option small{font-size:.8em;opacity:.7}
 .codex-model-picker{display:flex;flex-direction:column;max-height:220px;padding:5px}
@@ -122,11 +122,11 @@
 .codex-memory-actions .btn{padding:0;font-size:inherit}
 .codex-memory-actions label{display:flex;align-items:center;gap:5px;margin:0;opacity:.8;cursor:pointer}
 .codex-memory-actions input{margin:0}
-.codex-memory-notice{align-self:stretch;padding:5px 8px;border-left:2px solid #4f80ea;background:rgba(79,128,234,.09);font-size:11px;overflow-wrap:anywhere}
+.codex-memory-notice{align-self:stretch;padding:5px 8px;border-inline-start:2px solid #4f80ea;background:rgba(79,128,234,.09);font-size:11px;overflow-wrap:anywhere}
 .codex-workflows{align-self:stretch;display:flex;flex-direction:column;gap:6px;min-height:0;max-height:260px;border:1px solid rgba(127,127,127,.3);border-radius:6px;padding:8px;font-size:12px}
 .codex-workflow-list{overflow:auto;min-height:0}
 .codex-workflow{padding:7px 0;border-top:1px solid rgba(127,127,127,.2)}
-.codex-workflow-heading{display:flex;flex-direction:column;gap:4px;width:100%;padding:0 0 6px;background:transparent;color:inherit;border:0;text-align:left;cursor:pointer}
+.codex-workflow-heading{display:flex;flex-direction:column;gap:4px;width:100%;padding:0 0 6px;background:transparent;color:inherit;border:0;text-align:start;cursor:pointer}
 .codex-workflow-heading strong{overflow-wrap:anywhere}
 .codex-workflow-heading small{opacity:.7}
 .codex-workflow pre{max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit;font:inherit;user-select:text}

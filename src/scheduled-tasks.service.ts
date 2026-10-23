@@ -1,4 +1,5 @@
 import { Injectable, OnDestroy } from '@angular/core'
+import { translate } from './i18n'
 import { ConfigService, NotificationsService, PlatformService } from 'tabby-core'
 import * as path from 'path'
 import { BehaviorSubject, Subscription } from 'rxjs'
@@ -204,7 +205,7 @@ export class ScheduledTasksService implements OnDestroy {
       }
     } catch (error: any) {
       this.error = String(error.message)
-      if (this.reportedError !== this.error) { this.reportedError = this.error; this.notifications.error('定时任务失败', this.error) }
+      if (this.reportedError !== this.error) { this.reportedError = this.error; this.notifications.error(translate('定时任务失败'), translate(this.error)) }
     } finally { this.ticking = false }
   }
   private launch (claim: NonNullable<Awaited<ReturnType<ScheduledTaskStore['claim']>>>): void {
@@ -255,7 +256,7 @@ export class ScheduledTasksService implements OnDestroy {
         await this.runner.execute()
       } catch (error: any) {
         await this.store.mutateRun(claim.run.id, this.owner, (run, task) => { run.status = controller.signal.aborted ? 'interrupted' : error instanceof ProbeBudgetExceeded ? 'needs_attention' : 'failed'; run.summary = String(error.message); run.finishedAt = Date.now(); task.enabled = false }).catch(() => undefined)
-        if (!controller.signal.aborted) this.notifications.error('定时任务执行失败', String(error.message))
+        if (!controller.signal.aborted) this.notifications.error(translate('定时任务执行失败'), translate(error.message))
       } finally {
         clearInterval(heartbeat)
         this.preflight = undefined

@@ -29,7 +29,7 @@ if (existsSync(join(projectDir, 'docs'))) {
   cpSync(join(projectDir, 'docs'), join(destination, 'docs'), { recursive: true, force: true })
 }
 cpSync(join(projectDir, 'skills'), join(destination, 'skills'), { recursive: true, force: true })
-for (const file of ['README.md', 'LICENSE', 'VALIDATION.md']) {
+for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'VALIDATION.md']) {
   if (existsSync(join(projectDir, file))) copyFileSync(join(projectDir, file), join(destination, file))
 }
 console.log(`已安装到 ${destination}`)

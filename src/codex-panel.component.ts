@@ -16,6 +16,7 @@ import { AgentBackend, ApiProfile } from './agent-types'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions } from './task-memory'
 import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
+import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 const OUTPUT_BATCH_LIMIT = 2000
@@ -26,7 +27,7 @@ function outputMessage (text: string, truncated: boolean): string {
 }
 
 interface ChatEntry { id: string; kind: 'user' | 'agent' | 'tool' | 'system'; text: string }
-interface PendingRequest { id: number; method: string; title: string; questions?: UserQuestion[]; answers: Record<string, string>; otherAnswers: Record<string, string>; local?: boolean; permissions?: any; url?: string }
+interface PendingRequest { id: number; method: string; title: string; translateTitle?: boolean; questions?: UserQuestion[]; answers: Record<string, string>; otherAnswers: Record<string, string>; local?: boolean; permissions?: any; url?: string }
 interface HistorySnapshot { entries: ChatEntry[]; busy: boolean; turnId: string; notice: string }
 interface ThreadStatusSnapshot { threadId: string; model: string | null; reasoningEffort: string | null; state: string }
 interface RateLimitWindowSnapshot { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null }
@@ -38,6 +39,10 @@ interface RateLimitSnapshot { primary: RateLimitWindowSnapshot | null; secondary
   styles: [require('./codex-panel.component.css')],
 })
 export class CodexPanelComponent implements AfterViewInit, OnDestroy {
+  readonly t = translate
+  readonly formatDateTime = formatDateTime
+  get direction (): string { return textDirection() }
+  get languageCode (): string { return getLanguage() }
   private codex: AgentBackend
   profileId = ''
   connectionError = ''
@@ -160,14 +165,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     return run && this.scheduledTasks.some(t => t.id === run.taskId) ? approval : undefined
   }
   get scheduledServiceError (): string { return this.agents?.scheduler?.error || '' }
-  scheduleTime (time?: number | null): string { return time ? new Date(time).toLocaleString() : '无后续计划' }
+  scheduleTime (time?: number | null): string { return time ? formatDateTime(time) : '无后续计划' }
   scheduleDescription (task: ScheduledTask): string {
     const s = task.schedule
     return s.type === 'daily' ? `每日 ${s.time}（${s.timezone}）` : s.type === 'interval' ? `每 ${s.minutes} 分钟` : `单次 ${this.scheduleTime(s.at)}`
   }
   scheduledConnectionLabel (task: ScheduledTask): string {
     const profileId = task.modelCheck?.requestedProfileId ?? task.profileId
-    return profileId ? this.apiProfiles.find(p => p.id === profileId)?.name || '已移除的 API 连接' : 'Codex'
+    return profileId ? this.apiProfiles.find(p => p.id === profileId)?.name || this.t('已移除的 API 连接') : 'Codex'
   }
   scheduledPermissionLabel (task: ScheduledTask): string {
     const sandbox = { 'read-only': '只读', 'workspace-write': '工作区可写', 'danger-full-access': '完全访问' }[task.settings.sandbox]
@@ -265,6 +270,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const runtime = this.codex.getThreadConfiguration?.(this.threadId)
     const reported = runtime?.reasoningEffort || (this.threadStatus?.threadId === this.threadId ? this.threadStatus.reasoningEffort : '')
     return (this.busy ? reported || this.settings.reasoningEffort : this.settings.reasoningEffort || reported) || '默认'
+  }
+  get modelLabel (): string {
+    const reported = this.codex.getThreadConfiguration?.(this.threadId)?.model || (this.threadStatus?.threadId === this.threadId && this.threadStatus.model)
+    return this.codex.profile || this.settings.model || reported ? this.currentModel : this.t(this.currentModel)
+  }
+  get reasoningLabel (): string {
+    if (this.codex.profile) return this.codex.profile.reasoningEffort || this.t('服务商默认')
+    const reported = this.codex.getThreadConfiguration?.(this.threadId)?.reasoningEffort || (this.threadStatus?.threadId === this.threadId && this.threadStatus.reasoningEffort)
+    return this.settings.reasoningEffort || reported ? this.currentReasoningEffort : this.t(this.currentReasoningEffort)
   }
   get visibleSlashCommands (): { command: string; description: string }[] { return this.slashMenuOpen ? this.slashCommands : [] }
   workflowText (workflow: TaskWorkflow): string { return workflowInstructions(workflow) }
@@ -390,7 +404,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
   rateLimitValue (window: RateLimitWindowSnapshot | null | undefined): string {
     if (!window) return '未上报'
-    const reset = window.resetsAt ? ` · ${new Date(window.resetsAt * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置` : ''
+    const reset = window.resetsAt ? ` · ${new Date(window.resetsAt * 1000).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 重置` : ''
     return `已用 ${Math.round(window.usedPercent)}%${reset}`
   }
   isUserInputRequest (): boolean { return isUserInputMethod(this.request?.method) }
@@ -1144,7 +1158,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private confirmTakeover (request: TakeoverRequest): Promise<'interrupt' | 'proceed' | 'cancel'> {
     if (this.request || this.takeoverResolve) return Promise.resolve('cancel')
     this.takeover = request
-    this.request = { id: -Date.now(), method: 'local/terminalTakeover', title: request.verifyIdle ? `请确认 ${request.title} 已回到命令提示符` : request.unknown ? `无法检测 ${request.title} 的前台任务` : `${request.title} 检测到运行中的进程`, local: true, answers: {}, otherAnswers: {} }
+    this.request = { id: -Date.now(), method: 'local/terminalTakeover', translateTitle: true, title: request.verifyIdle ? `请确认 ${request.title} 已回到命令提示符` : request.unknown ? `无法检测 ${request.title} 的前台任务` : `${request.title} 检测到运行中的进程`, local: true, answers: {}, otherAnswers: {} }
     this.status = '等待你决定是否接管终端…'
     return new Promise(resolve => { this.takeoverResolve = resolve })
   }
@@ -1193,14 +1207,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           client.respond(event.id!, { success: false, contentItems: [{ type: 'inputText', text: String(error?.message || error) }] })
         })
       } else if (event.method === 'item/commandExecution/requestApproval' || event.method === 'item/fileChange/requestApproval') {
-        this.request = { id: event.id, method: event.method, title: p.reason || p.command || 'Codex 请求授权', answers: {}, otherAnswers: {} }
+        this.request = { id: event.id, method: event.method, title: p.reason || p.command || 'Codex 请求授权', translateTitle: !p.reason && !p.command, answers: {}, otherAnswers: {} }
       } else if (isUserInputMethod(event.method)) {
-        this.request = { id: event.id, method: event.method!, title: 'Codex 需要你的回答', questions: p.questions || [], answers: {}, otherAnswers: {} }
+        this.request = { id: event.id, method: event.method!, title: 'Codex 需要你的回答', translateTitle: true, questions: p.questions || [], answers: {}, otherAnswers: {} }
         this.status = '等待你选择答案…'
       } else if (event.method === 'item/permissions/requestApproval') {
-        this.request = { id: event.id, method: event.method, title: p.reason || 'Codex 请求权限', permissions: p.permissions, answers: {}, otherAnswers: {} }
+        this.request = { id: event.id, method: event.method, title: p.reason || 'Codex 请求权限', translateTitle: !p.reason, permissions: p.permissions, answers: {}, otherAnswers: {} }
       } else if (event.method === 'mcpServer/elicitation/request') {
-        this.request = { id: event.id, method: event.method, title: p.message || '外部工具需要输入', url: p.url, questions: p.mode === 'url' ? [] : [{ id: 'content', question: '请输入所需内容（JSON）' }], answers: {}, otherAnswers: {} }
+        this.request = { id: event.id, method: event.method, title: p.message || '外部工具需要输入', translateTitle: !p.message, url: p.url, questions: p.mode === 'url' ? [] : [{ id: 'content', question: '请输入所需内容（JSON）' }], answers: {}, otherAnswers: {} }
       } else {
         this.codex.client.respondError(event.id, `Unsupported client request: ${event.method}`)
         this.status = `不支持的交互请求：${event.method}`
@@ -1248,7 +1262,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           this.replace(p.item.id, 'agent', p.item.text || '')
           if (p.item.questions?.length && !this.request) {
             this.request = {
-              id: -Date.now(), method: 'local/agentMessageQuestions', title: 'Codex 需要你的回答', local: true,
+              id: -Date.now(), method: 'local/agentMessageQuestions', title: 'Codex 需要你的回答', translateTitle: true, local: true,
               questions: p.item.questions.map((question: any, index: number) => ({
                 id: `question-${index}`, question: question.title,
                 options: question.options?.map((label: string) => ({ label })) || null,
@@ -1375,13 +1389,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async copyEntry (entry: ChatEntry): Promise<void> {
     try {
+      const text = entry.kind === 'system' ? this.t(entry.text) : entry.text
       let copied = false
       if (navigator.clipboard?.writeText) {
-        try { await navigator.clipboard.writeText(entry.text); copied = true } catch { /* Try the desktop fallback. */ }
+        try { await navigator.clipboard.writeText(text); copied = true } catch { /* Try the desktop fallback. */ }
       }
       if (!copied) {
         const textarea = document.createElement('textarea')
-        textarea.value = entry.text
+        textarea.value = text
         textarea.style.position = 'fixed'
         textarea.style.opacity = '0'
         document.body.appendChild(textarea)

@@ -14,9 +14,14 @@ import { TaskWorkflow, TaskPreference, workflowInstructions } from './task-memor
 import { Subscription } from 'rxjs'
 import { ScheduledTasksService } from './scheduled-tasks.service'
 import { ScheduleDocument, ScheduledTask, ScheduledRun, activeRun } from './scheduled-tasks'
+import { formatDateTime, getLanguage, SUPPORTED_LANGUAGES, textDirection, translate } from './i18n'
 
 @Component({ template: require('./settings.pug'), styles: [require('./settings.css')] })
 export class CodexSettingsComponent implements OnDestroy {
+  readonly t = translate
+  readonly languages = SUPPORTED_LANGUAGES
+  get direction (): string { return textDirection() }
+  get languageCode (): string { return getLanguage() }
   selectedProfileId = ''
   advancedOpen = false
   memoryOpen = false
@@ -93,7 +98,7 @@ export class CodexSettingsComponent implements OnDestroy {
     const s = task.schedule
     return s.type === 'daily' ? `每日 ${s.time}（${s.timezone}）` : s.type === 'interval' ? `每 ${s.minutes} 分钟` : `单次 ${this.scheduleTime(s.at)}`
   }
-  scheduleTime (time?: number | null): string { return time ? new Date(time).toLocaleString() : '无后续计划' }
+  scheduleTime (time?: number | null): string { return time ? formatDateTime(time) : '无后续计划' }
   scheduleRun (task: ScheduledTask): ScheduledRun | undefined { return this.scheduleData.runs.find(run => run.taskId === task.id && activeRun(run)) }
   scheduleLastRun (task: ScheduledTask): ScheduledRun | undefined { return this.scheduleData.runs.find(run => run.id === task.lastRunId) }
   scheduleStatus (task: ScheduledTask): string {
@@ -194,7 +199,7 @@ export class CodexSettingsComponent implements OnDestroy {
   save (): void { void this.config.save().catch(() => this.zone.run(() => { this.notice = '保存配置失败，请检查配置目录' })) }
   addProfile (): void {
     if (!this.settings.apiProfiles) this.settings.apiProfiles = []
-    const profile: ApiProfile = { id: agentId(), name: '新的 API 连接', provider: 'openai', baseUrl: PROVIDER_URLS.openai,
+    const profile: ApiProfile = { id: agentId(), name: this.t('新的 API 连接'), provider: 'openai', baseUrl: PROVIDER_URLS.openai,
       model: '', apiKeyEnv: PROVIDER_ENV.openai, useVault: false, keySource: 'direct', apiKey: '', thinking: 'default', reasoningEffort: '', contextWindow: 0,
       maxOutputTokens: 4096, maxIterations: 0, threads: {} }
     this.settings.apiProfiles.push(profile)

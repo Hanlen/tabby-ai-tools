@@ -18,7 +18,7 @@
 .settings-default-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
 .settings-default-label label { margin: 0; font-weight: 600; }
 .settings-default > select { flex: 0 1 320px; min-width: 160px; width: 100%; }
-.settings-notice { padding: 10px 14px; border: 1px solid var(--settings-border); border-left: 3px solid var(--settings-focus); border-radius: 6px; overflow-wrap: anywhere; }
+.settings-notice { padding: 10px 14px; border: 1px solid var(--settings-border); border-inline-start: 3px solid var(--settings-focus); border-radius: 6px; overflow-wrap: anywhere; }
 .settings-workspace { display: grid; grid-template-columns: minmax(180px, 230px) minmax(0, 1fr); gap: 18px; align-items: start; }
 .connection-nav { display: flex; flex-direction: column; min-width: 0; max-height: var(--settings-panel-height); padding: 12px 8px 8px; border: 1px solid var(--settings-border); border-radius: 12px; background: var(--settings-surface); }
 .connection-nav-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 12px; font-size: 12px; }
@@ -30,9 +30,9 @@
 [data-provider='glm'] { --provider-rgb: 157, 112, 221; }
 [data-provider='claude'] { --provider-rgb: 209, 135, 77; }
 [data-provider='codex'] { --provider-rgb: 109, 139, 164; }
-.connection-item { display: flex; position: relative; align-items: flex-start; gap: 10px; width: 100%; min-width: 0; padding: 12px 10px; border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.connection-item { display: flex; position: relative; align-items: flex-start; gap: 10px; width: 100%; min-width: 0; padding: 12px 10px; border: 1px solid transparent; border-inline-start: 3px solid transparent; border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: start; cursor: pointer; }
 .connection-item:hover { background: rgba(var(--provider-rgb), .08); border-color: rgba(var(--provider-rgb), .35); }
-.connection-selected, .connection-selected:hover { border-color: rgba(var(--provider-rgb), .5); border-left-color: rgb(var(--provider-rgb)); background: rgba(var(--provider-rgb), .13); }
+.connection-selected, .connection-selected:hover { border-color: rgba(var(--provider-rgb), .5); border-inline-start-color: rgb(var(--provider-rgb)); background: rgba(var(--provider-rgb), .13); }
 .provider-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border: 1px solid rgba(var(--provider-rgb), .5); border-radius: 9px; background: rgba(var(--provider-rgb), .17); color: inherit; font-size: 14px; font-weight: 700; }
 .connection-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .connection-name-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 6px; }
@@ -64,7 +64,7 @@
 .settings-input-action input { flex: 1; }
 .settings-input-action button { flex: none; font-size: 12px; white-space: nowrap; }
 .settings-advanced { margin-top: 24px; border: 1px solid var(--settings-border); border-radius: 8px; background: var(--settings-surface); }
-.advanced-toggle { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.advanced-toggle { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .advanced-toggle:hover { background: rgba(var(--provider-rgb), .06); }
 .advanced-toggle strong { display: block; font-size: 13px; }
 .advanced-toggle small { display: block; margin-top: 3px; }
@@ -97,7 +97,7 @@
   .settings-fields { grid-template-columns: minmax(0, 1fr); }
   .editor-heading { gap: 8px; }
   .editor-heading .provider-mark { width: 32px; height: 32px; }
-  .editor-heading > .default-badge, .editor-default { margin-left: 40px; }
+  .editor-heading > .default-badge, .editor-default { margin-inline-start: 40px; }
 }
 [data-provider='memory'] { --provider-rgb: 70, 159, 154; }
 [data-provider='schedules'] { --provider-rgb: 109, 139, 164; }

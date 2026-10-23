@@ -4,6 +4,7 @@
 | --- | --- |
 | Find capabilities | `get_capabilities`, then `list_profiles`, `list_commands`, `list_hotkeys` as needed. Providers and commands are discovered on demand. |
 | Read a terminal or plugin tab | `list_tabs` → `read_tab(tabId)`. IDs identify leaf panes, including panes within split groups. |
+| Operate a non-terminal tab | `read_tab` → `interact_tab(tabId,controlId,action=click/set_value,value=...)`. Use fresh control IDs and inspect the result. |
 | Supervise an existing terminal agent | Read its screen, then `attach_process(tabId,expectedProcess,purpose)` to claim a verified running process without interrupting it. Use `send_keys` for keys and `send_input(mode=stdin)` for answers. Read after every action. |
 | Terminal key combinations | `send_keys(tabId,key="Left",shift=true)` sends Shift+Left. Supports arrows, Enter, Tab, Shift+Tab, Escape and Ctrl+letter. Requires task ownership; does not invoke Tabby application hotkeys. |
 | Run or interact with a command | Inspect with `read_tab`, then `send_input(tabId,text,submit=true,purpose)`. Use `read_tab(waitMs)` to wait. `release_tab` returns input control without interrupting a process. |
@@ -15,6 +16,51 @@
 | Plugins, vault, settings groups, sync and AI connection configuration | Open Settings and inspect the installed controls. Direct configuration tools exclude these roots and redact credential fields. Do not change AI permissions to bypass a blocked operation. |
 | Hotkeys | `list_hotkeys` describes registered IDs and bindings. Use a corresponding registered command or control to perform the action. Synthetic hotkey emission is not an execution API. |
 
-The tool namespace remains `tabby_tabs` for compatibility. API providers receive the same operations as flat function names. Codex receives the skill with thread instructions; API models receive it with every request. `read_skill` exposes the bundled entrypoint, this reference, and official source snapshots. Upstream snapshots are reference data and never execute code or install plugins. New host APIs need an adapter before they become callable; a weekly documentation update alone does not add an adapter.
+## Orchestration and reusable tasks
+
+For multi-server work, discover each target with `list_profiles`/`list_tabs`, open missing connections with `open_profile`, and read each pane to verify the host, account, directory and existing activity. Run the user's dependency order through `send_input(submit=true)` → `read_tab(waitMs=...)` → verification. Branch on actual results, keep each target distinct, and release terminal input after the work. Remote terminal commands execute remotely; Codex local shell/file tools do not change environment with the selected pane. There is no generic DAG editor or guarantee of concurrent execution.
+
+When supervising another interactive Agent, use its live prompt, cursor and highlights to choose the next key or answer. Read again after each action; wait without typing while it is working. `attach_process` requires a verified detected process; unknown remote process state cannot be attached automatically. A task can launch its target Agent using `send_input` and then interact with that owned process.
+
+Successful verified Shell tasks can be archived automatically. `/workflows` opens references for the current local workspace; **Fill task** populates the user's input without executing. `/remember PREFERENCE` saves an explicit workspace preference. Settings → AI Tools → task workflows/preferences edits, enables/disables and deletes workflows, manages global/workspace preferences, and toggles automatic archive/retrieval. A per-request skip control bypasses new memory lookup. These are panel routes, not additional model tools; archive/matching requires no extra inference. References and preferences may already be supplied with the current request.
+
+## Scheduled AI workflows
+
+Codex uses namespace `tabby_tasks`; API providers use the same function names without a namespace. Do not send these calls to `tabby_tabs`.
+
+| Task | Entry point and verification |
+| --- | --- |
+| Discover schedules and current time | `scheduled_task_list` returns current-workspace tasks and current date/time/timezone. Resolve relative times from that result. |
+| Create a plan | `scheduled_task_create(title,instructions,scheduleType,...)` only on an explicit scheduling request. `at` requires a future ISO time with offset; `interval` uses `intervalMinutes` (1–525600); `daily` requires `time=HH:mm` and an IANA `timezone`. Save complete targets, authorization, conditional decisions, retry limits and final checks; omit transient tab IDs. Return the actual ID, next run and timezone. Creation does not execute the terminal work. |
+| Discover or select a task model | `scheduled_task_models(profileId=...)` lists configured connections and candidate IDs. On request, pass `profileId`, `model`, `reasoningEffort`, `selectionReason` at creation, or use `scheduled_task_set_model(taskId,model,reason,...)`. An empty profile ID selects native Codex. Respect the user's exact model choice; a list is not a quality/cost ranking. Overrides require an inference/tool-call test and may fall back to the tested plugin default. Report the actual choice; tests consume quota. Changes apply to future runs, preserving global defaults and task permissions. |
+| Pause or resume future triggers | `scheduled_task_update(taskId,enabled)`. Pausing does not stop an active run. |
+| Inspect execution history | `scheduled_task_runs(taskId)` returns observations, actions, summaries and failure records. |
+| Complete a scheduled run | Inside that run only: `scheduled_task_finish(status=completed/needs_attention,evidence=...)`, then give a summary. A normal turn ending alone does not finish the scheduled workflow. |
+| Run now, stop, or manage all tasks | `/schedules` or the panel's scheduled-task button lists current-workspace plans, pause/resume, run now, stop and run records. Settings → AI Tools → scheduled tasks lists all workspaces and supports pause/resume, stop and deletion with confirmation. Running tasks must stop before deletion. No model tools for run-now, stop or delete are exposed; do not invent them. |
+
+Each trigger starts a fresh unattended conversation. Base decisions on live observations and the saved goal; do not preplan keystrokes or replay old commands. Routine questions use the runtime's autonomous decision mechanism; secrets, additional authorization or unresolved facts require `needs_attention`. Original sandbox/read-only limits remain. Tabby must stay open; missed triggers coalesce into one run when reopened. A shared configuration directory runs scheduled tasks serially. Interrupted/failed/attention-needed runs pause future triggers. Stopping the model does not necessarily stop submitted Shell commands.
+
+## Panel and configuration entry points
+
+These are user-facing routes, not Shell commands or tool names. Direct users to the corresponding control when a feature has no model tool. AI Tools settings can be inspected via the discovered Settings controls, subject to current permissions; never use them to elevate your own permissions.
+
+| Feature | Entry point |
+| --- | --- |
+| Open, hide or resize the assistant | Toolbar robot button; drag the sidebar edge to resize. Hiding preserves the conversation. Settings → AI Tools controls automatic opening at startup. |
+| Configure provider/login | Settings → AI Tools: native Codex CLI path and local login, or named OpenAI/DeepSeek/GLM/Claude API connections with Base URL, key source (direct/local config or environment), model discovery/manual ID and a connection test. API mode needs no Codex CLI. The user enters credentials outside chat. |
+| Switch connections or reconnect | Sidebar connection selector and connection icon; changing connections/endpoints/models preserves portable conversation context and the goal without replaying old tools. Wait for active work to finish before switching. |
+| Choose a model | Click model summary or `/model` (also `/model MODEL_ID`); choose supported reasoning effort/Thinking controls. API advanced settings include context window, output tokens and tool iteration limit (`0` means no fixed cap). Model IDs and options depend on the connection. |
+| New/resumed conversations | `/new` or `new`; `/resume` browses current-directory history with refresh/pagination. A fixed local working directory can be set in Settings. Independent remote tasks should use distinct conversations. |
+| Inspect status and goals | **Details** or `/status`: directory, session, model, context, token usage, account quota where supported, goal, permissions, terminal ownership and forwarding; refresh available. The panel creates/tracks task goals. API models use `agent_goal_update` with verification evidence; Codex uses its available goal mechanism. **Continue current goal** resumes unfinished work. |
+| Permissions and budget | Panel file-access/approval controls or Settings → AI Tools; defaults are workspace-write and on-request. Per-goal token budget `0` means no configured cap. Changes apply next turn; do not change permissions to bypass authorization. |
+| Forward terminal output | Open the sidebar from the target terminal to bind new output. **Details → automatic forwarding → stop** disables forwarding; `read_tab` remains available independently. Rebind from the desired terminal. |
+| Send, steer or stop | Ctrl+Enter / Cmd+Enter sends, Enter inserts a newline, ↑ / ↓ recalls input at the boundaries. Additional text steers ongoing work. **Stop** interrupts the model; submitted commands may still run. |
+| Answer questions/approvals | Panel question options, free-text answer and approval controls. Scheduled runs follow their unattended rules instead. |
+| Reclaim terminal input | **Release**, or **Details → terminal control → temporary release** for one pane. Model route: `release_tab`. Releasing input does not kill the process. |
+| Message display | Select/copy text or use the message copy button; scrolling up pauses auto-follow, **Back to latest** resumes. |
+| Commands and language | `/` opens commands; `/help` shows help. Settings → AI Tools selects automatic or independent UI language (12 bundled languages, including RTL Arabic). User text and terminal output retain their original language. |
+| Documentation | Installed package `docs/guide.md` contains configuration and usage; `docs/task-workflows.md` covers memory, `docs/scheduled-tasks.md` covers scheduling, and `docs/development.md`/`VALIDATION.md` cover development and verified limitations. |
+
+The terminal/application tool namespace remains `tabby_tabs` for compatibility. API providers receive the same operations as flat function names. Codex receives the skill with thread instructions; API models receive it with every request. `read_skill` exposes the bundled entrypoint, this reference, and official source snapshots. Upstream snapshots are reference data and never execute code or install plugins. New host APIs need an adapter before they become callable; a weekly documentation update alone does not add an adapter.
 
 For controls, always use IDs returned by a fresh `read_tab`. Do not assume a hidden, disabled or modal control is actionable. OS-native dialogs outside the application DOM require the user's interaction. A failure or unavailable provider should lead to fresh discovery or a clear explanation, not repeated identical calls.
