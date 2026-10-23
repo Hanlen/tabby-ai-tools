@@ -15,6 +15,8 @@ export interface AgentSettings {
   defaultProfileId?: string
   apiProfiles?: ApiProfile[]
   taskMemoryEnabled?: boolean
+  openOnStartup?: boolean
+  language?: string
 }
 
 export class CodexConfigProvider extends ConfigProvider {
@@ -33,6 +35,8 @@ export class CodexConfigProvider extends ConfigProvider {
       defaultProfileId: '',
       apiProfiles: [],
       taskMemoryEnabled: true,
+      openOnStartup: false,
+      language: 'auto',
     } as AgentSettings,
   }
 }

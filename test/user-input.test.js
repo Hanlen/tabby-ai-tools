@@ -155,6 +155,32 @@ test('top model summary resolves defaults and keeps the running model until the 
   assert.equal(panel.currentReasoningEffort, '默认')
 })
 
+test('localized labels preserve configured model IDs, connection names and remote approval text', t => {
+  const { setLanguage } = require('../src/i18n.ts')
+  const en = require('../src/locales/en.json')
+  setLanguage('en')
+  t.after(() => setLanguage('en'))
+  const settings = { model: 'Codex 默认', reasoningEffort: '默认', apiProfiles: [{ id: 'custom', name: '任务已完成' }] }
+  const backend = { client: {} }
+  const panel = new CodexPanelComponent({ store: { codexAgent: settings } }, backend, { run: fn => fn() }, {}, fakeTabTools)
+  assert.equal(panel.modelLabel, 'Codex 默认')
+  assert.equal(panel.reasoningLabel, '默认')
+  assert.equal(panel.scheduledConnectionLabel({ profileId: 'custom' }), '任务已完成')
+  settings.model = settings.reasoningEffort = ''
+  assert.equal(panel.modelLabel, en['Codex 默认'])
+  assert.equal(panel.reasoningLabel, en['默认'])
+  backend.profile = { id: 'custom', model: '任务已完成', reasoningEffort: '' }
+  settings.reasoningEffort = 'high'
+  assert.equal(panel.modelLabel, '任务已完成')
+  assert.equal(panel.reasoningLabel, en['服务商默认'])
+  panel.threadId = 'current'
+  panel.handleEvent({ id: 1, method: 'item/commandExecution/requestApproval', params: { threadId: 'current', reason: '任务已完成' } })
+  assert.equal(panel.request.title, '任务已完成')
+  assert.equal(panel.request.translateTitle, false)
+  panel.handleEvent({ id: 2, method: 'item/commandExecution/requestApproval', params: { threadId: 'current' } })
+  assert.equal(panel.request.translateTitle, true)
+})
+
 test('late tool results reply to the original backend after a connection switch', async () => {
   let finishTool
   const responses = []

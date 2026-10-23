@@ -3,6 +3,7 @@ import { ConfigService, NotificationsService } from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { AgentSettings } from './config'
 import { CodexService } from './codex.service'
+import { translate } from './i18n'
 
 /** Owns the shared app-server for the entire plugin lifetime, including hidden panels. */
 @Injectable()
@@ -55,7 +56,7 @@ export class CodexRuntimeService implements OnDestroy {
       if (this.stopped || executable !== this.configuredExecutable) return
       if (!this.errorReported) {
         this.errorReported = true
-        this.notifications.error('Codex 后台服务启动失败', `${error.message}。请检查 Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`)
+        this.notifications.error(translate('Codex 后台服务启动失败'), translate(`${error.message}。请检查 Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`))
       }
       this.scheduleRetry()
     }

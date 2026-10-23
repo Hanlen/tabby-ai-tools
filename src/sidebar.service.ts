@@ -3,6 +3,7 @@ import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { CodexPanelComponent } from './codex-panel.component'
 import { clampSidebarWidth } from './sidebar-sizing'
 import { findSidebarMount } from './sidebar-mount'
+import { onLanguageChange, translate } from './i18n'
 
 const WIDTH_KEY = 'tabbyCodexAgentSidebarWidth'
 
@@ -20,6 +21,7 @@ export class CodexSidebarService implements OnDestroy {
   private dragStartWidth = 0
   private dragPointerId = -1
   private dragging = false
+  private readonly stopLanguageUpdates = onLanguageChange(() => this.updateLabels())
 
   constructor (
     private application: ApplicationRef,
@@ -75,11 +77,10 @@ export class CodexSidebarService implements OnDestroy {
     }
     this.host = document.createElement('aside')
     this.host.className = 'codex-agent-sidebar'
-    this.host.setAttribute('aria-label', 'AI Tools 侧栏')
     this.grip = document.createElement('div')
     this.grip.className = 'codex-sidebar-grip'
     this.grip.setAttribute('role', 'separator')
-    this.grip.setAttribute('aria-label', '拖动调整 Codex 侧栏宽度')
+    this.updateLabels()
     this.grip.addEventListener('pointerdown', this.startResize)
     this.host.appendChild(this.grip)
     if (mount.wrap) {
@@ -93,6 +94,11 @@ export class CodexSidebarService implements OnDestroy {
       mount.container.insertBefore(this.host, mount.main)
     }
     for (const panel of this.panels.values()) this.host.insertBefore(panel.location.nativeElement, this.grip)
+  }
+
+  private updateLabels (): void {
+    this.host?.setAttribute('aria-label', translate('AI Tools 侧栏'))
+    this.grip?.setAttribute('aria-label', translate('拖动调整 Codex 侧栏宽度'))
   }
 
   private readonly startResize = (event: PointerEvent): void => {
@@ -128,6 +134,7 @@ export class CodexSidebarService implements OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.stopLanguageUpdates()
     this.stopResize()
     this.grip?.removeEventListener('pointerdown', this.startResize)
     for (const panel of this.panels.values()) {

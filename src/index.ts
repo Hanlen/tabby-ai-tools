@@ -17,12 +17,14 @@ import { AgentSecretsService } from './agent-secrets.service'
 import { TaskMemoryService } from './task-memory.service'
 import { TabbyCapabilitiesService } from './tabby-capabilities.service'
 import { ScheduledTasksService } from './scheduled-tasks.service'
+import { AgentI18nService } from './i18n.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
   declarations: [CodexPanelComponent, CodexSettingsComponent],
   entryComponents: [CodexPanelComponent, CodexSettingsComponent],
   providers: [
+    AgentI18nService,
     CodexService,
     AgentBackendFactory,
     AgentSecretsService,
@@ -39,5 +41,5 @@ import { ScheduledTasksService } from './scheduled-tasks.service'
   ],
 })
 export default class CodexAgentModule {
-  constructor (runtime: CodexRuntimeService, schedules: ScheduledTasksService) { runtime.start(); schedules.start() }
+  constructor (runtime: CodexRuntimeService, schedules: ScheduledTasksService, i18n: AgentI18nService) { i18n.start(); runtime.start(); schedules.start() }
 }

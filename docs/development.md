@@ -13,6 +13,20 @@ npm run build
 
 CI 使用 Node.js 20，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
 
+## 界面翻译
+
+语言文件位于 `src/locales/`，支持的语言和区域代码映射在 `src/i18n.ts`，`AgentI18nService` 负责跟随 Tabby 的 `LocaleService` 或读取插件的独立语言设置。英语是回退语言；所有语言文件直接打包，运行时不访问翻译服务。默认 README 使用英语，中文保留在 `README.zh-CN.md`，两份都随 npm 包和本地安装分发。
+
+添加界面文案时，用 `t(source, [parameters])` 包住完整句子，在全部 12 个 JSON 文件中加入相同的键并翻译值。现有文案以原始中文为键；占位符使用 `{0}`、`{1}`，允许调整顺序，但不能新增或删除。连接名、任务内容和其他用户提供的文本只作为参数，不要单独送入 `t()`。不要翻译用户消息、模型回复或终端输出。保留 `AI Tools`、`Tabby`、`Codex` 等产品名以及命令和配置键。
+
+既有运行状态和日志继续保留原始字符串，在展示边界翻译，以维持完成状态判断和历史兼容。已知组合状态中只有明确标记为插件标签的参数会进一步翻译。部分语言文件由机器翻译起稿，需要人工校对。`test/i18n.test.js` 检查语言文件覆盖、占位符和产品名、语言切换、回退、布局方向、订阅清理与 Angular 模板；`test/sidebar-startup.test.js` 覆盖启动开关、启动顺序、目录规则和销毁清理。真实 Tabby 桌面显示仍需人工验证。
+
+## 介绍页效果图
+
+`docs/assets/overview.svg` 是功能界面示意的可编辑源文件，`overview.png` 是中英文 README 使用的导出图。功能变化时一起更新，图中版本号须与发布版本一致，示例任务、连接与输出应明确标注；示意图不能代替真实 Tabby 桌面验证。Linux 上可用 `gdk-pixbuf-thumbnailer -s 1800 docs/assets/overview.svg docs/assets/overview.png` 导出，也可使用支持 SVG 的图形工具，导出后检查字体、布局和图片引用。
+
+标题下的 `robot-multitask.gif` 为装饰动画；`robot-multitask.png` 用于减少动态效果时的静态回退，生成提示词和参数保存在同目录的 `robot-multitask.prompt.md`。两类图片用途不同，更新功能效果图时保留标题动画。
+
 ## 测试范围与平台说明
 
 运行 `npm test`、`npm run typecheck` 和 `npm run build`。自动测试覆盖显式路径和命令名兼容、PATH 优先级、PATH 无 codex、大小写环境变量、哈希目录缺文件、按文件时间选择、升级后重新扫描、无效显式路径不降级，以及 JSONL 握手、进程重用、流式通知和 stderr。`test/executable.test.js` 在 Linux 上模拟 Windows 定位规则；`test/windows-launch.test.js` 仅在真实 Windows 上执行含空格 exe/cmd/bat 和无 PATH 自动定位管道测试，其他平台明确跳过。exe 夹具使用真正的 Node PE 可执行文件配合测试用 preload；它验证启动方式，不代替真实 Codex 测试。
@@ -46,7 +60,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate-windows.ps1 -Executa
 
 ## Tabby 能力 skill 与每周同步
 
-[`skills/tabby/SKILL.md`](../skills/tabby/SKILL.md) 是插件自带的操作知识入口，[操作路由](../skills/tabby/references/operations.md)区分直接工具、Tabby 命令提供者和设置控件。源码构建时将 skill 与官方快照合入 `src/tabby-knowledge.json`，再编译到 `dist/index.js`，因此离线安装也可使用。Codex 新线程和恢复线程注入相同知识，API 模式每次请求注入；旧版 Codex 工具线程在有本地上下文存储时迁移历史与目标，新建具备当前工具的线程，迁移不会启动推理。
+[`skills/tabby/SKILL.md`](../skills/tabby/SKILL.md) 是插件唯一的模型功能入口，[操作路由](../skills/tabby/references/operations.md)保留终端、本机／内网服务器协作、sudo、任务编排、流程偏好、全部定时任务工具以及面板／设置功能，区分直接工具、Tabby 命令提供者和用户界面入口。新增功能时同步维护该路由，避免 README 精简后模型丢失功能发现入口。
+
+`npm run build` 的 `prebuild` 自动将 skill、操作路由与官方快照合入 `src/tabby-knowledge.json`，再编译到 `dist/index.js`；`npm pack` 的 `prepack` 同样会执行构建。npm 的 `files` 清单和 `install:tabby` 均携带 `skills/` 与 `docs/`。因此用户安装插件就带有 skill，无需额外下载或安装到全局 Codex 目录；内嵌知识离线可读，模型请求仍需连接服务。Codex 新线程和恢复线程注入相同知识，API 模式每次请求注入；旧版 Codex 工具线程在有本地上下文存储时迁移历史与目标，新建具备当前工具的线程，迁移不会启动推理。
 
 `TabbyCapabilitiesService` 通过公开的 `CommandProvider`、`ToolbarButtonProvider`、`TabContextMenuItemProvider`、`ProfilesService` 与设置提供者发现当前可用功能。未导出的 `CommandService` 不能作为插件依赖。第三方功能只有注册命令、配置档或可访问的标签控件时才能操作。所有修改工具共享只读检查，API 模式继续走已有审批流程。
 
