@@ -58,9 +58,9 @@ async function fixture(t) {
   t.after(async () => { for (const cleanup of cleanups) cleanup(); service.ngOnDestroy(); global.window = previousWindow; await fs.promises.rm(root, { recursive: true, force: true }) })
   return { root, service, agents, readiness, starts, notifications, windowEvents, config, connections, cleanups }
 }
-async function waitFor(condition) {
+async function waitFor(condition, diagnostics) {
   for (let i = 0; i < 200; i++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 10)) }
-  throw new Error('timed out')
+  throw new Error('timed out' + (diagnostics ? '\n' + await diagnostics() : ''))
 }
 
 test('scheduler starts at config readiness and runs without creating any chat panel', async t => {
@@ -319,7 +319,8 @@ test('a temporary setup failure retains the preferred model and retries it on th
   assert.equal(created.result.modelCheck.requestedModel, 'reasoning-model')
   recovered = true
   await f.service.runNow(created.result.id, '/workspace')
-  await waitFor(async () => (await f.service.store.read()).runs.some(run => run.status === 'completed'))
+  await waitFor(async () => (await f.service.store.read()).runs.some(run => run.status === 'completed'),
+    async () => JSON.stringify({ state: await f.service.store.read(), notifications: f.notifications }))
   await waitFor(() => !f.service.runner && !f.service.preflight)
   const record = (await f.service.store.read()).runs[0]
   assert.deepEqual(tested, ['advanced', 'api', 'advanced'])
@@ -344,13 +345,14 @@ for (const variant of ['candidate-over', 'fallback-exact', 'below', 'both-fail']
     await waitFor(async () => (await f.service.store.read()).runs.some(run => ['completed', 'needs_attention', 'failed'].includes(run.status)))
     await waitFor(() => !f.service.runner && !f.service.preflight)
     const data = await f.service.store.read(), run = data.runs[0]
+    const diagnostic = JSON.stringify(run)
     assert.deepEqual(probes, variant === 'candidate-over' ? ['advanced'] : ['advanced', 'api'])
     const tokens = variant === 'candidate-over' ? candidateTokens : candidateTokens + fallbackTokens
     assert.equal(run.probeTokens, tokens)
     assert.equal(run.totalTokens, tokens)
-    assert.ok(run.entries.some(entry => entry.text.includes(`累计 ${tokens} tokens`)))
+    assert.ok(run.entries.some(entry => entry.text.includes(`累计 ${tokens} tokens`)), diagnostic)
     assert.equal(f.starts.length, variant === 'below' ? 1 : 0)
-    assert.equal(run.status, variant === 'below' ? 'completed' : variant === 'both-fail' ? 'failed' : 'needs_attention')
+    assert.equal(run.status, variant === 'below' ? 'completed' : variant === 'both-fail' ? 'failed' : 'needs_attention', diagnostic)
     if (variant !== 'below') assert.equal(data.tasks[0].enabled, false)
   })
 }

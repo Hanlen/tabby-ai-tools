@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/robot-multitask.png">
-    <img src="docs/assets/robot-multitask.gif" alt="萌萌的小机器人敲着键盘，同时协调多个终端窗口中的任务" width="640" height="320">
+    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.png">
+    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.gif" alt="萌萌的小机器人敲着键盘，同时协调多个终端窗口中的任务" width="640" height="320">
   </picture>
 </p>
 
@@ -13,9 +13,23 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 0.2.1 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](docs/assets/overview.png)
+![Tabby AI Tools 0.2.1 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
+
+## 多模型适配，支持本机 ChatGPT 订阅登录
+
+**已有具备 Codex 使用权限的 ChatGPT 订阅账号，可以通过本机 Codex CLI 登录直接使用，无需为此模式额外配置 API Key。** 插件复用本机 Codex 登录，可用模型、用量限制和工作区权限以账号实际权益为准。参见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。
+
+| 连接方式 | 如何使用 |
+| --- | --- |
+| **ChatGPT 订阅 → 本机 Codex** | 本机安装 Codex CLI，执行 `codex login`，在插件中选择 **Codex（本机登录）**。 |
+| **OpenAI API** | 添加 OpenAI 连接，配置 API Key、Base URL 和模型 ID。 |
+| **DeepSeek** | 添加 DeepSeek API 连接，选择模型与 Thinking 设置。 |
+| **GLM／智谱** | 添加 GLM API 连接，使用账号对应套餐的端点和模型。 |
+| **Claude／Anthropic** | 添加 Claude API 连接，配置其 API Key 和模型 ID。 |
+
+可保存多个命名连接，在侧栏切换；支持获取模型列表或手动填写模型 ID。API 连接使用对应供应商的 API 凭据和计费，无需安装 Codex CLI。使用代理时，端点须兼容所选供应商协议。
 
 ## 内网服务器，也能使用 AI
 
@@ -29,9 +43,19 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 需要管理员权限时，先在目标服务器的同一终端中手动执行 `sudo ls` 或 `sudo -v` 并输入密码，再让 AI 继续。无需将 sudo 密码交给模型；认证的有效期与复用范围遵循服务器的 sudo 配置。
 
-## 支持本机 Codex 订阅登录，无需 API Key
+## ChatGPT 订阅用户如何开始
 
-账号已具备 Codex 使用权限的订阅用户，在本机安装 Codex CLI 并执行 `codex login` 后即可使用，无需额外配置 API Key。可用模型与额度以账号权限为准。也支持 OpenAI、DeepSeek、GLM 和 Claude API。
+1. 在运行 Tabby 的本机安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)。
+2. 执行以下命令，在浏览器登录 ChatGPT 账号，并确认 CLI 已登录：
+
+   ```bash
+   codex login
+   codex login status
+   ```
+
+3. 在 **Settings → AI Tools** 将默认连接设为 **Codex（本机登录）**。打开侧栏后选择账号可用的模型，或沿用 Codex 默认模型。
+
+只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 
 ## 用自然语言编排任务
 
