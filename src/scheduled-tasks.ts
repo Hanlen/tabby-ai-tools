@@ -116,7 +116,14 @@ export class ScheduledTaskStore {
         }
         if (!validDocument(data) || Buffer.byteLength(serialized) > 24 * 1024 * 1024) throw new Error('定时任务库已满或内容无效')
         await fs.writeFile(temporary, serialized, { mode: 0o600, flag: 'wx' })
-        await fs.rename(temporary, this.file)
+        // Windows readers/indexers can briefly deny replacement. Keep the old
+        // file and the lock intact while retrying the same serialized update.
+        for (let attempt = 0; ; attempt++) {
+          try { await fs.rename(temporary, this.file); break } catch (error: any) {
+            if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 8) throw error
+            await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)))
+          }
+        }
         return result
       } finally {
         await fs.unlink(temporary).catch(() => undefined)
