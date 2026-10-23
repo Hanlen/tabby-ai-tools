@@ -1,19 +1,28 @@
-# Tabby AI Tools
+<div align="center">
 
-<p align="center">
+  <h1>Tabby AI Tools</h1>
+  <p>Let AI work through your terminal, across your computer and multiple servers.</p>
+
+[![Latest release](https://img.shields.io/github/v/release/Hanlen/tabby-ai-tools?style=flat-square)](https://github.com/Hanlen/tabby-ai-tools/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b5bf7?style=flat-square)](#install-and-start)
+[![License](https://img.shields.io/github/license/Hanlen/tabby-ai-tools?style=flat-square)](LICENSE)
+
+[Download](https://github.com/Hanlen/tabby-ai-tools/releases/latest) · [Quick start](#install-and-start) · [Models](#multiple-model-providers-including-your-chatgpt-subscription) · [User guide](docs/guide.md) · [简体中文](README.zh-CN.md)
+
+<br>
+
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.png">
-    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="640" height="320">
+    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="560" height="280">
   </picture>
-</p>
 
-**Let AI work through your terminal, across your computer and multiple servers.**
+</div>
 
-**English** · [简体中文](README.zh-CN.md) · [Full configuration and user guide (中文)](docs/guide.md)
+<br>
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 0.2.2 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
