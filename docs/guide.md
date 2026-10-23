@@ -11,7 +11,7 @@
 ### 准备环境
 
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
-- **Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的订阅账号登录，无需在插件中填写 API Key。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
+- **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的 ChatGPT 账号登录，再执行 `codex login status` 确认认证状态，无需在插件中填写 API Key。插件默认连接选 **Codex（本机登录）**；可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
 - **API 模式**：准备 OpenAI、DeepSeek、GLM 或 Claude 的 API Key，无需安装 Codex CLI。订阅登录与 API 连接是两种独立配置方式。
 
 ### 安装插件

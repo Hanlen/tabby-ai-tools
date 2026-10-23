@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/robot-multitask.png">
-    <img src="docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="640" height="320">
+    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.png">
+    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="640" height="320">
   </picture>
 </p>
 
@@ -13,9 +13,23 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](docs/assets/overview.png)
+![Tabby AI Tools 0.2.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/v0.2.1/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
+
+## Multiple model providers, including your ChatGPT subscription
+
+**Have a ChatGPT subscription with Codex access? Use your existing account through Codex CLI on your own computer, with no separate API key for this mode.** The plugin reuses the local Codex login. Model availability and usage limits follow your account and workspace permissions. See [OpenAI's authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+| Connection | How to use it |
+| --- | --- |
+| **ChatGPT subscription → local Codex** | Install Codex CLI locally, run `codex login`, and select **Codex (local login)** in AI Tools. |
+| **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
+| **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
+| **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |
+| **Claude / Anthropic** | Add a Claude API connection with its API key and model ID. |
+
+Save multiple named connections and switch them in the sidebar. Discover available models or enter a model ID manually. API connections use the selected provider's API credentials and usage-based billing; they can be used without Codex CLI. Compatible proxies must implement the selected provider's protocol.
 
 ## Work with servers on a private network
 
@@ -29,9 +43,19 @@ Use Tabby's connections and signed-in accounts to inspect and operate different 
 
 When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same terminal on the target server and enter your password there. Let the assistant continue afterward without sharing the password with the model. Authentication reuse and expiry follow the server's sudo configuration.
 
-## Use your local Codex subscription login without an API key
+## Start with your local ChatGPT subscription login
 
-Subscription users whose accounts include Codex access can install Codex CLI locally, run `codex login`, and use that login directly. No separate API key is required in this mode; available models and quota depend on the account. OpenAI, DeepSeek, GLM, and Claude API connections are also supported.
+1. Install [Codex CLI](https://learn.chatgpt.com/docs/cli) on the computer running Tabby.
+2. Run the following commands, sign in with your ChatGPT account in the browser, and confirm that the CLI is logged in:
+
+   ```bash
+   codex login
+   codex login status
+   ```
+
+3. In **Settings → AI Tools**, keep **Codex (local login)** as the default connection. Open the sidebar and choose a model available to your account, or use the Codex default.
+
+Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
 
 ## Orchestrate tasks in natural language
 
