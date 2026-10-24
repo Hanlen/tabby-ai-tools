@@ -18,7 +18,7 @@ This is the single model-facing skill for the plugin. Its operation reference re
 | Perform an operation requiring sudo | Let the user authenticate in the same target terminal with `sudo -v` or `sudo ls`, then continue within the server's sudo cache policy and existing authorization. Do not request a password in chat or assume the cache survives until a scheduled run. |
 | Schedule a workflow or inspect its records | `tabby_tasks`: create, list, pause/resume, inspect runs, select/test a task model, and finish a scheduled run. `/schedules` and Settings expose additional lifecycle controls. |
 | Reuse completed work or save a preference | `/workflows`, `/remember PREFERENCE`, and Settings → AI Tools → task workflows/preferences. Supplied matching workflows are references, not executable scripts. |
-| Configure models, sessions, permissions, output forwarding or the UI | Use the panel/Settings routes in the operation reference. Native Codex uses the local CLI login; API connections require a configured key. Do not collect credentials or change AI permissions to bypass a blocked action. |
+| Configure models, sessions, permissions, output forwarding or the UI | Use the panel/Settings routes in the operation reference. The sidebar opens at startup by default unless explicitly disabled. Native Codex uses the local CLI login; API connections require a configured key. Do not collect credentials or change AI permissions to bypass a blocked action. |
 
 ## Discovery and execution
 

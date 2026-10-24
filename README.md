@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.2 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 0.2.3 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -62,7 +62,7 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
    codex login status
    ```
 
-3. In **Settings → AI Tools**, keep **Codex (local login)** as the default connection. Open the sidebar and choose a model available to your account, or use the Codex default.
+3. AI Tools opens automatically when Tabby starts, using **Codex (local login)** by default. Choose a model available to your account in the sidebar, or use the Codex default. No settings change is required.
 
 Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
 
@@ -86,7 +86,7 @@ Use `/schedules` to inspect plans and run records, pause or resume, run immediat
 
 1. In Tabby, open **Settings → Plugins**, find **`tabby-ai-tools`**, and install it. Click Tabby's **Restart the app to apply changes** prompt when ready; installations and updates take effect after the restart.
 2. Use your local Codex login, or add an API connection under **Settings → AI Tools**.
-3. Open the target terminal, click the robot icon, describe a task, and send with **Ctrl+Enter / Cmd+Enter**.
+3. AI Tools opens automatically after restart. Open the target terminal, describe a task in the sidebar, and send with **Ctrl+Enter / Cmd+Enter**. Use the robot icon to reopen a hidden sidebar. To disable automatic opening, uncheck **Open AI Tools when Tabby starts** in **Settings → AI Tools**; an existing opt-out is preserved.
 
 **[Full configuration and user guide (中文) →](docs/guide.md)** covers prerequisites, source installation, connections, models, permissions, sudo, orchestration, all feature entry points, and troubleshooting.
 

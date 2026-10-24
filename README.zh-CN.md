@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 0.2.2 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 0.2.3 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
@@ -62,7 +62,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
    codex login status
    ```
 
-3. 在 **Settings → AI Tools** 将默认连接设为 **Codex（本机登录）**。打开侧栏后选择账号可用的模型，或沿用 Codex 默认模型。
+3. 启动 Tabby 后 AI Tools 会自动打开，默认使用 **Codex（本机登录）**，无需先进入设置。直接在侧栏选择账号可用的模型，或沿用 Codex 默认模型。
 
 只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 
@@ -86,7 +86,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完成后点击设置页的重启提示（**Restart the app to apply changes**）；安装和升级均在重启后生效。
 2. 使用本机 Codex 登录，或在 **Settings → AI Tools** 添加 API 连接。
-3. 打开目标终端，点击工具栏机器人图标，输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。
+3. 重启后 AI Tools 会默认自动打开。打开目标终端，在侧栏输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。收起后可点击工具栏机器人图标重新打开；如需关闭自动打开，在 **Settings → AI Tools** 取消勾选 **启动 Tabby 时自动打开 AI Tools**。已明确关闭的配置会保留。
 
 **[完整配置与使用指南 →](docs/guide.md)** 包含环境准备、源码安装、连接与模型配置、权限、sudo、任务编排、全部操作入口和常见问题。
 
