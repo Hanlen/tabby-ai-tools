@@ -83,6 +83,35 @@ Module._load = function (request, parent, isMain) {
   })
 }
 
+test('Windows actual npm.cmd prefix query discovers and starts a global codex.cmd', { skip: process.platform !== 'win32', timeout: 20000 }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby npm 中文 & space-'))
+  const env = { ...process.env }
+  const client = new CodexClient()
+  t.after(async () => {
+    const child = client.process
+    const closed = child ? once(child, 'close') : Promise.resolve()
+    client.close()
+    await closed
+    for (const key of Object.keys(process.env)) delete process.env[key]
+    Object.assign(process.env, env)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  const managers = path.join(dir, 'manager')
+  const prefix = path.join(dir, 'global prefix')
+  fs.mkdirSync(managers)
+  fs.mkdirSync(prefix)
+  fs.writeFileSync(path.join(managers, 'prefix.js'), `require('assert/strict').deepEqual(process.argv.slice(2), ['prefix', '-g']); process.stdout.write(${JSON.stringify(prefix)}+'\\n')`)
+  fs.writeFileSync(path.join(managers, 'npm.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0prefix.js" %*\r\n`)
+  const executable = path.join(prefix, 'codex.cmd')
+  fs.writeFileSync(executable, `@echo off\r\n"${process.execPath}" "%~dp0server.js" %*\r\n`)
+  fs.writeFileSync(path.join(prefix, 'server.js'), `require('readline').createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if(m.id) process.stdout.write(JSON.stringify({id:m.id,result:{ok:true}})+'\\n') })`)
+  for (const key of Object.keys(process.env)) if (['PATH', 'CODEX_HOME', 'CODEX_INSTALL_DIR', 'NPM_CONFIG_PREFIX', 'NODE_OPTIONS'].includes(key.toUpperCase())) delete process.env[key]
+  Object.assign(process.env, { PATH: managers, CODEX_HOME: path.join(dir, 'codex home'), USERPROFILE: dir, LOCALAPPDATA: dir, APPDATA: path.join(dir, 'appdata') })
+  await client.connect('codex')
+  assert.deepEqual(await client.request('ping'), { ok: true })
+  assert.ok(client.process.spawnargs.some(arg => arg.includes('codex.cmd')))
+})
+
 test('Windows actual no-PATH auto discovery selects real native executable and rescans upgrade hashes', { skip: process.platform !== 'win32', timeout: 20000 }, async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby auto space-'))
   const env = { ...process.env }

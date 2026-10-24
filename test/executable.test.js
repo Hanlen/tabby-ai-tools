@@ -16,7 +16,7 @@ function fixture (t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const local = path.join(root, 'Local AppData')
   const bin = path.join(local, 'OpenAI', 'Codex', 'bin')
-  const context = { platform: 'win32', paths: path, env: { Path: '', LocalAppData: local }, cwd: root }
+  const context = { platform: 'win32', paths: path, env: { Path: '', LocalAppData: local }, cwd: root, home: root }
   function file (relative, mtime = 1000) {
     const filename = path.join(root, relative)
     fs.mkdirSync(path.dirname(filename), { recursive: true })

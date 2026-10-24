@@ -28,6 +28,26 @@ export function normalizeExecutable (value: string): string {
   return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed
 }
 
+export function executableFile (filename: string, context: ExecutableContext = {}): fs.Stats {
+  const windows = (context.platform || process.platform) === 'win32'
+  const paths = context.paths || (windows ? path.win32 : path.posix)
+  const stat = fs.statSync(filename)
+  if (!stat.isFile()) throw new Error('不是普通文件')
+  if (windows && !WINDOWS_EXTENSIONS.includes(paths.extname(filename).toLowerCase())) {
+    throw new Error('Windows 仅支持 .exe / .com / .cmd / .bat 文件')
+  }
+  fs.accessSync(filename, windows ? fs.constants.R_OK : fs.constants.X_OK)
+  return stat
+}
+
+/** Windows environment keys are case insensitive; never introduce a second PATH. */
+export function executableEnvironment (env: NodeJS.ProcessEnv, searchPath: string, windows: boolean): NodeJS.ProcessEnv {
+  const result = { ...env }
+  if (windows) for (const key of Object.keys(result)) if (key.toUpperCase() === 'PATH') delete result[key]
+  result.PATH = searchPath
+  return result
+}
+
 /** Resolve on each new connection: desktop installs use changing, opaque directory names. */
 export function resolveCodexExecutable (configured: string, context: ExecutableContext = {}): string {
   const windows = (context.platform || process.platform) === 'win32'
@@ -38,15 +58,7 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
   if (/^~[/\\]/.test(value)) value = paths.join(context.home || os.homedir(), value.slice(2))
   const automatic = !value || value === 'codex'
   const reasons: string[] = []
-  const validFile = (filename: string): fs.Stats => {
-    const stat = fs.statSync(filename)
-    if (!stat.isFile()) throw new Error('不是普通文件')
-    if (windows && !WINDOWS_EXTENSIONS.includes(paths.extname(filename).toLowerCase())) {
-      throw new Error('Windows 仅支持 .exe / .com / .cmd / .bat 文件')
-    }
-    fs.accessSync(filename, windows ? fs.constants.R_OK : fs.constants.X_OK)
-    return stat
-  }
+  const validFile = (filename: string): fs.Stats => executableFile(filename, context)
   const fail = (message: string): never => { throw new Error(`${message}\n${reasons.join('\n')}\n${SETTING_HELP}`) }
   if (value && (paths.isAbsolute(value) || /[/\\]/.test(value) || (windows && /^[a-z]:/i.test(value)))) {
     const filename = paths.resolve(cwd, value)
@@ -94,6 +106,15 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
       try { validFile(standalone); return standalone } catch (error: any) {
         reasons.push(`独立安装 ${standalone}: ${error.code || error.message}`)
       }
+    }
+    const home = context.home || environmentValue(env, 'USERPROFILE', true) || os.homedir()
+    const codexHome = normalizeExecutable(environmentValue(env, 'CODEX_HOME', true) || paths.join(home, '.codex'))
+    const expandedHome = /^~[/\\]/.test(codexHome) ? paths.join(home, codexHome.slice(2)) : codexHome
+    for (const suffix of [['bin', 'codex.exe'], ['codex.exe']]) {
+      const filename = paths.resolve(cwd, expandedHome, 'packages', 'standalone', 'current', ...suffix)
+      try { validFile(filename); return filename } catch (error: any) { reasons.push(`standalone ${filename}: ${error.code || error.message}`) }
+    }
+    if (localAppData) {
       const root = paths.resolve(cwd, localAppData, 'OpenAI', 'Codex', 'bin')
       const candidates: { filename: string; mtime: number }[] = []
       try {

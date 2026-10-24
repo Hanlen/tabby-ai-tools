@@ -67,7 +67,7 @@
   "GLM（智谱）": "GLM (Спектр мудрости)",
   "High · 深入": "Высокий · Глубокий",
   "LOCALAPPDATA: 未设置，无法扫描 OpenAI/Codex/bin": "LOCALAPPDATA: не установлено, невозможно сканировать OpenAI/Codex/bin.",
-  "Linux/macOS 支持用户 Shell、NVM 和常见安装目录；Windows 支持 Codex 独立安装和桌面安装目录；也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "Linux/macOS поддерживает пользователей Shell, NVM и общие каталоги установки; Windows поддерживает Codex независимые каталоги установки и каталоги установки на рабочем столе; также поддерживает CODEX_INSTALL_DIR, пути, содержащие пробелы, и пути ~/. Если явный путь недействителен, будет сообщено об ошибке, и будет выполняться поиск только PATH по имени пользовательской команды. Ключ настройки: codexAgent.executable.",
+  "Codex 自动查找支持 PATH、standalone（含 CODEX_HOME）、Homebrew/npm、macOS 桌面包及 IDE 扩展兜底。也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "Codex ищет в PATH, standalone-установках (включая CODEX_HOME), Homebrew/npm, приложениях macOS и, в последнюю очередь, расширениях IDE. Поддерживаются CODEX_INSTALL_DIR, пути с пробелами и ~/. Неверный явный путь вызывает ошибку; пользовательские команды ищутся только в PATH. Параметр: codexAgent.executable.",
   "Low · 较快": "Низкий · Быстрее",
   "Max · 最大": "Макс·Максимум",
   "OpenAI 流缺少完整 output": "В потоке OpenAI отсутствует полный вывод",

@@ -226,3 +226,12 @@ HTTP 服务工作目录只含 tabby-codex-windows-validation.tar.gz，日志和 
 默认发现补充 `~/Applications/ChatGPT.app/Contents/Resources/codex` 和 `/Applications/ChatGPT.app/Contents/Resources/codex`，保留 PATH、Shell、NVM 及常见安装目录优先级。回归验证用户应用目录、替代系统应用目录、带空格显式路径、无执行权限拒绝、自定义命令不降级，以及 Linux 不扫描 macOS 用户应用目录。
 
 本地 Linux：469 项测试，464 通过、5 项平台跳过；类型检查、skill 一致性和生产构建通过。真实 ChatGPT.app 安装布局及 Tabby macOS 桌面端到端未在本机验证；不调用收费模型烟测。跨平台分支与标签 CI 结果由 GitHub Actions 单独核验。
+
+
+## 完整 Codex 安装来源发现（0.3.2）
+
+按跨平台路径表补齐 standalone 内部 current/bin 与旧 current 入口、动态 Homebrew/npm prefix、macOS 新 codex-cli/bin 与 Codex.app 兼容入口，以及 VS Code/Insiders/远程扩展兜底。候选逐个验证，IDE 按 OS/架构筛选并按扩展版本降序；显式路径、自定义命令和已选 CLI 不被替换。包管理器查询独立限时、限输出，失败后继续其他来源，取消会回收进程树；查询输出不写入诊断。
+
+新增路径矩阵测试、prefix 故障/超时/取消测试，以及 Windows 真实 npm.cmd 查询和 codex.cmd JSONL 连接夹具。源路径固定为临时目录；不访问真实模型，不将本机发现规则模拟报告为 macOS/Windows 桌面端到端验证。完整结果见发布说明和本次 GitHub Actions 分支/标签运行记录。
+
+本地 Linux 结果：501 项测试，495 通过、6 项平台跳过；skill bundle/check、TypeScript、生产构建及 git diff --check 通过。Windows 专用 npm.cmd 连接测试仅在真实 Windows CI 上执行，本机明确跳过。
