@@ -103,8 +103,8 @@
         .editor-body.memory-manager
           label.memory-enable
             input(type='checkbox', [ngModel]='settings.taskMemoryEnabled !== false', (ngModelChange)='setTaskMemory($event)')
-            span {{t("启用流程归档与自动匹配")}}
-          p.settings-muted {{t("完成并核对终端任务后自动归档；发送新任务时，在相同工作目录中匹配一份流程。仅提供参考，不直接重放命令，也不额外调用模型。")}}
+            span {{t("启用任务流程与别名")}}
+          p.settings-muted {{t("仅用 /remember 开始录制任务；完成后设置别名，输入 /task1 即可执行。普通任务不会自动归档。")}}
           p.settings-notice(role='status', aria-live='polite', *ngIf='memoryNotice') {{t(memoryNotice)}}
           p.settings-muted(*ngIf='memoryLoading') {{t("正在读取本地流程库…")}}
           section.settings-section(aria-labelledby='memory-workflows-heading')
@@ -123,19 +123,22 @@
               .memory-workflow-editor(*ngIf='workflowDraftId === workflow.id')
                 .settings-fields
                   .settings-field.settings-field-wide
+                    label(for='memory-workflow-alias') {{t("流程别名")}}
+                    input#memory-workflow-alias.form-control([(ngModel)]='workflowAlias', placeholder='task1')
+                  .settings-field.settings-field-wide
                     label(for='memory-workflow-title') {{t("流程名称")}}
                     input#memory-workflow-title.form-control([(ngModel)]='workflowTitle')
                   .settings-field.settings-field-wide
-                    label(for='memory-workflow-objective') {{t("匹配任务")}}
+                    label(for='memory-workflow-objective') {{t("任务描述")}}
                     input#memory-workflow-objective.form-control([(ngModel)]='workflowObjective')
-                    small.settings-muted {{t("填写典型任务描述，用于匹配下次的类似请求。流程仅在上方工作目录中使用。")}}
+                    small.settings-muted {{t("流程通过别名调用，仅在上方工作目录中使用。")}}
                   .settings-field.settings-field-wide
                     label(for='memory-workflow-instructions') {{t("流程步骤")}}
                     textarea#memory-workflow-instructions.form-control(dir='auto', rows='8', [(ngModel)]='workflowInstructions')
                     small.settings-muted {{t("可整理操作顺序、检查点和需要替换的参数。手动编辑后，自动归档不会覆盖这些步骤。")}}
                 label.memory-enable
                   input(type='checkbox', [(ngModel)]='workflowEnabled')
-                  span {{t("自动匹配此流程")}}
+                  span {{t("启用此流程")}}
                 .memory-row
                   button.btn.btn-primary(type='button', (click)='saveWorkflow()', [disabled]='memorySaving || !workflowTitle.trim() || !workflowObjective.trim() || !workflowInstructions.trim()') {{t("保存流程")}}
                   button.btn.btn-link(type='button', (click)='workflowDraftId = ""', [disabled]='memorySaving') {{t("收起")}}
@@ -143,7 +146,7 @@
             h5#memory-preferences-heading.section-heading
               span.section-dot(aria-hidden='true')
               | {{t("操作偏好 · {0}", [(memoryPreferences.length)])}}
-            p.settings-muted {{t("只记录你明确保存的偏好，例如“此项目使用 pnpm”“先运行检查再构建”。也可在对话中输入 /remember 偏好，保存到当前工作目录。")}}
+            p.settings-muted {{t("只记录你明确保存的偏好，例如“此项目使用 pnpm”“先运行检查再构建”。在此设置页保存到全局或指定工作目录。")}}
             .memory-preference(*ngFor='let preference of memoryPreferences')
               .memory-row
                 .memory-row-info

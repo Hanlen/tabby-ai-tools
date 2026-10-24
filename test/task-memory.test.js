@@ -8,7 +8,7 @@ const original = require.extensions['.ts']
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 },
 }).outputText, filename)
-const { TaskMemory, TaskMemoryStore, matchWorkflow, redactMemory, workflowInstructions } = require('../src/task-memory.ts')
+const { TaskMemory, TaskMemoryStore, matchWorkflow, redactMemory, workflowInstructions, workflowNeedsSudo } = require('../src/task-memory.ts')
 require.extensions['.ts'] = original
 
 async function fixture (t) {
@@ -18,20 +18,25 @@ async function fixture (t) {
   return { root, store, memory: new TaskMemory(store) }
 }
 async function begin (memory, text = '构建前端项目并检查结果', cwd = '/project', owner = 'thread') {
-  await memory.prepare(owner, text, cwd)
+  await memory.prepare(owner, text, cwd, true)
   return memory.token(owner)
 }
 function command (memory, token, text = 'pnpm build', owner = 'thread') {
-  memory.record(owner, token, 'send_input', { tabId: 'ephemeral-tab-12', text, submit: true, purpose: '构建前端' }, { sent: true, submitted: true })
+  memory.record(owner, token, 'send_input', { tabId: 'ephemeral-tab-12', text, submit: true, purpose: '构建前端' }, { sent: true, submitted: true, server: localServer })
+}
+const localServer = { type: 'local', profileId: 'local-shell', serverId: 'local-machine', host: 'workstation', ip: '127.0.0.1', port: 0, username: 'test', cwd: '/project' }
+function confirm (memory, token, owner = 'thread') {
+  return memory.checkpoint(owner, token, { action: 'confirm_step', step: 1, tabId: 'ephemeral-tab-12', criteria: '构建退出码为 0，产物存在', evidence: '已观察构建成功及产物检查通过' })
 }
 function read (memory, token, owner = 'thread') {
-  memory.record(owner, token, 'read_tab', { tabId: 'ephemeral-tab-12' }, { title: 'development shell', text: 'PRIVATE TERMINAL OUTPUT must never be saved' })
+  memory.record(owner, token, 'read_tab', { tabId: 'ephemeral-tab-12' }, { title: 'development shell', server: localServer, text: 'PRIVATE TERMINAL OUTPUT must never be saved' })
 }
 async function archive (memory, text, cwd, owner = 'thread') {
   const token = await begin(memory, text, cwd, owner)
   read(memory, token, owner)
   command(memory, token, 'pnpm build', owner)
   read(memory, token, owner)
+  confirm(memory, token, owner)
   return memory.finish(owner, token, 'completed', 'complete', '构建完成，已检查结果')
 }
 
@@ -42,7 +47,8 @@ test('completed terminal workflows survive restart and reuse only one matching w
   await archive(memory, '检查数据库的连接状态', '/project', 'second')
   await archive(memory, '构建前端项目并检查结果', '/other-project', 'third')
   const reopened = new TaskMemory(new TaskMemoryStore(root))
-  const suggestion = await reopened.prepare('new-thread', '请帮我构建前端项目并检查结果', '/project')
+  await memory.setAlias(workflow.id, 'task1')
+  const suggestion = await reopened.prepare('new-thread', '/task1', '/project')
   assert.equal(suggestion.workflow.id, workflow.id)
   assert.match(suggestion.context, /pnpm build/)
   assert.match(suggestion.context, /重新获取 tab ID/)
@@ -77,8 +83,8 @@ test('blocked or merely typed commands do not enter a workflow; repeated polling
   memory.record('thread', token, 'send_input', { text: 'delete-important-data', submit: true }, { sent: false, blocked: true })
   memory.record('thread', token, 'send_input', { text: 'not-submitted', submit: false }, { sent: true, submitted: false })
   command(memory, token)
-  command(memory, token)
   for (let i = 0; i < 100; i++) read(memory, token)
+  confirm(memory, token)
   const workflow = await memory.finish('thread', token, 'completed', 'complete', 'done')
   assert.equal(workflow.steps.length, 1)
   assert.equal(workflow.steps[0].command, 'pnpm build')
@@ -135,7 +141,8 @@ test('manual workflow edits and disablement survive automatic updates and deleti
   assert.equal(updated.enabled, false)
   assert.match(updated.instructions, /先检查分支/)
   await memory.saveWorkflow(updated, updated.title, updated.objective, updated.instructions, true)
-  assert.equal((await memory.prepare('thread', first.objective, '/project')).workflow.id, first.id)
+  await memory.setAlias(first.id, 'build')
+  assert.equal((await memory.prepare('thread', '/build', '/project')).workflow.id, first.id)
   await memory.used(first.id)
   assert.equal((await store.read()).workflows[0].uses, 1)
   await memory.removeWorkflow(first.id)
@@ -149,6 +156,7 @@ test('a stale tool completion cannot contaminate a new task and duplicate finish
   command(memory, old, 'stale-command')
   command(memory, current)
   read(memory, current)
+  confirm(memory, current)
   await Promise.all([memory.finish('thread', current, 'completed', 'complete', 'done'), memory.finish('thread', current, 'completed', 'complete', 'done')])
   const data = await store.read()
   assert.equal(data.workflows.length, 1)
@@ -179,15 +187,21 @@ test('corrupt and oversized libraries fail visibly and are never overwritten', a
   await assert.rejects(store.read(), /过大/)
 })
 
-test('Chinese and English matching is conservative and ignores disabled or unrelated workflows', () => {
-  const workflow = { id: '1', objective: 'deploy frontend staging release-a', cwd: '/project', enabled: true, successes: 1, completedAt: 1 }
-  assert.equal(matchWorkflow([workflow], 'please deploy frontend staging release-b', '/project'), workflow)
-  assert.equal(matchWorkflow([workflow], 'delete backend database', '/project'), undefined)
-  assert.equal(matchWorkflow([{ ...workflow, enabled: false }], workflow.objective, '/project'), undefined)
-  const chinese = { ...workflow, objective: '构建前端项目并检查结果' }
-  assert.equal(matchWorkflow([chinese], '请帮我构建前端项目并检查结果', '/project'), chinese)
-  assert.equal(matchWorkflow([chinese], '检查数据库连接状态', '/project'), undefined)
+test('only explicit aliases match enabled workflows in the current workspace', async t => {
+  const { memory, store } = await fixture(t)
+  const first = await archive(memory, 'build frontend', '/project')
+  const second = await archive(memory, 'deploy frontend', '/project', 'second')
+  await memory.setAlias(first.id, '/Task1')
+  await assert.rejects(memory.setAlias(second.id, 'task1'), /已使用/)
+  for (const alias of ['remember', 'model', 'bad name', 'x;id', '1abc']) await assert.rejects(memory.setAlias(first.id, alias))
+  const workflows = (await store.read()).workflows
+  assert.equal(matchWorkflow(workflows, '/TASK1', '/project').id, first.id)
+  for (const query of ['build frontend', '/task1 extra', '/task']) assert.equal(matchWorkflow(workflows, query, '/project'), undefined)
+  assert.equal(matchWorkflow(workflows, '/task1', '/other'), undefined)
+  assert.equal(matchWorkflow(workflows.map(w => ({ ...w, enabled: false })), '/task1', '/project'), undefined)
   assert.equal(workflowInstructions({ instructions: 'manual procedure', steps: [] }), 'manual procedure')
+  assert.equal(workflowNeedsSudo({ instructions: 'sudo systemctl restart app', steps: [] }), true)
+  assert.equal(workflowNeedsSudo({ instructions: '', steps: [{ command: 'sudo ls' }] }), true)
 })
 
 test('redaction covers common secret formats, quoted values and URL credentials', () => {
@@ -196,12 +210,6 @@ test('redaction covers common secret formats, quoted values and URL credentials'
     assert.doesNotMatch(result, /secret-value|sk-aaaa/)
     assert.match(result, /已隐藏/)
   }
-})
-
-test('local matching recognizes common shell task synonyms without a model call', () => {
-  const workflow = { id: 'deploy', objective: '部署前端服务到预发环境', cwd: '/project', enabled: true, successes: 2, completedAt: 1 }
-  assert.equal(matchWorkflow([workflow], '请帮我发布前端服务到预发环境', '/project'), workflow)
-  assert.equal(matchWorkflow([workflow], '删除前端服务的生产数据库', '/project'), undefined)
 })
 
 test('resuming an unrecorded task cannot archive only its final fragment as a complete workflow', async t => {
@@ -214,16 +222,100 @@ test('resuming an unrecorded task cannot archive only its final fragment as a co
   assert.deepEqual((await store.read()).workflows, [])
 })
 
-test('matching does not confuse opposite operations on the same service or project', () => {
-  const base = { id: 'workflow', cwd: '/project', enabled: true, successes: 1, completedAt: 1 }
-  for (const [previous, current] of [
-    ['构建前端项目', '重启前端项目'], ['部署前端服务', '删除前端服务'],
-    ['启动后台服务', '停止后台服务'], ['清理前端构建目录', '构建前端目录'],
-  ]) assert.equal(matchWorkflow([{ ...base, objective: previous }], current, '/project'), undefined)
+test('ordinary requests never start recording', async t => {
+  const { memory } = await fixture(t)
+  await memory.prepare('ordinary', 'build frontend', '/project')
+  assert.equal(memory.token('ordinary'), undefined)
 })
 
-test('negated operations are not treated as requests to repeat an affirmative workflow', () => {
-  const workflow = { id: 'restart', objective: '重启后台服务', cwd: '/project', enabled: true, successes: 1, completedAt: 1 }
-  assert.equal(matchWorkflow([workflow], '不要重启后台服务', '/project'), undefined)
-  assert.equal(matchWorkflow([{ ...workflow, objective: 'restart backend service' }], 'do not restart backend service', '/project'), undefined)
+const serverA = { type: 'ssh', profileId: 'ssh-db', serverId: 'db-machine', host: '10.0.0.10', ip: '10.0.0.10', port: 22, username: 'deploy', cwd: '/srv/database' }
+const serverB = { ...serverA, profileId: 'ssh-app', serverId: 'app-machine', host: '10.0.0.20', ip: '10.0.0.20', cwd: '/srv/application' }
+function observed (memory, token, tabId, server, extra = {}) {
+  memory.record('thread', token, 'read_tab', { tabId }, { title: server.host + ' shell', text: 'observed output', server, ...extra })
+}
+function submit (memory, token, tabId, commandText, extra = {}) {
+  const args = { tabId, text: commandText, submit: true, ...extra }
+  memory.beforeTool('thread', token, 'send_input', args)
+  memory.record('thread', token, 'send_input', args, { sent: true, submitted: true })
+}
+function checkpoint (memory, token, tabId, step, extra = {}) {
+  return memory.checkpoint('thread', token, { action: 'confirm_step', tabId, step, criteria: 'service healthy', evidence: 'Observed health endpoint returned 200 after command completion', ...extra })
+}
+
+test('multi-server steps persist IP, stable IDs, paths, order and fresh per-terminal verification', async t => {
+  const { memory, store } = await fixture(t)
+  const token = await begin(memory, 'check DB then application')
+  observed(memory, token, 'ephemeral-A', serverA)
+  observed(memory, token, 'ephemeral-B', serverB)
+  submit(memory, token, 'ephemeral-A', 'systemctl restart service')
+  assert.throws(() => submit(memory, token, 'ephemeral-B', 'systemctl restart service'), /尚未确认/)
+  assert.throws(() => checkpoint(memory, token, 'ephemeral-A', 1), /新结果/)
+  observed(memory, token, 'ephemeral-B', serverB)
+  assert.throws(() => checkpoint(memory, token, 'ephemeral-B', 1), /执行终端/)
+  observed(memory, token, 'ephemeral-A', serverA, { commandState: 'running' })
+  assert.throws(() => checkpoint(memory, token, 'ephemeral-A', 1), /仍在运行/)
+  observed(memory, token, 'ephemeral-A', serverA, { commandState: 'prompt' })
+  checkpoint(memory, token, 'ephemeral-A', 1)
+  submit(memory, token, 'ephemeral-B', 'systemctl restart service')
+  observed(memory, token, 'ephemeral-B', serverB, { commandState: 'prompt' })
+  checkpoint(memory, token, 'ephemeral-B', 2)
+  const workflow = await memory.finish('thread', token, 'completed', 'complete', 'both healthy')
+  assert.equal(workflow.steps.length, 2, 'identical commands on different servers are distinct steps')
+  assert.deepEqual(workflow.steps.map(s => s.server), [serverA, serverB])
+  assert.deepEqual(workflow.steps.map(s => s.dependsOn), [[], [1]])
+  assert.ok(workflow.steps.every(s => s.verification.confirmedAt))
+  assert.doesNotMatch(JSON.stringify((await store.read()).workflows[0]), /ephemeral-A|ephemeral-B|observed output/)
+})
+
+test('same-server verification commands do not advance the dependency chain or reuse earlier reads', async t => {
+  const { memory } = await fixture(t)
+  const token = await begin(memory)
+  observed(memory, token, 'A', serverA)
+  submit(memory, token, 'A', 'systemctl restart app')
+  observed(memory, token, 'A', serverA)
+  assert.throws(() => submit(memory, token, 'B', 'curl health', { verificationFor: 1 }), /执行终端/)
+  submit(memory, token, 'A', 'curl -f localhost/health', { verificationFor: 1 })
+  assert.throws(() => checkpoint(memory, token, 'A', 1), /新结果/)
+  observed(memory, token, 'A', serverA)
+  checkpoint(memory, token, 'A', 1)
+  const workflow = await memory.finish('thread', token, 'completed', 'complete', 'healthy')
+  assert.equal(workflow.steps.length, 1)
+  assert.deepEqual(workflow.steps[0].verificationCommands, ['curl -f localhost/health'])
+})
+
+test('alias execution rejects wrong server/path, weaker checks and parallel command submission', async t => {
+  const { memory } = await fixture(t)
+  const workflow = { objective: 'restart app', cwd: '/project', steps: [{ command: 'restart', server: serverA, verification: { criteria: 'service healthy' } }] }
+  memory.beginExecution('thread', workflow)
+  const token = memory.token('thread')
+  observed(memory, token, 'wrong', serverB)
+  assert.throws(() => submit(memory, token, 'wrong', 'restart'), /不一致/)
+  observed(memory, token, 'A', { ...serverA, cwd: '/wrong' })
+  assert.throws(() => submit(memory, token, 'A', 'restart'), /不一致/)
+  observed(memory, token, 'A', serverA)
+  memory.beforeTool('thread', token, 'send_input', { tabId: 'A', text: 'restart', submit: true })
+  assert.throws(() => memory.beforeTool('thread', token, 'send_input', { tabId: 'A', text: 'restart twice', submit: true }), /并行/)
+  memory.record('thread', token, 'send_input', { tabId: 'A', text: 'restart', submit: true }, { sent: true, submitted: true })
+  observed(memory, token, 'A', serverA)
+  assert.throws(() => checkpoint(memory, token, 'A', 1, { criteria: 'input sent' }), /验收条件/)
+  checkpoint(memory, token, 'A', 1)
+  assert.throws(() => submit(memory, token, 'A', 'extra action'), /所有步骤/)
+  assert.equal(await memory.finish('thread', token, 'completed', 'complete', 'done'), undefined, 'executing an alias does not archive a second workflow')
+})
+
+test('unknown remote identity requires explicit observed binding and paths refresh on later reads', async t => {
+  const { memory } = await fixture(t)
+  const token = await begin(memory)
+  observed(memory, token, 'A', { ...serverA, host: 'database.internal', ip: '', cwd: '' })
+  assert.throws(() => memory.checkpoint('thread', token, { action: 'bind_target', tabId: 'A', evidence: 'unknown' }), /操作路径/)
+  submit(memory, token, 'A', 'pwd; hostname -I', { verificationFor: 0 })
+  observed(memory, token, 'A', { ...serverA, host: 'database.internal', ip: '', cwd: '' })
+  const bound = memory.checkpoint('thread', token, { action: 'bind_target', tabId: 'A', evidence: 'Observed server identity and /srv/database', target: serverA })
+  assert.deepEqual(bound.server, serverA)
+  submit(memory, token, 'A', 'restart')
+  observed(memory, token, 'A', serverA)
+  checkpoint(memory, token, 'A', 1)
+  const workflow = await memory.finish('thread', token, 'completed', 'complete', 'done')
+  assert.deepEqual(workflow.steps[0].server, serverA)
+  assert.equal(workflow.steps.length, 1, 'initial identity probes are not task steps')
 })

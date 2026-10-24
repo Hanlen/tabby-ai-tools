@@ -1,3 +1,13 @@
+# v0.3.0 release validation (2026-10-24)
+
+Automatic terminal takeover removes the foreground-detection confirmation dialog for ordinary and scheduled tasks. SSH/unknown enumeration proceeds without a confirmation callback or blind Ctrl+C. Detected unrelated processes are interrupted only after the agent marks them unnecessary, with stop/session/ownership checks and verification that the process ended. Needed processes and other owners remain protected.
+
+This release also includes explicit `/remember TASK` recording, workspace-scoped workflow aliases, structured server/path identity and ordered result checkpoints, and same-terminal sudo preflight/refresh. Documentation and SVG/PNG illustrations are synchronized. Model-facing skill sources and the generated knowledge bundle are updated.
+
+Local Linux validation passed: `skill:bundle`, `skill:check`, `typecheck`, all 467 tests (462 passed, 5 platform skips), production build and `git diff --check`. Both READMEs were rendered with CommonMark and the updated illustration was previewed.
+
+Local validation uses simulated terminals/backends, a real PTY fixture and fake sudo; no paid model requests or real sudo credentials are used. The Linux run does not establish real Tabby desktop/SSH compatibility. Existing unknown processes still require verified identity to attach; API tool approvals and sudo authentication are separate from automatic terminal takeover. Sudo refresh requires a compatible POSIX shell/policy, and immediate cleanup may be unavailable in an occupied remote terminal without shell integration. Semantic completion evidence remains model-evaluated.
+
 # Codex 定位与启动验证
 
 ## 默认启动与高清介绍动画（0.2.3）
@@ -202,3 +212,10 @@ node scripts/smoke-codex.cjs --executable 'C:\Path With Spaces\codex.cmd' --stre
 压缩包按文件白名单制作：源码、测试、脚本、构建输出、项目构建清单、README/本报告、许可证和 CI 定义；不含 node_modules、.git、artifacts、旧 tgz、用户配置、.codex、.aws、.env、.npmrc 或凭据。src/config.ts 为插件公开默认设置定义，不是用户凭据配置。
 
 HTTP 服务工作目录只含 tabby-codex-windows-validation.tar.gz，日志和 PID 放在目录外。
+
+
+## 显式流程别名、服务器身份与步骤验收（2026-10-24）
+
+流程由 `/remember TASK` 显式录制，完成后配置别名，`/task1` 调用。步骤保存服务器连接／持久 ID、已确认 IP、账户、端口、绝对操作路径、串行依赖、验收条件与证据。增加 `workflow_checkpoint` 与 `verificationFor`，对同终端的新观察、未完成前置步骤、并行发送、身份／目录不符和弱化验收条件进行门禁；业务结果语义仍由模型判断。旧格式可读，缺失结构建议重新录制。
+
+验证使用真实流程存储与模拟后端／终端：覆盖两台服务器相同命令不合并、跨服务器阻断、旧读／错误终端／运行中结果不能确认、检查命令不推进步骤、目标及路径不符、显式身份探测和绑定。sudo 用假命令测试，不使用真实凭据；未进行真实 Tabby 桌面、SSH、多供应商模型端到端或耗时／token 对比测试。

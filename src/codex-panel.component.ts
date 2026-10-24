@@ -8,13 +8,13 @@ import * as os from 'os'
 import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { Subscription } from 'rxjs'
 import { CodexTerminalOutputService } from './terminal-output.service'
-import { ControlledTab, TabbyTabToolsService, TakeoverRequest } from './tab-tools'
+import { ControlledTab, TabbyTabToolsService } from './tab-tools'
 import { UserQuestion, answersComplete, formatAnswers, isUserInputMethod } from './user-input'
 import { ChatScroll } from './chat-scroll'
 import { AgentBackendFactory } from './agent-backend.service'
 import { AgentBackend, ApiProfile } from './agent-types'
 import { readThreadHistory } from './agent-history'
-import { TaskWorkflow, workflowInstructions } from './task-memory'
+import { TaskWorkflow, workflowInstructions, workflowNeedsSudo } from './task-memory'
 import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
 import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 
@@ -56,7 +56,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private chatScroll?: ChatScroll
   prompt = ''
   memoryNotice = ''
-  skipTaskMemory = false
+  pendingWorkflow?: TaskWorkflow
+  workflowAlias = ''
+  private sudoWorkflow = false
   workflowPanelOpen = false
   schedulePanelOpen = false
   scheduleLoading = false
@@ -82,8 +84,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   goalStatus = ''
   request?: PendingRequest
   controlledTabs: ControlledTab[] = []
-  takeover?: TakeoverRequest
-  private takeoverResolve?: (choice: 'interrupt' | 'proceed' | 'cancel') => void
   private controlSubscription?: Subscription
   copiedEntryId = ''
   private copyTimer?: ReturnType<typeof setTimeout>
@@ -143,7 +143,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.threadStatus = undefined
     this.statusRateLimits = undefined
     this.ordinaryUsageAllowed = null
-    this.cancelTakeover()
     this.tabTools.releaseOwner(this.threadId)
     this.connected = false
     this.busy = false
@@ -253,8 +252,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       { command: '/status', description: '当前状态' },
       { command: '/workflows', description: '当前目录的任务流程库' },
       { command: '/schedules', description: '定时 AI 任务与执行记录' },
-      { command: '/remember', description: '记住一条当前目录的操作偏好' },
+      { command: '/remember', description: '开始录制任务流程' },
       { command: '/help', description: '查看命令' },
+      ...this.workflows.filter(w => w.enabled && w.alias && w.cwd === this.cwd).map(w => ({ command: '/' + w.alias, description: w.title })),
     ].filter(item => item.command.startsWith(this.prompt.toLowerCase()))
   }
   get defaultModel (): CodexModel | undefined { return this.models.find(model => model.isDefault) }
@@ -281,9 +281,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     return this.settings.reasoningEffort || reported ? this.currentReasoningEffort : this.t(this.currentReasoningEffort)
   }
   get visibleSlashCommands (): { command: string; description: string }[] { return this.slashMenuOpen ? this.slashCommands : [] }
-  workflowText (workflow: TaskWorkflow): string { return workflowInstructions(workflow) }
-  async openWorkflows (): Promise<void> {
-    this.workflowPanelOpen = true
+  workflowText (workflow: TaskWorkflow): string { return [workflow.instructions, workflowInstructions({ ...workflow, instructions: '' })].filter(Boolean).join('\n\n') }
+  async openWorkflows (showPanel = true): Promise<void> {
+    if (showPanel) this.workflowPanelOpen = true
     this.workflowLoading = true
     this.workflowError = ''
     try {
@@ -295,14 +295,23 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     finally { this.zone.run(() => { this.workflowLoading = false; this.changeDetector?.detectChanges() }) }
   }
   useWorkflow (workflow: TaskWorkflow): void {
-    this.onPromptChanged(workflow.objective)
-    this.skipTaskMemory = false
+    this.onPromptChanged(workflow.alias ? '/' + workflow.alias : '/remember ' + workflow.objective)
     this.workflowPanelOpen = false
     this.memoryNotice = `已填入流程任务：${workflow.title}；修改参数后发送`
+  }
+  async saveWorkflowAlias (): Promise<void> {
+    if (!this.pendingWorkflow) return
+    try {
+      await this.agents!.memory!.library.setAlias(this.pendingWorkflow.id, this.workflowAlias)
+      this.memoryNotice = `流程别名已保存：/${this.workflowAlias.replace(/^\//, '').toLowerCase()}`
+      this.pendingWorkflow = undefined
+      await this.openWorkflows()
+    } catch (error: any) { this.memoryNotice = error.message }
   }
   onPromptChanged (value: string): void {
     this.resetPromptHistory()
     this.prompt = value
+    if (value === '/') void this.openWorkflows(false)
     this.slashSelection = 0
     this.slashMenuOpen = true
   }
@@ -531,8 +540,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       case '/status': await this.openStatus(); break
       case '/workflows': await this.openWorkflows(); break
       case '/schedules': await this.openSchedules(); break
-      case '/remember': this.status = '用法：/remember 操作偏好；例如 /remember 此项目优先使用 pnpm'; break
-      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/workflows、/schedules、/remember 偏好、/help'; break
+      case '/remember': this.onPromptChanged('/remember '); this.status = '用法：/remember 任务描述；任务完成后可设置 /task1 等流程别名'; break
+      default: this.onPromptChanged(command); await this.send(); break
+      case '/help': this.status = '可用命令：/model、/new、/resume、/status、/workflows、/schedules、/remember 任务、/help'; break
     }
   }
 
@@ -960,7 +970,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async send (): Promise<void> {
-    const text = this.prompt.trim()
+    let text = this.prompt.trim()
+    let remember = false
+    let selectedWorkflow: TaskWorkflow | undefined
     if (!text || this.loading || this.request) return
     if (this.apiMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
       this.status = '此 API 连接已移除，请选择其他连接'
@@ -969,14 +981,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (text.startsWith('/')) {
       const [command, ...args] = text.split(/\s+/)
       if (command.toLowerCase() === '/remember' && args.length) {
-        try {
-          const memory = this.agents?.memory
-          if (!memory) throw new Error('任务流程库暂不可用')
-          await memory.library.addPreference(args.join(' '), this.cwd)
-          this.prompt = ''
-          this.status = '已记住当前目录的操作偏好，可在设置 → 任务流程与偏好中管理'
-        } catch (error: any) { this.status = `保存偏好失败：${error.message}` }
-        return
+        if (this.busy || this.goalStatus === 'active') { this.status = '请先完成当前任务，再用 /remember 开始新流程'; return }
+        if (!this.agents?.memory?.enabled) { this.status = '请先在设置中启用任务流程'; return }
+        remember = true
+        text = text.slice(command.length).trim()
       }
       if (command.toLowerCase() === '/model' && args.length) {
         this.resetPromptHistory()
@@ -989,8 +997,17 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         await this.runSlashCommand(command.toLowerCase())
         return
       }
-      this.status = `不支持的命令：${command}；输入 /help 查看可用命令`
-      return
+      if (!remember) {
+        if (this.busy || this.goalStatus === 'active') { this.status = '请先完成当前任务，再调用流程别名'; return }
+        try {
+          const memory = this.agents?.memory
+          if (!memory?.enabled) throw new Error('请先在设置中启用任务流程')
+          const data = await memory.library.store.read()
+          this.workflows = data.workflows.filter(w => w.cwd === this.cwd)
+          selectedWorkflow = this.workflows.find(w => w.enabled && w.alias === command.slice(1).toLowerCase() && !args.length)
+          if (!selectedWorkflow) throw new Error(`不支持的命令：${command}；输入 /workflows 查看流程别名`)
+        } catch (error: any) { this.status = error.message; return }
+      }
     }
     if (text === 'new') {
       await this.runSlashCommand('/new')
@@ -1000,6 +1017,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.sendAttempt++
     if (this.busy && !this.turnId) { this.status = '正在启动回合，请稍后追加指令'; return }
     if (!this.threadId) { await this.reconnect(); if (!this.threadId) return }
+    if (this.goalStatus !== 'active') {
+      this.sudoWorkflow = !!selectedWorkflow && workflowNeedsSudo(selectedWorkflow)
+      if (!remember) this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
+    }
     this.resetPromptHistory()
     this.prompt = ''
     this.entries.push({ id: `user-${Date.now()}`, kind: 'user', text })
@@ -1024,19 +1045,26 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         let matchedWorkflow: TaskWorkflow | undefined
         this.memoryNotice = ''
         const memory = this.agents?.memory
-        if (memory?.enabled && !this.skipTaskMemory) {
+        if (memory?.enabled) {
           try {
-            const suggestion = await memory.library.prepare(this.threadId, text, this.cwd, this.goalStatus !== 'active')
+            const suggestion = await memory.library.prepare(this.threadId, text, this.cwd, remember)
             memoryContext = suggestion.context
-            matchedWorkflow = suggestion.workflow
+            matchedWorkflow = selectedWorkflow
+            if (selectedWorkflow) memory.library.beginExecution(this.threadId, selectedWorkflow)
+            const executionContext = memory.library.executionContext(this.threadId)
+            if (executionContext) memoryContext += '\n' + executionContext
+            if (selectedWorkflow?.instructions) memoryContext += '\n用户编辑的流程说明（遵守结构化步骤的身份、依赖与验收约束）：' + selectedWorkflow.instructions
+            if (selectedWorkflow && this.sudoWorkflow) memoryContext += '\n此流程包含 sudo。执行前先核对各步骤实际终端、主机与目录，提示用户在每个实际执行终端运行 sudo -v 或 sudo ls 完成认证，然后等待用户确认。不要索取或输入密码；其他终端的认证可能不共享。终端命令将以 sudo -n -v 预检，认证失败时停止并请用户重新认证。此流程的所有 Shell 命令使用 tabby_tabs.send_input，在实际目标终端执行，不要改用本机 commandExecution。保活由插件管理。'
+            if (remember) this.memoryNotice = '正在录制流程；完成后可设置别名'
             if (matchedWorkflow) this.memoryNotice = `参考流程：${matchedWorkflow.title} · 此前完成 ${matchedWorkflow.successes} 次`
-            else if (suggestion.preferences.length) this.memoryNotice = `已参考 ${suggestion.preferences.length} 条操作偏好`
-          } catch { this.memoryNotice = '读取流程库失败，本次按普通任务继续；可在设置中检查流程库' }
+            else if (!remember && suggestion.preferences.length) this.memoryNotice = `已参考 ${suggestion.preferences.length} 条操作偏好`
+          } catch (error) {
+            if (selectedWorkflow || remember) throw error
+            this.memoryNotice = '读取流程库失败，本次按普通任务继续；可在设置中检查流程库'
+          }
         } else {
           memory?.activeLibrary?.forgetRun(this.threadId)
-          if (this.skipTaskMemory) this.memoryNotice = '本次跳过流程与偏好复用'
         }
-        this.skipTaskMemory = false
         if (this.goalStatus !== 'active') await this.codex.setGoal(this.threadId, text, this.settings.goalTokenBudget)
         this.goalStatus = 'active'
         const startedTurnId = await this.codex.startTurn(this.threadId, text, this.cwd, this.settings, [output.message, memoryContext].filter(Boolean).join('\n\n'))
@@ -1068,7 +1096,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.outputCursor = output.cursor
       this.outputSentThisTurn = output.length
       try {
-        const startedTurnId = await this.codex.startTurn(this.threadId, '继续当前目标。先检查实际结果与原始要求；未完成就继续工作并验证。仅在有证据时将目标标记为完成。', this.cwd, this.settings, output.message)
+        const startedTurnId = await this.codex.startTurn(this.threadId, '继续当前目标。先检查实际结果与原始要求；未完成就继续工作并验证。仅在有证据时将目标标记为完成。', this.cwd, this.settings, [output.message, this.agents?.memory?.enabled ? this.agents.memory.activeLibrary?.executionContext(this.threadId) : ''].filter(Boolean).join('\n\n'))
         if (this.busy) this.turnId = startedTurnId
         this.scheduleOutputFlush()
       } catch (error) { this.outputCursor = previousCursor; throw error }
@@ -1118,7 +1146,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.historyNotice = ''
       this.latestTurnStatus = ''
       this.threadId = newId
-      this.cancelTakeover()
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === newId)
       this.clearTokenUsage()
@@ -1141,7 +1168,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async stop (): Promise<void> {
-    this.cancelTakeover()
     if (this.turnId && this.busy) await this.codex.interrupt(this.threadId, this.turnId)
   }
 
@@ -1153,28 +1179,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   releaseControlledTabs (): void {
     this.tabTools.releaseOwner(this.threadId)
     this.status = '已临时释放全部终端，用户可继续操作'
-  }
-
-  private confirmTakeover (request: TakeoverRequest): Promise<'interrupt' | 'proceed' | 'cancel'> {
-    if (this.request || this.takeoverResolve) return Promise.resolve('cancel')
-    this.takeover = request
-    this.request = { id: -Date.now(), method: 'local/terminalTakeover', translateTitle: true, title: request.verifyIdle ? `请确认 ${request.title} 已回到命令提示符` : request.unknown ? `无法检测 ${request.title} 的前台任务` : `${request.title} 检测到运行中的进程`, local: true, answers: {}, otherAnswers: {} }
-    this.status = '等待你决定是否接管终端…'
-    return new Promise(resolve => { this.takeoverResolve = resolve })
-  }
-
-  decideTakeover (choice: 'interrupt' | 'proceed' | 'cancel'): void {
-    const resolve = this.takeoverResolve
-    if (!resolve) return
-    this.takeoverResolve = undefined
-    this.takeover = undefined
-    this.request = undefined
-    this.status = choice === 'cancel' ? '已取消接管终端' : '正在接管终端…'
-    resolve(choice)
-  }
-
-  private cancelTakeover (): void {
-    if (this.takeoverResolve) this.decideTakeover('cancel')
   }
 
   private handleEvent (event: RpcMessage): void {
@@ -1197,9 +1201,19 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         const owner = this.threadId
         const memory = this.agents?.memory
         const token = memory?.enabled ? memory.activeLibrary?.token(owner) : undefined
-        const operation = p.namespace === 'tabby_tasks'
-          ? this.agents?.scheduler?.call(p.tool, p.arguments, this.cwd, this.profileId, this.settings, p.signal) || Promise.reject(new Error('定时任务服务不可用'))
-          : p.namespace === 'tabby_tabs' ? this.tabTools.call(p.tool, p.arguments, { owner: this.threadId, signal: p.signal, readOnly: this.settings.sandbox === 'read-only', confirmTakeover: request => this.confirmTakeover(request) }) : Promise.reject(new Error('Unknown tool namespace'))
+        const operation = (async () => {
+          if (p.namespace === 'tabby_tasks') return this.agents?.scheduler?.call(p.tool, p.arguments, this.cwd, this.profileId, this.settings, p.signal) || Promise.reject(new Error('定时任务服务不可用'))
+          if (p.namespace !== 'tabby_tabs') throw new Error('Unknown tool namespace')
+          const library = memory?.enabled ? memory.activeLibrary : undefined
+          if (p.tool === 'workflow_checkpoint') {
+            if (!library) throw new Error('任务流程库暂不可用')
+            return library.checkpoint(owner, token, p.arguments)
+          }
+          library?.beforeTool(owner, token, p.tool, p.arguments)
+          try {
+            return await this.tabTools.call(p.tool, p.arguments, { owner, signal: p.signal, sudoLease: this.sudoWorkflow, readOnly: this.settings.sandbox === 'read-only' })
+          } catch (error) { library?.toolFailed(owner, token, p.tool); throw error }
+        })()
         void operation.then(result => {
           if (memory?.enabled) memory.activeLibrary?.record(owner, token, p.tool, p.arguments, result)
           client.respond(event.id!, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
@@ -1282,7 +1296,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.updateCompletion()
         break
       case 'turn/completed':
-        this.cancelTakeover()
         this.tabTools.releaseOwner(this.threadId)
         this.busy = false
         this.turnId = ''
@@ -1335,7 +1348,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.status = hint || `${label}：${message}`
     this.replace(`send-error-${this.threadId}-${turnId || `start-${this.sendAttempt}`}`, 'system', this.sendNotice)
     if (!willRetry && endTurn) {
-      this.cancelTakeover()
       this.tabTools.releaseOwner(this.threadId)
       this.busy = false
       this.turnId = ''
@@ -1351,15 +1363,19 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       const goal = await backend.getGoal(threadId)
       this.zone.run(() => {
         if (this.codex !== backend || this.threadId !== threadId) return
-        this.goalStatus = goal?.status || ''
+        const issue = goal?.status === 'complete' ? memory?.activeLibrary?.completionIssue(threadId, token) : ''
+        this.goalStatus = issue ? 'active' : goal?.status || ''
         this.updateCompletion()
+        if (issue) { this.memoryNotice = issue; this.status = issue }
       })
-      if (memory?.enabled && this.codex === backend && this.threadId === threadId && !this.busy) {
+      if (memory?.enabled && this.codex === backend && this.threadId === threadId && !this.busy && !memory.activeLibrary?.completionIssue(threadId, token)) {
         try {
           const outcome = this.entries.filter(entry => entry.kind === 'agent').slice(-1)[0]?.text || ''
           const workflow = await memory.activeLibrary?.finish(threadId, token, this.latestTurnStatus, goal?.status || '', outcome)
           if (workflow && this.codex === backend && this.threadId === threadId && !this.busy) this.zone.run(() => {
-            this.memoryNotice = `已归档流程：${workflow.title}，下次类似任务可复用`
+            this.pendingWorkflow = workflow
+            this.workflowAlias = workflow.alias || ''
+            this.memoryNotice = '任务已完成。是否为此流程设置别名？下次可直接输入 /task1 执行。'
             this.changeDetector?.detectChanges()
           })
         } catch { this.zone.run(() => { this.memoryNotice = '任务已完成，但流程归档失败；可在设置中检查流程库' }) }
@@ -1465,7 +1481,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
     this.modelListSequence++
     this.chatScroll?.destroy()
-    this.cancelTakeover()
     this.tabTools.releaseOwner(this.threadId)
     if (this.outputTimer) clearTimeout(this.outputTimer)
     if (this.copyTimer) clearTimeout(this.copyTimer)

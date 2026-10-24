@@ -1,6 +1,6 @@
 {
   "name": "tabby-ai-tools",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "A persistent AI agent sidebar for Tabby with Codex, OpenAI, DeepSeek, GLM, and Claude support",
   "repository": {
     "type": "git",

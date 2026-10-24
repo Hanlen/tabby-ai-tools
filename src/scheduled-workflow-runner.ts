@@ -54,12 +54,7 @@ export class ScheduledWorkflowRunner {
           this.verdict = { status: args.status, evidence: args.evidence }
           result = { recorded: true, ...this.verdict }
         } else if (p.namespace === 'tabby_tabs') {
-          result = await this.ports.call(p.tool, args, { owner: this.threadId, signal: this.controller.signal, readOnly: this.task.settings.sandbox === 'read-only',
-            confirmTakeover: async request => {
-              await this.store.append(this.run.id, this.run.owner, 'status', `终端需要人工接管确认：${request.title}`)
-              this.stop('目标终端正在使用或无法确认空闲，请检查终端后重新运行。', 'needs_attention')
-              return 'cancel'
-            } })
+          result = await this.ports.call(p.tool, args, { owner: this.threadId, signal: this.controller.signal, readOnly: this.task.settings.sandbox === 'read-only' })
         } else throw new Error('定时运行不允许创建或修改其他定时任务')
         await this.store.append(this.run.id, this.run.owner, 'output', JSON.stringify(result))
         if (this.controller.signal.aborted) throw new Error(this.stopReason)

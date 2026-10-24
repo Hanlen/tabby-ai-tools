@@ -133,15 +133,6 @@
       span {{t("回到最新消息")}}
   .codex-request(*ngIf='request')
     strong {{request.translateTitle ? t(request.title) : request.title}}
-    .codex-takeover(*ngIf='request.method === "local/terminalTakeover" && takeover')
-      p(*ngIf='takeover.processes.length') {{t("检测到：{0}", [(takeover.processes.join('、'))])}}
-      p(*ngIf='takeover.unknown && !takeover.verifyIdle') {{t("当前终端不支持可靠的前台任务检测。请确认其状态。")}}
-      p(*ngIf='takeover.verifyIdle') {{t("已发送 Ctrl+C。确认原任务停止、终端回到命令提示符后，才能继续。")}}
-      p {{t("AI 准备执行：{0}", [(takeover.purpose)])}}
-      .codex-request-actions
-        button.btn.btn-danger.btn-sm(type='button', *ngIf='!takeover.verifyIdle', (click)='decideTakeover("interrupt")') {{t("中断现有任务并执行")}}
-        button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='takeover.unknown', (click)='decideTakeover("proceed")') {{t("我确认空闲，执行")}}
-        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decideTakeover("cancel")') {{t("取消")}}
     a(*ngIf='request.url', [href]='request.url', target='_blank', rel='noopener noreferrer') {{t("打开授权链接")}}
     .codex-question(*ngFor='let question of request.questions')
       strong(*ngIf='question.header') {{question.header}}
@@ -153,7 +144,7 @@
         button.btn.btn-sm.codex-option(type='button', *ngIf='question.isOther', [class.btn-primary]='request.answers[question.id] === "__other__"', [class.btn-outline-secondary]='request.answers[question.id] !== "__other__"', (click)='request.answers[question.id] = "__other__"') {{t("其他")}}
       input.form-control(*ngIf='question.isOther && request.answers[question.id] === "__other__"', [type]='question.isSecret ? "password" : "text"', [(ngModel)]='request.otherAnswers[question.id]', [attr.placeholder]='t("输入其他答案")')
       input.form-control(*ngIf='!question.options?.length', [type]='question.isSecret ? "password" : "text"', [(ngModel)]='request.answers[question.id]', [attr.placeholder]='t("输入回答")')
-    .codex-request-actions(*ngIf='request.method !== "local/terminalTakeover"')
+    .codex-request-actions
       button.btn.btn-primary.btn-sm(type='button', (click)='decide("accept")', [disabled]='isUserInputRequest() && !canSubmitRequest()') {{isUserInputRequest() ? t("提交答案") : t("允许")}}
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='decide("decline")') {{isUserInputRequest() ? t("跳过") : t("拒绝")}}
   .codex-compose
@@ -211,21 +202,23 @@
           button.btn.btn-link.btn-sm(type='button', (click)='workflowPanelOpen = false', [attr.aria-label]='t("关闭任务流程库")') ×
       small(*ngIf='workflowLoading') {{t("正在读取本地流程…")}}
       small.codex-detail-error(*ngIf='workflowError', role='status') {{t(workflowError)}}
-      small(*ngIf='!workflowLoading && !workflowError && !workflows.length') {{t("完成并核对一次终端任务后，流程会自动归档。在设置中管理流程和偏好。")}}
+      small(*ngIf='!workflowLoading && !workflowError && !workflows.length') {{t("用 /remember 任务描述 开始录制；完成后设置别名，使用 /task1 执行。")}}
       .codex-workflow-list
         .codex-workflow(*ngFor='let workflow of workflows')
           button.codex-workflow-heading(type='button', (click)='expandedWorkflowId = expandedWorkflowId === workflow.id ? "" : workflow.id', [attr.aria-expanded]='expandedWorkflowId === workflow.id')
-            strong {{workflow.title}}
+            strong {{workflow.alias ? "/" + workflow.alias + " · " + workflow.title : workflow.title}}
             small {{t("{0} · 完成 {1} 次", [(workflow.enabled ? t("已启用") : t("已停用")), (workflow.successes)])}}
           pre(dir='auto', *ngIf='expandedWorkflowId === workflow.id') {{workflowText(workflow)}}
           button.btn.btn-outline-secondary.btn-sm(type='button', (click)='useWorkflow(workflow)', [disabled]='busy || !workflow.enabled') {{t("填入任务")}}
     .codex-memory-notice(*ngIf='memoryNotice', role='status') {{t(memoryNotice)}}
+    .codex-memory-actions(*ngIf='pendingWorkflow')
+      label(for='workflow-alias') {{t("流程别名")}}
+      input#workflow-alias.form-control.form-control-sm([(ngModel)]='workflowAlias', placeholder='task1', [disabled]='busy')
+      button.btn.btn-outline-primary.btn-sm(type='button', (click)='saveWorkflowAlias()', [disabled]='busy || !workflowAlias.trim()') {{t("保存别名")}}
+      button.btn.btn-link.btn-sm(type='button', (click)='pendingWorkflow = undefined') {{t("暂不设置")}}
     .codex-memory-actions
       button.btn.btn-link.btn-sm(type='button', (click)='openWorkflows()') {{t("任务流程")}}
       button.btn.btn-link.btn-sm(type='button', (click)='openSchedules()') {{t("定时任务{0}", [(scheduledApproval ? t(" · 待审批") : '')])}}
-      label
-        input(type='checkbox', [(ngModel)]='skipTaskMemory', [disabled]='busy')
-        | {{t("本次不检索记忆")}}
     small.codex-permission-notice(*ngIf='apiMode') {{t("API 工具操作使用终端账户权限；追加输入在下一次模型请求时处理。Thinking 可在上方调整，下一回合生效。")}}
     .codex-send-notice(*ngIf='sendNotice', role='alert') {{t(sendNotice)}}
     button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='goalStatus === "active" && !busy', (click)='continueTask()') {{t("继续当前目标")}}

@@ -85,3 +85,9 @@ npm run skill:check  # 检查内嵌知识与 skill 文件是否一致
 纯 review 请求只审查和报告，不能据此自动改码。用户明确要求 fix、修复确认问题或监督其他终端 Agent 完成修复后，交付应包含实际修改、相关回归和再次审查；范围内仍有确认的 P0/P1/P2 时继续修复，有外部阻碍则说明证据与未完成项。不能以 review 报告或修复计划代替已授权的修复，也不能从审查请求推断提交、推送、发布或权限变更授权。
 
 仓库没有独立的 review/fix 状态机或调度器；此规则放入共用 `skills/tabby/SKILL.md`，通过 bundle 注入 Codex 新建/恢复线程和全部 API 供应商请求。回归验证共用知识的实际传递，以及模拟监督 Agent 在 review-only 和 fix-authorized 两种请求下的工具往返、审批与验证反馈；它不是对真实模型决策的证明。终端与审查修复事故的根因、具体改动及验证边界见 [2026-10-22 修复记录](incidents/2026-10-22-review-fix.md)。
+
+任务流程仅由 `/remember TASK` 开始录制，结束后设置别名，`/task1` 执行。`src/sudo-workflow.ts` 构造终端内非交互预检与保活，`src/tab-tools.ts` 管理其任务生命周期；使用假 sudo 测试预检失败和跨命令保活，不能替代真实桌面／SSH 策略验证。
+
+流程身份和验收采用结构化 `TaskStep.server/dependsOn/verification/verificationCommands`。`read_tab` 仅提取连接字段白名单和会话路径；`workflow_checkpoint` 由面板路由到 `TaskMemory`，使用同终端新观察和串行发送门禁。通用规则在 bundled skill，具体流程和约束由发送时隐藏提示注入。旧库字段可选保持兼容；新录制须有完整身份及逐步验收。不将单纯读取或发送回执作为成功证明，语义验收仍由模型判断。
+
+终端接管由 `send_input` 自动处理，不再生成 `local/terminalTakeover` 请求。检测未知（SSH、无枚举接口、枚举异常）时不因检测能力缺失暂停，不盲发 Ctrl+C；已检测的无关进程需要 `foregroundTaskNeeded=false`，发送 Ctrl+C 并验证停止。保留任务所需进程、会话/所有权检查、取消与只读限制。

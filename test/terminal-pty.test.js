@@ -66,7 +66,7 @@ test('real Linux PTY bash/less stays operable with unavailable enumeration and r
   }
   await waitFor(() => output.includes('PTY_PROMPT> '))
   const tabId = (await tools.call('list_tabs', {}))[0].id
-  const context = { owner: 'pty-task', confirmTakeover: async request => { assert.equal(request.unknown, true); return 'proceed' } }
+  const context = { owner: 'pty-task' }
   assert.equal((await tools.call('send_input', { tabId, text: "printf 'pager fixture\\n' | less", submit: true }, context)).userInputLocked, true)
   await waitFor(() => output.includes('(END)'))
   await new Promise(resolve => setTimeout(resolve, 1200))
