@@ -46,7 +46,7 @@ These are user-facing routes, not Shell commands or tool names. Direct users to 
 
 | Feature | Entry point |
 | --- | --- |
-| Open, hide or resize the assistant | Toolbar robot button; drag the sidebar edge to resize. Hiding preserves the conversation. Settings → AI Tools controls automatic opening at startup. |
+| Open, hide or resize the assistant | Toolbar robot button; drag the sidebar edge to resize. Hiding preserves the conversation. The sidebar opens at startup by default, including older configs without the setting; an explicit opt-out is preserved. Settings → AI Tools controls automatic opening at startup. |
 | Configure provider/login | Settings → AI Tools: native Codex CLI path and local login, or named OpenAI/DeepSeek/GLM/Claude API connections with Base URL, key source (direct/local config or environment), model discovery/manual ID and a connection test. API mode needs no Codex CLI. The user enters credentials outside chat. |
 | Switch connections or reconnect | Sidebar connection selector and connection icon; changing connections/endpoints/models preserves portable conversation context and the goal without replaying old tools. Wait for active work to finish before switching. |
 | Choose a model | Click model summary or `/model` (also `/model MODEL_ID`); choose supported reasoning effort/Thinking controls. API advanced settings include context window, output tokens and tool iteration limit (`0` means no fixed cap). Model IDs and options depend on the connection. |

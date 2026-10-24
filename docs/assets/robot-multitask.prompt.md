@@ -1,13 +1,39 @@
 # README robot animation
 
-Created with the built-in `image_gen` tool. The generated 1536 × 1024 sprite
-sheet contains 12 frames arranged in 3 columns and 4 rows. Each 512 × 256 frame
-is encoded into `robot-multitask.gif` with a shared 256-color palette, an infinite
-loop, and a 1.86-second duration. `robot-multitask.png` is its static first frame.
+Created and enhanced with the built-in `image_gen` tool. The original
+1536 × 1024 sprite sheet contained 12 frames arranged in 3 columns and 4 rows.
+For version 0.2.3, the original frames were grouped into six square pairs, each
+containing two successive frames stacked vertically. Each pair was enhanced
+independently while preserving the robot, scene, pose sequence and camera.
+The selected outputs are 1254 × 1254 pixels per pair; each half is 1254 × 627.
+Downsample each half with Lanczos to the final 1024 × 512 frame size.
+
+`robot-multitask.gif` keeps 12 frames with a shared 256-color median-cut palette,
+Floyd–Steinberg dithering, infinite looping, disposal mode 2, and frame durations
+`[220, 160, 160, 160, 160, 100, 100, 100, 160, 160, 160, 220]` milliseconds
+(1.86 seconds total). `robot-multitask.png` is the full-color static first frame
+at the same 1024 × 512 resolution. Both README editions display the artwork at
+560 × 280, with the PNG selected for reduced-motion preferences. The GIF is
+approximately 3.30 MiB; the PNG is approximately 529 KiB.
+
+The final encoding was performed with Pillow after AI enhancement: crop the two
+equal halves, downsample, assemble a 3-column/4-row sheet to calculate one shared
+palette, quantize every frame with that palette, and save the timed GIF. Inspect
+all frames for clipping, registration drift and loop continuity; decode the final
+GIF to verify dimensions, frame count, timing and looping. Keep the full-color
+first frame as the reduced-motion fallback.
 
 The terminal windows are decorative illustrations, not screenshots of the plugin.
 
-## Generation prompt
+## High-definition enhancement prompt
+
+Apply this exact prompt to each original square frame pair:
+
+```text
+Use case: identity-preserve. Upscale this existing animation frame pair to 1024 x 1024 pixels, exactly double the supplied resolution. Output must be SQUARE. The square contains precisely TWO wide images stacked vertically, ONE COLUMN and TWO ROWS, no gutters, divider or borders. Each half is 1024 x 512. Faithfully enhance the exact supplied pixels: same white robot identity, facial expression and eye shapes in each respective half, dark navy background, proportions, floating terminal windows, exact geometry and placement, keyboard, mug, plant, mouse and books. Preserve every object position for animation registration. Refine clarity and edges without redesigning, adding details, altering the camera, or moving anything. No new text, no letters, no watermark. This is high-fidelity super-resolution of the supplied frame pair for a looping animation. Preserve pose differences between the upper and lower frame.
+```
+
+## Original generation prompt
 
 ```text
 Use case: stylized-concept.

@@ -42,18 +42,27 @@ function setup (t, settings = {}, appReady = new AsyncSubject(), configReady = n
   return { app, config, sidebar, provider, calls }
 }
 
-test('startup opening defaults off and missing settings preserve manual opening', async t => {
-  assert.equal(new CodexConfigProvider().defaults.codexAgent.openOnStartup, false)
-  for (const openOnStartup of [undefined, false]) {
-    const f = setup(t, { openOnStartup })
+test('startup opening defaults on for new and existing configs without the setting', async t => {
+  assert.equal(new CodexConfigProvider().defaults.codexAgent.openOnStartup, true)
+  for (const settings of [new CodexConfigProvider().defaults.codexAgent, {}]) {
+    const f = setup(t, settings)
     ready(f.app.ready$)
     ready(f.config.ready$)
-    await flush()
-    assert.deepEqual(f.calls, [])
-    f.provider.provide()[0].click()
+    assert.deepEqual(f.calls, [], 'mounting waits until the ready view has rendered')
     await flush()
     assert.deepEqual(f.calls, [[path.resolve(os.homedir()), undefined]])
   }
+})
+
+test('an explicit opt-out preserves manual opening', async t => {
+  const f = setup(t, { openOnStartup: false })
+  ready(f.app.ready$)
+  ready(f.config.ready$)
+  await flush()
+  assert.deepEqual(f.calls, [])
+  f.provider.provide()[0].click()
+  await flush()
+  assert.deepEqual(f.calls, [[path.resolve(os.homedir()), undefined]])
 })
 
 for (const first of ['app', 'config']) {

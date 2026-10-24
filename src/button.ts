@@ -20,7 +20,7 @@ export class CodexToolbarButtonProvider extends ToolbarButtonProvider implements
       take(1),
       observeOn(asyncScheduler),
     ).subscribe(() => {
-      if (this.config.store.codexAgent.openOnStartup && !this.sidebar.isVisible) {
+      if (this.config.store.codexAgent.openOnStartup !== false && !this.sidebar.isVisible) {
         void this.open().catch(error => console.error('Could not open AI Tools sidebar on startup:', error))
       }
     })

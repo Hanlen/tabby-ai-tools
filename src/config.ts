@@ -35,7 +35,7 @@ export class CodexConfigProvider extends ConfigProvider {
       defaultProfileId: '',
       apiProfiles: [],
       taskMemoryEnabled: true,
-      openOnStartup: false,
+      openOnStartup: true,
       language: 'auto',
     } as AgentSettings,
   }
