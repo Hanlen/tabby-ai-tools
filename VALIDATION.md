@@ -219,3 +219,10 @@ HTTP 服务工作目录只含 tabby-codex-windows-validation.tar.gz，日志和 
 流程由 `/remember TASK` 显式录制，完成后配置别名，`/task1` 调用。步骤保存服务器连接／持久 ID、已确认 IP、账户、端口、绝对操作路径、串行依赖、验收条件与证据。增加 `workflow_checkpoint` 与 `verificationFor`，对同终端的新观察、未完成前置步骤、并行发送、身份／目录不符和弱化验收条件进行门禁；业务结果语义仍由模型判断。旧格式可读，缺失结构建议重新录制。
 
 验证使用真实流程存储与模拟后端／终端：覆盖两台服务器相同命令不合并、跨服务器阻断、旧读／错误终端／运行中结果不能确认、检查命令不推进步骤、目标及路径不符、显式身份探测和绑定。sudo 用假命令测试，不使用真实凭据；未进行真实 Tabby 桌面、SSH、多供应商模型端到端或耗时／token 对比测试。
+
+
+## macOS ChatGPT.app 路径修复（0.3.1）
+
+默认发现补充 `~/Applications/ChatGPT.app/Contents/Resources/codex` 和 `/Applications/ChatGPT.app/Contents/Resources/codex`，保留 PATH、Shell、NVM 及常见安装目录优先级。回归验证用户应用目录、替代系统应用目录、带空格显式路径、无执行权限拒绝、自定义命令不降级，以及 Linux 不扫描 macOS 用户应用目录。
+
+本地 Linux：469 项测试，464 通过、5 项平台跳过；类型检查、skill 一致性和生产构建通过。真实 ChatGPT.app 安装布局及 Tabby macOS 桌面端到端未在本机验证；不调用收费模型烟测。跨平台分支与标签 CI 结果由 GitHub Actions 单独核验。

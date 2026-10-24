@@ -257,6 +257,8 @@ Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境�
 
 默认 Codex 仍未找到时，补充检查 `~/.local/bin`、`~/.npm-global/bin`、`$NVM_DIR` 及 `~/.nvm` 下的 `current/bin` 和 `versions/node/v*/bin`，最后检查 `/opt/homebrew/bin` 和 `/usr/local/bin`。NVM 优先 current，其余按 Node 版本降序选择含有效 Codex 的目录；不要求 Shell 一定加载 NVM，也不固定用户名或 Node 版本。已通过桌面 PATH 或设置选定的 Codex 不会被 Shell 或目录扫描中的另一个安装替换。
 
+macOS 还会检查 `~/Applications/ChatGPT.app/Contents/Resources/codex` 和 `/Applications/ChatGPT.app/Contents/Resources/codex`。如果 ChatGPT.app 内包含可执行的 Codex，可在默认模式下自动发现；也可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写实际完整路径。应用安装位置或内部布局不同时，以本机存在且可执行的文件为准。
+
 查找结果与启动环境一起传递：Linux/macOS 把启动器所在目录放到子进程 PATH 首位。对于 `#!/usr/bin/env node`（含 `env -S node`）启动器，若 Node 不在同目录或 PATH，则从用户 Shell 及 NVM 等补充目录恢复 Node；这也适用于有效的显式路径和自定义命令名。找不到 Node 时报告运行环境错误，保留选定的 Codex。父进程环境不变，关闭或切换配置会取消尚未结束的探测。
 
 服务关闭和重连会等待旧进程回收。Linux/macOS 为服务创建独立进程组，先发送 SIGTERM，等待最多 1 秒，再向仍存活的进程组发送 SIGKILL，并等待最多 2 秒确认服务管道关闭。Windows 使用由 SystemRoot / WINDIR 定位的绝对路径 `System32\taskkill.exe /t /f`，不依赖 PATH；执行和退出确认均有 2 秒上限。回收失败会给出诊断并阻止启动另一个服务，需要处理该错误并重启 Tabby 后重试。
