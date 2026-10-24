@@ -80,6 +80,34 @@ test('custom NVM_DIR is supported and current symlink precedes version scanning'
   assert.equal((await resolveCodexLaunch('codex', f.context)).executable, target)
 })
 
+test('macOS discovers ChatGPT.app bundled Codex without PATH or a working Shell', posix, async t => {
+  const f = fixture(t)
+  f.context.platform = 'darwin'
+  const target = f.file('Applications/ChatGPT.app/Contents/Resources/codex', '#!/bin/sh\nexit 0\n')
+  const launch = await resolveCodexLaunch('', f.context)
+  assert.equal(launch.executable, target)
+  assert.equal(launch.env.PATH.split(':')[0], path.dirname(target))
+  const preferred = f.file('desktop-bin/codex', '#!/bin/sh\nexit 0\n')
+  assert.equal((await resolveCodexLaunch('codex', f.context)).executable, preferred)
+  fs.unlinkSync(preferred)
+  fs.chmodSync(target, 0o644)
+  await assert.rejects(resolveCodexLaunch('', f.context), /ChatGPT\.app\/Contents\/Resources\/codex: EACCES/)
+  fs.chmodSync(target, 0o755)
+  f.context.platform = 'linux'
+  await assert.rejects(resolveCodexLaunch('', f.context), /找不到 Codex CLI/)
+})
+
+test('macOS discovers a system ChatGPT.app bundle and preserves explicit path rules', posix, async t => {
+  const f = fixture(t)
+  f.context.platform = 'darwin'
+  const target = f.file('system Applications/ChatGPT.app/Contents/Resources/codex', '#!/bin/sh\nexit 0\n')
+  f.context.systemDirectories = [path.dirname(target)]
+  assert.equal((await resolveCodexLaunch('codex', f.context)).executable, target)
+  assert.equal((await resolveCodexLaunch(`"${target}"`, f.context)).executable, target)
+  await assert.rejects(resolveCodexLaunch('~/missing/codex', f.context), /未尝试自动查找/)
+  await assert.rejects(resolveCodexLaunch('custom-agent', f.context), /未尝试其他安装/)
+})
+
 test('Shell PATH uses its own pipe, handles banners and preserves PATH for Node and tools', posix, async t => {
   const f = fixture(t)
   const target = f.file('shell tools/codex', '#!/bin/sh\nexit 0\n')

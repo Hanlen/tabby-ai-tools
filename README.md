@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.3.0 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 0.3.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -67,6 +67,8 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
 3. AI Tools opens automatically when Tabby starts, using **Codex (local login)** by default. Choose a model available to your account in the sidebar, or use the Codex default. No settings change is required.
 
 Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
+
+On macOS, automatic discovery also checks `ChatGPT.app/Contents/Resources/codex` under `/Applications` and `~/Applications`, when that executable exists. For a different installation location, set the full path in **Settings → AI Tools → Codex CLI executable**.
 
 ## Orchestrate tasks in natural language
 

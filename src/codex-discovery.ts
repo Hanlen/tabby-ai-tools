@@ -146,6 +146,11 @@ async function installDirectories (home: string, env: NodeJS.ProcessEnv, cwd: st
     checkCancelled(context.signal)
   }
   directories.push(...(context.systemDirectories || ['/opt/homebrew/bin', '/usr/local/bin']))
+  if ((context.platform || process.platform) === 'darwin') {
+    directories.push(path.join(home, 'Applications', 'ChatGPT.app', 'Contents', 'Resources'))
+    // systemDirectories replaces host-level locations in discovery fixtures.
+    if (!context.systemDirectories) directories.push('/Applications/ChatGPT.app/Contents/Resources')
+  }
   return [...new Set(directories)]
 }
 
