@@ -1,3 +1,4 @@
+import { CLAUDE_CODE_ID } from './claude-code-profile'
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewChild } from '@angular/core'
 import { ConfigService } from 'tabby-core'
 import { CodexModel, CodexService, SavedSession } from './codex.service'
@@ -171,6 +172,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
   scheduledConnectionLabel (task: ScheduledTask): string {
     const profileId = task.modelCheck?.requestedProfileId ?? task.profileId
+    if (profileId === CLAUDE_CODE_ID) return this.t('Claude Code（本机登录）')
     return profileId ? this.apiProfiles.find(p => p.id === profileId)?.name || this.t('已移除的 API 连接') : 'Codex'
   }
   scheduledPermissionLabel (task: ScheduledTask): string {
@@ -202,13 +204,26 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     finally { this.zone.run(() => { this.scheduleLoading = false; this.changeDetector?.detectChanges() }) }
   }
   decideScheduledApproval (accept: boolean): void { this.scheduledApproval?.decide(accept) }
+  get claudeCodeMode (): boolean { return this.codex.profile?.runtime === 'claude-code' }
   get apiMode (): boolean { return !!this.codex.profile }
-  get agentLabel (): string { return this.codex.profile?.name || 'Codex' }
+  get agentLabel (): string { return this.claudeCodeMode ? this.t('Claude Code（本机登录）') : this.codex.profile?.name || 'Codex' }
   get settings (): AgentSettings {
     return this.connectionSettings(this.profileId, this.codex)
   }
   private connectionSettings (id: string, backend: AgentBackend): AgentSettings {
     const base = this.config.store.codexAgent as AgentSettings
+    if (id === CLAUDE_CODE_ID) {
+      if (!base.claudeThreads) base.claudeThreads = {}
+      return new Proxy(base, {
+        get: (target, key: keyof AgentSettings) => key === 'model' ? target.claudeModel || 'sonnet' : key === 'reasoningEffort' ? target.claudeReasoningEffort || '' : key === 'threads' || key === 'tabToolThreads' ? target.claudeThreads : target[key],
+        set: (target, key: keyof AgentSettings, value) => {
+          if (key === 'model') target.claudeModel = value
+          else if (key === 'reasoningEffort') target.claudeReasoningEffort = value
+          else (target as any)[key] = value
+          return true
+        },
+      })
+    }
     const profile = this.apiProfiles.find(p => p.id === id) || backend.profile
     if (!profile) return base
     if (!profile.threads) profile.threads = {}
@@ -974,7 +989,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     let remember = false
     let selectedWorkflow: TaskWorkflow | undefined
     if (!text || this.loading || this.request) return
-    if (this.apiMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
+    if (this.apiMode && !this.claudeCodeMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
       this.status = '此 API 连接已移除，请选择其他连接'
       return
     }
@@ -1029,7 +1044,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       await this.ensureSource()
       if (this.busy && this.turnId) {
         await this.codex.steer(this.threadId, this.turnId, text)
-        this.status = this.apiMode ? '已排队，将在下一次模型请求时处理' : '已追加到当前任务'
+        this.status = this.claudeCodeMode ? '已排队，将在当前 Claude Code 执行结束后处理' : this.apiMode ? '已排队，将在下一次模型请求时处理' : '已追加到当前任务'
         return
       }
       this.busy = true
@@ -1080,7 +1095,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async continueTask (): Promise<void> {
     if (!this.threadId || this.busy) return
-    if (this.apiMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
+    if (this.apiMode && !this.claudeCodeMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
       this.status = '此 API 连接已移除，请选择其他连接'
       return
     }

@@ -810,5 +810,17 @@
   "流程别名已保存：/{0}": "Workflow alias saved: /{0}",
   "别名须以英文字母开头，只能包含字母、数字、下划线和短横线，且不能与内置命令重复": "Aliases must begin with a letter, contain only letters, digits, underscores or hyphens, and differ from built-in commands.",
   "当前目录已使用此别名": "This alias is already used in the current directory.",
-  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases."
+  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases.",
+  "Claude Code（本机登录）": "Claude Code (स्थानीय लॉगिन)",
+  "应用 Claude Code 配置并恢复会话": "Claude Code सेटिंग लागू करके सत्र जारी रखें",
+  "使用本机 Claude Code 登录": "स्थानीय Claude Code लॉगिन इस्तेमाल करें",
+  "Claude Code CLI 可执行文件": "Claude Code CLI निष्पादन फ़ाइल",
+  "先在本机终端运行 claude auth login，再用 claude auth status 检查。插件复用官方 CLI 登录，不保存订阅凭据。": "स्थानीय टर्मिनल में claude auth login चलाएँ, फिर claude auth status से जाँचें। प्लगइन आधिकारिक CLI लॉगिन इस्तेमाल करता है; सदस्यता के प्रमाण सहेजता नहीं है।",
+  "订阅用户请选择 Claude 账号登录。API Key 或云平台配置可能使用独立计费，请以官方 CLI 认证状态为准。": "सदस्यता के लिए अपने Claude खाते से लॉगिन करें। API कुंजी या क्लाउड का अलग बिल हो सकता है; आधिकारिक CLI में प्रमाणीकरण की स्थिति जाँचें।",
+  "支持官方模型别名或完整模型 ID；实际可用模型与用量取决于账号权益。": "आधिकारिक मॉडल उपनाम या पूरा मॉडल ID इस्तेमाल करें। उपलब्धता और उपयोग सीमाएँ आपके खाते पर निर्भर हैं।",
+  "终端工具沿用插件权限和审批；本机 Claude Code 的内置 Shell、文件工具及自定义 hooks 不启用。此模式不提供操作系统沙箱。": "टर्मिनल उपकरण प्लगइन की अनुमतियों और स्वीकृतियों का पालन करते हैं। Claude Code के अंतर्निहित Shell, फ़ाइल उपकरण और कस्टम hooks बंद हैं। OS सैंडबॉक्स उपलब्ध नहीं है।",
+  "已排队，将在当前 Claude Code 执行结束后处理": "कतार में जोड़ा गया; वर्तमान Claude Code निष्पादन के बाद संसाधित होगा।",
+  "Claude Code 请求执行 {0}：\n{1}\n终端操作使用该终端账户权限。": "Claude Code ने {0} का अनुरोध किया:\n{1}\nटर्मिनल कार्य उसके खाते की अनुमतियों से चलते हैं।",
+  "Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。": "Claude Code उपकरण टर्मिनल खाते की अनुमतियाँ इस्तेमाल करते हैं। अतिरिक्त संदेश वर्तमान निष्पादन के बाद संसाधित होंगे। टोकन उपयोग सदस्यता का शेष कोटा नहीं है।",
+  "当前 Claude Code 配置": "वर्तमान Claude Code कॉन्फ़िगरेशन"
 }

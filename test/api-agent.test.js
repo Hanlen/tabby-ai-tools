@@ -1598,7 +1598,8 @@ test('model connection metadata omits stored keys, endpoints and foreground conv
   const config = { store: { codexAgent: { model: 'native-model', reasoningEffort: 'high', apiProfiles: [{ id: 'private-api', name: 'Reasoning', provider: 'claude', model: 'configured-model', reasoningEffort: 'high', apiKey: 'secret-key-never-expose', baseUrl: 'https://private-endpoint.invalid', apiKeyEnv: 'PRIVATE_API_KEY', threads: { '/project': 'foreground-id' } }] } } }
   const factory = new AgentBackendFactory(config, {}, {}, {})
   const metadata = factory.modelConnections()
-  assert.equal(metadata[1].model, 'configured-model')
+  assert.equal(metadata.find(connection => connection.profileId === 'private-api').model, 'configured-model')
+  assert.equal(metadata.find(connection => connection.profileId === 'claude-code').provider, 'claude-code')
   assert.doesNotMatch(JSON.stringify(metadata), /secret-key|private-endpoint|PRIVATE_API_KEY|foreground-id/)
 })
 

@@ -810,5 +810,17 @@
   "流程别名已保存：/{0}": "Workflow alias saved: /{0}",
   "别名须以英文字母开头，只能包含字母、数字、下划线和短横线，且不能与内置命令重复": "Aliases must begin with a letter, contain only letters, digits, underscores or hyphens, and differ from built-in commands.",
   "当前目录已使用此别名": "This alias is already used in the current directory.",
-  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases."
+  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases.",
+  "Claude Code（本机登录）": "Claude Code (local login)",
+  "应用 Claude Code 配置并恢复会话": "Apply Claude Code settings and resume the session",
+  "使用本机 Claude Code 登录": "Use the local Claude Code login",
+  "Claude Code CLI 可执行文件": "Claude Code CLI executable",
+  "先在本机终端运行 claude auth login，再用 claude auth status 检查。插件复用官方 CLI 登录，不保存订阅凭据。": "Run claude auth login locally, then check claude auth status. The plugin reuses the official CLI login without storing subscription credentials.",
+  "订阅用户请选择 Claude 账号登录。API Key 或云平台配置可能使用独立计费，请以官方 CLI 认证状态为准。": "For a subscription, sign in with your Claude account. API keys or cloud providers may use separate billing; check the official CLI authentication status.",
+  "支持官方模型别名或完整模型 ID；实际可用模型与用量取决于账号权益。": "Use an official model alias or full model ID. Availability and usage limits follow your account.",
+  "终端工具沿用插件权限和审批；本机 Claude Code 的内置 Shell、文件工具及自定义 hooks 不启用。此模式不提供操作系统沙箱。": "Terminal tools follow plugin permissions and approvals. Built-in Claude Code Shell/file tools and custom hooks are disabled. No OS sandbox is provided.",
+  "已排队，将在当前 Claude Code 执行结束后处理": "Queued; processing follows the current Claude Code invocation.",
+  "Claude Code 请求执行 {0}：\n{1}\n终端操作使用该终端账户权限。": "Claude Code requests {0}:\n{1}\nTerminal operations use the terminal account permissions.",
+  "Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。": "Claude Code tools use terminal account permissions. Added messages wait for the current invocation to finish. Token usage is not your remaining subscription quota.",
+  "当前 Claude Code 配置": "Current Claude Code configuration"
 }

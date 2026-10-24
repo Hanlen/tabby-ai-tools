@@ -810,5 +810,17 @@
   "流程别名已保存：/{0}": "Workflow alias saved: /{0}",
   "别名须以英文字母开头，只能包含字母、数字、下划线和短横线，且不能与内置命令重复": "Aliases must begin with a letter, contain only letters, digits, underscores or hyphens, and differ from built-in commands.",
   "当前目录已使用此别名": "This alias is already used in the current directory.",
-  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases."
+  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases.",
+  "Claude Code（本机登录）": "Claude Code (inicio local)",
+  "应用 Claude Code 配置并恢复会话": "Aplicar configuración de Claude Code y reanudar",
+  "使用本机 Claude Code 登录": "Usar el inicio local de Claude Code",
+  "Claude Code CLI 可执行文件": "Ejecutable de Claude Code CLI",
+  "先在本机终端运行 claude auth login，再用 claude auth status 检查。插件复用官方 CLI 登录，不保存订阅凭据。": "Ejecuta claude auth login localmente y comprueba claude auth status. El complemento usa el acceso de la CLI oficial sin guardar credenciales de suscripción.",
+  "订阅用户请选择 Claude 账号登录。API Key 或云平台配置可能使用独立计费，请以官方 CLI 认证状态为准。": "Para usar la suscripción, inicia sesión con tu cuenta de Claude. Las claves API o la nube pueden facturarse aparte; comprueba la autenticación de la CLI oficial.",
+  "支持官方模型别名或完整模型 ID；实际可用模型与用量取决于账号权益。": "Usa un alias oficial o el ID completo del modelo. La disponibilidad y los límites dependen de tu cuenta.",
+  "终端工具沿用插件权限和审批；本机 Claude Code 的内置 Shell、文件工具及自定义 hooks 不启用。此模式不提供操作系统沙箱。": "Las herramientas respetan los permisos y aprobaciones del complemento. Se desactivan Shell, archivos y hooks personalizados de Claude Code. No hay sandbox del SO.",
+  "已排队，将在当前 Claude Code 执行结束后处理": "En cola; se procesará al terminar la ejecución actual de Claude Code.",
+  "Claude Code 请求执行 {0}：\n{1}\n终端操作使用该终端账户权限。": "Claude Code solicita {0}:\n{1}\nLas operaciones usan los permisos de la cuenta del terminal.",
+  "Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。": "Las herramientas de Claude Code usan los permisos del terminal. Los mensajes añadidos esperan al final de la ejecución. Los tokens usados no indican la cuota restante de la suscripción.",
+  "当前 Claude Code 配置": "Configuración actual de Claude Code"
 }

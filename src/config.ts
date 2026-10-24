@@ -2,6 +2,10 @@ import { ConfigProvider } from 'tabby-core'
 import type { ApiProfile } from './agent-types'
 
 export interface AgentSettings {
+  claudeExecutable?: string
+  claudeModel?: string
+  claudeReasoningEffort?: string
+  claudeThreads?: Record<string, string>
   executable: string
   cwd: string
   model: string
@@ -23,6 +27,10 @@ export class CodexConfigProvider extends ConfigProvider {
   defaults = {
     codexAgent: {
       executable: 'codex',
+      claudeExecutable: 'claude',
+      claudeModel: 'sonnet',
+      claudeReasoningEffort: '',
+      claudeThreads: {},
       cwd: '',
       model: '',
       reasoningEffort: '',

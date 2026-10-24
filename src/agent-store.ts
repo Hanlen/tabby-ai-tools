@@ -24,6 +24,7 @@ export interface ApiSession {
   messages: any[]
   turns: ApiTurn[]
   totalTokens: number
+  claudeSession?: { id: string; messageCount: number }
   toolLoopState?: ToolLoopState
   goal?: { objective: string; status: string; tokenBudget: number; usedTokens: number }
 }
