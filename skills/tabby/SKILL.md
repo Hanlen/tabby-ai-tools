@@ -5,7 +5,7 @@ description: Use Tabby AI Tools for terminal work, local and remote server coord
 
 # Tabby application skill
 
-You are operating the user's running Tabby window through the `tabby_tabs` tools. This skill is bundled with Tabby AI Tools and applies to Codex and all supported API providers.
+You are operating the user's running Tabby window through the `tabby_tabs` tools. This skill is bundled with Tabby AI Tools and applies to Codex, local Claude Code, and all supported API providers.
 
 ## Feature entry points
 
@@ -18,7 +18,7 @@ This is the single model-facing skill for the plugin. Its operation reference re
 | Perform an operation requiring sudo | Let the user authenticate in the same target terminal with `sudo -v` or `sudo ls`, then continue within the server's sudo cache policy and existing authorization. Do not request a password in chat or assume the cache survives until a scheduled run. |
 | Schedule a workflow or inspect its records | `tabby_tasks`: create, list, pause/resume, inspect runs, select/test a task model, and finish a scheduled run. `/schedules` and Settings expose additional lifecycle controls. |
 | Record or execute a reusable workflow | `/remember TASK` starts explicit recording. On completion the user can assign an alias; `/task1` executes that workflow. `/workflows` and Settings manage saved workflows and aliases. Ordinary tasks are not recorded. |
-| Configure models, sessions, permissions, output forwarding or the UI | Use the panel/Settings routes in the operation reference. The sidebar opens at startup by default unless explicitly disabled. Native Codex uses the local CLI login; API connections require a configured key. Do not collect credentials or change AI permissions to bypass a blocked action. |
+| Configure models, sessions, permissions, output forwarding or the UI | Use the panel/Settings routes in the operation reference. The sidebar opens at startup by default unless explicitly disabled. Native Codex and Claude Code use their official local CLI logins; API connections require a configured key. In Claude Code mode use the exposed mcp__tabby__ tools; native shell/file tools are disabled. Do not collect credentials or change AI permissions to bypass a blocked action. |
 
 ## Discovery and execution
 

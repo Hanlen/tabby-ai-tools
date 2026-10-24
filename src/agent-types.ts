@@ -6,6 +6,8 @@ export type ApiProvider = 'openai' | 'deepseek' | 'glm' | 'claude'
 export type ApiKeySource = 'direct' | 'environment' | 'vault'
 export interface ApiProfile {
   id: string
+  /** Local CLI engine; never send this profile to an HTTP API adapter. */
+  runtime?: 'claude-code'
   name: string
   provider: ApiProvider
   baseUrl: string

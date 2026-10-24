@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.3.2 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools development interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -35,10 +35,13 @@ Terminal takeover is automatic: unavailable foreground-process detection (includ
 | Connection | How to use it |
 | --- | --- |
 | **ChatGPT subscription → local Codex** | Install Codex CLI locally, run `codex login`, and select **Codex (local login)** in AI Tools. |
+| **Claude subscription → local Claude Code** | Install the official CLI, run `claude auth login`, check `claude auth status`, and select **Claude Code (local login)**. |
 | **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
 | **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
 | **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |
 | **Claude / Anthropic** | Add a Claude API connection with its API key and model ID. |
+
+**Claude Code subscription support is implemented in the development version.** The plugin runs the local official CLI without reading or saving subscription credentials. Entitlements, limits, and authentication follow the CLI; API keys or cloud configuration may use separate billing. See [setup and limitations](docs/claude-code.md). A real subscription end-to-end run remains unverified.
 
 Save multiple named connections and switch them in the sidebar. Discover available models or enter a model ID manually. API connections use the selected provider's API credentials and usage-based billing; they can be used without Codex CLI. Compatible proxies must implement the selected provider's protocol.
 

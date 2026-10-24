@@ -810,5 +810,17 @@
   "流程别名已保存：/{0}": "Workflow alias saved: /{0}",
   "别名须以英文字母开头，只能包含字母、数字、下划线和短横线，且不能与内置命令重复": "Aliases must begin with a letter, contain only letters, digits, underscores or hyphens, and differ from built-in commands.",
   "当前目录已使用此别名": "This alias is already used in the current directory.",
-  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases."
+  "不支持的命令：{0}；输入 /workflows 查看流程别名": "Unknown command: {0}; enter /workflows to view workflow aliases.",
+  "Claude Code（本机登录）": "Claude Code (로컬 로그인)",
+  "应用 Claude Code 配置并恢复会话": "Claude Code 설정 적용 및 대화 복원",
+  "使用本机 Claude Code 登录": "로컬 Claude Code 로그인 사용",
+  "Claude Code CLI 可执行文件": "Claude Code CLI 실행 파일",
+  "先在本机终端运行 claude auth login，再用 claude auth status 检查。插件复用官方 CLI 登录，不保存订阅凭据。": "로컬 터미널에서 claude auth login 실행 후 claude auth status로 확인하세요. 공식 CLI 로그인을 사용하며 구독 인증 정보는 저장하지 않습니다.",
+  "订阅用户请选择 Claude 账号登录。API Key 或云平台配置可能使用独立计费，请以官方 CLI 认证状态为准。": "구독을 사용하려면 Claude 계정으로 로그인하세요. API 키 또는 클라우드는 별도로 청구될 수 있습니다. 공식 CLI 인증 상태를 확인하세요.",
+  "支持官方模型别名或完整模型 ID；实际可用模型与用量取决于账号权益。": "공식 모델 별칭 또는 전체 모델 ID를 사용하세요. 사용 가능한 모델과 한도는 계정 권한에 따릅니다.",
+  "终端工具沿用插件权限和审批；本机 Claude Code 的内置 Shell、文件工具及自定义 hooks 不启用。此模式不提供操作系统沙箱。": "터미널 도구는 플러그인 권한과 승인을 따릅니다. Claude Code 내장 Shell·파일 도구와 사용자 hooks는 비활성화됩니다. OS 샌드박스는 제공되지 않습니다.",
+  "已排队，将在当前 Claude Code 执行结束后处理": "대기열에 추가됨. 현재 Claude Code 실행이 끝난 뒤 처리됩니다.",
+  "Claude Code 请求执行 {0}：\n{1}\n终端操作使用该终端账户权限。": "Claude Code의 {0} 실행 요청:\n{1}\n터미널 작업은 해당 계정 권한으로 실행됩니다.",
+  "Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。": "Claude Code 도구는 터미널 계정 권한을 사용합니다. 추가 메시지는 현재 실행 후 처리됩니다. token 사용량은 남은 구독 한도가 아닙니다.",
+  "当前 Claude Code 配置": "현재 Claude Code 설정"
 }

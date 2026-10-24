@@ -4,35 +4,37 @@
       strong {{agentLabel}}
       small([attr.title]='cwd || t("未设置工作目录")') {{shortCwd}}
     .codex-actions
-      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnectAgent()', [disabled]='loading || busy || !!request || modelSaving', [attr.title]='loading ? t("正在连接") : apiMode ? t("应用 API 连接配置并恢复会话") : t("重新连接 Codex")', [attr.aria-label]='t("{0} {1}，点击重连", [agentLabel, t(connectionLabel)])')
+      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnectAgent()', [disabled]='loading || busy || !!request || modelSaving', [attr.title]='loading ? t("正在连接") : claudeCodeMode ? t("应用 Claude Code 配置并恢复会话") : apiMode ? t("应用 API 连接配置并恢复会话") : t("重新连接 Codex")', [attr.aria-label]='t("{0} {1}，点击重连", [agentLabel, t(connectionLabel)])')
         i.fas([class.fa-link]='connected', [class.fa-unlink]='!connected', aria-hidden='true')
       button.codex-details-toggle.btn.btn-outline-secondary.btn-sm(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.aria-label]='statusOpen ? t("收起状态详情") : t("展开状态详情")', [attr.title]='t("展开或收起状态详情")') {{t("详情")}}
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='closeRequested.emit()', [attr.title]='t("收起侧栏")', [attr.aria-label]='t("收起侧栏")') ×
-  select.codex-profile-select.form-control.form-control-sm([ngModel]='profileId', (ngModelChange)='selectConnection($event)', [disabled]='loading || busy || !!request || modelSaving', [attr.aria-label]='t("选择 AI 连接")')
-    option(value='') {{t("Codex（本机登录）")}}
-    option(*ngFor='let profile of apiProfiles', [value]='profile.id') {{profile.name}} · {{profile.provider}}
+  .codex-connection-controls
+    select.codex-profile-select.form-control.form-control-sm([ngModel]='profileId', (ngModelChange)='selectConnection($event)', [disabled]='loading || busy || !!request || modelSaving', [attr.aria-label]='t("选择 AI 连接")', [attr.title]='apiMode ? agentLabel : t("Codex（本机登录）")')
+      option(value='') {{t("Codex（本机登录）")}}
+      option(value='claude-code') {{t("Claude Code（本机登录）")}}
+      option(*ngFor='let profile of apiProfiles', [value]='profile.id') {{profile.name}} · {{profile.provider}}
+    .codex-model-controls
+      button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving || (apiMode && busy)', [attr.title]='t("当前模型：{0}；reasoning：{1}；点击切换，下回合生效", [modelLabel, reasoningLabel])', [attr.aria-label]='t("当前模型与 reasoning 等级，点击切换")')
+        span.codex-current-model {{modelLabel}}
+        span.codex-current-reasoning(*ngIf='!apiMode') reasoning: {{reasoningLabel}}
+  .codex-api-thinking(*ngIf='apiMode && !claudeCodeMode')
+    label([attr.for]='"api-thinking-" + threadId') {{t("Thinking")}}
+    select.form-control.form-control-sm(*ngIf='supportsThinkingToggle', [id]='"api-thinking-" + threadId', [ngModel]='apiThinking', (ngModelChange)='setApiThinking($event, settings.reasoningEffort)', [disabled]='loading || busy || !!request || modelSaving', [attr.aria-label]='t("Thinking 模式")')
+      option(value='default') {{t("服务商默认")}}
+      option(value='enabled') {{t("开启")}}
+      option(value='disabled') {{t("关闭")}}
+    select.form-control.form-control-sm(*ngIf='deepseekMode', [ngModel]='settings.reasoningEffort', (ngModelChange)='setApiThinking(apiThinking, $event)', [disabled]='loading || busy || !!request || modelSaving || apiThinking === "disabled"', [attr.aria-label]='t("Thinking 等级")')
+      option(value='') {{t("默认等级")}}
+      option(value='low') {{t("Low · 较快")}}
+      option(value='high') {{t("High · 深入")}}
+      option(value='max') {{t("Max · 最大")}}
+      option(*ngIf='settings.reasoningEffort && !["low", "high", "max"].includes(settings.reasoningEffort)', [value]='settings.reasoningEffort') {{settings.reasoningEffort}}
+    input.form-control.form-control-sm(*ngIf='!deepseekMode', [value]='settings.reasoningEffort', (change)='setApiThinking(apiThinking, $event.target.value)', [disabled]='loading || busy || !!request || modelSaving', [attr.placeholder]='t("推理强度（可选）")', [attr.aria-label]='t("Thinking 推理强度")')
   small.codex-detail-error(*ngIf='connectionError') {{t(connectionError)}}
-  .codex-model-controls
-    button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving || (apiMode && busy)', [attr.title]='t("当前模型：{0}；reasoning：{1}；点击切换，下回合生效", [modelLabel, reasoningLabel])', [attr.aria-label]='t("当前模型与 reasoning 等级，点击切换")')
-      span.codex-current-model {{modelLabel}}
-      span.codex-current-reasoning(*ngIf='!apiMode') reasoning: {{reasoningLabel}}
-    .codex-api-thinking(*ngIf='apiMode')
-      label([attr.for]='"api-thinking-" + threadId') {{t("Thinking")}}
-      select.form-control.form-control-sm(*ngIf='supportsThinkingToggle', [id]='"api-thinking-" + threadId', [ngModel]='apiThinking', (ngModelChange)='setApiThinking($event, settings.reasoningEffort)', [disabled]='loading || busy || !!request || modelSaving', [attr.aria-label]='t("Thinking 模式")')
-        option(value='default') {{t("服务商默认")}}
-        option(value='enabled') {{t("开启")}}
-        option(value='disabled') {{t("关闭")}}
-      select.form-control.form-control-sm(*ngIf='deepseekMode', [ngModel]='settings.reasoningEffort', (ngModelChange)='setApiThinking(apiThinking, $event)', [disabled]='loading || busy || !!request || modelSaving || apiThinking === "disabled"', [attr.aria-label]='t("Thinking 等级")')
-        option(value='') {{t("默认等级")}}
-        option(value='low') {{t("Low · 较快")}}
-        option(value='high') {{t("High · 深入")}}
-        option(value='max') {{t("Max · 最大")}}
-        option(*ngIf='settings.reasoningEffort && !["low", "high", "max"].includes(settings.reasoningEffort)', [value]='settings.reasoningEffort') {{settings.reasoningEffort}}
-      input.form-control.form-control-sm(*ngIf='!deepseekMode', [value]='settings.reasoningEffort', (change)='setApiThinking(apiThinking, $event.target.value)', [disabled]='loading || busy || !!request || modelSaving', [attr.placeholder]='t("推理强度（可选）")', [attr.aria-label]='t("Thinking 推理强度")')
   small.codex-detail-error(*ngIf='apiMode && modelError', role='alert') {{t(modelError)}}
   .codex-summary
     button.codex-status(type='button', [class.codex-done]='status === "任务已完成"', (click)='toggleStatus()', [attr.title]='t(t(status))', [attr.aria-expanded]='statusOpen', [attr.aria-label]='t("任务状态：{0}；展开或收起详情", [t(status)])') {{t(status)}}
-    button.codex-summary-item.codex-context-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='apiMode ? t("上次 API 请求输入占上下文窗口的比例；下一次请求可能增加；点击查看详情") : t("上下文使用占比；点击查看 token 用量和会话累计")')
+    button.codex-summary-item.codex-context-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='apiMode && !claudeCodeMode ? t("上次 API 请求输入占上下文窗口的比例；下一次请求可能增加；点击查看详情") : t("上下文使用占比；点击查看 token 用量和会话累计")')
       span(*ngIf='contextWindowTokens !== null && contextUsedTokens !== null') {{t("上下文 {0}%", [(contextPercent | number:'1.0-0')])}}
       span(*ngIf='contextWindowTokens === null || contextUsedTokens === null') {{t("上下文 —")}}
     .codex-control-summary([class.codex-control-active]='controlledTabs.length > 0')
@@ -45,59 +47,60 @@
       .codex-detail-actions
         button.btn.btn-link.btn-sm(type='button', (click)='openStatus()', [disabled]='statusLoading', [attr.aria-label]='t("刷新状态详情")') {{t("刷新")}}
         button.btn.btn-link.btn-sm(type='button', (click)='toggleStatus()', [attr.aria-label]='t("关闭状态详情")') ×
-    small(*ngIf='statusLoading') {{t("正在更新…")}}
-    small.codex-detail-error(*ngIf='statusError') {{t(statusError)}}
-    .codex-detail-grid
-      span {{t("连接")}}
-      strong {{t(connectionLabel)}}
-      span(*ngIf='apiMode') {{t("供应商")}}
-      strong(*ngIf='apiMode') {{agentLabel}} · API
-      span {{t("任务状态")}}
-      strong.codex-detail-status {{t(status)}}
-      span {{t("工作目录")}}
-      strong {{cwd || t("未设置")}}
-      span {{t("会话")}}
-      strong {{threadId || t("未连接")}}
-      span {{t("回合")}}
-      strong {{t(turnLabel)}}
-      span {{t("会话状态（查询时）")}}
-      strong {{t(threadStateLabel)}}
-      span {{t("当前模型（查询时）")}}
-      strong {{threadStatus?.model || t("未上报")}}
-      span {{apiMode ? t("配置中的模型（重连生效）") : t("下回合模型")}}
-      strong {{settings.model || t("Codex 默认配置")}}
-      span {{t("当前推理强度（查询时）")}}
-      strong {{threadStatus?.reasoningEffort || t("未上报")}}
-      span {{t("下回合推理强度")}}
-      strong {{settings.reasoningEffort || t("Codex 默认配置")}}
-      span {{apiMode ? t("上次请求输入") : t("上下文")}}
-      strong(*ngIf='contextUsedTokens !== null && contextWindowTokens !== null') {{contextUsedTokens | number:'1.0-0'}} / {{contextWindowTokens | number:'1.0-0'}} tokens（{{contextPercent | number:'1.0-0'}}%）
-      strong(*ngIf='contextUsedTokens === null || contextWindowTokens === null') {{t("未上报")}}
-      span {{apiMode ? t("已上报用量累计") : t("会话累计")}}
-      strong {{sessionTotalTokens === null ? t("未上报") : (sessionTotalTokens | number:'1.0-0') + ' tokens'}}
-      span(*ngIf='!apiMode') {{t(rateLimitLabel(statusRateLimits?.primary))}}
-      strong(*ngIf='!apiMode') {{t(rateLimitValue(statusRateLimits?.primary))}}
-      span(*ngIf='!apiMode && statusRateLimits?.secondary') {{t(rateLimitLabel(statusRateLimits?.secondary))}}
-      strong(*ngIf='!apiMode && statusRateLimits?.secondary') {{t(rateLimitValue(statusRateLimits?.secondary))}}
-      span(*ngIf='!apiMode') {{t("普通用量")}}
-      strong(*ngIf='!apiMode') {{t(ordinaryUsageLabel)}}
-      span {{t("目标")}}
-      strong {{t(goalLabel)}}
-      span {{apiMode ? t("下回合工具策略") : t("下回合文件权限")}}
-      strong {{apiMode ? (settings.sandbox === 'read-only' ? t("只读：禁止终端输入和控件操作") : t("可操作终端：使用终端账户权限")) : (settings.sandbox === 'read-only' ? t("只读") : settings.sandbox === 'workspace-write' ? t("工作区可写") : t("完全访问"))}}
-      span {{t("下回合审批")}}
-      strong {{settings.approvalPolicy === 'on-request' ? t("按需") : settings.approvalPolicy === 'untrusted' ? t("不可信时") : t("不询问")}}
-    .codex-detail-section
-      strong {{t("终端控制（{0}）", [(controlledTabs.length)])}}
-      small(*ngIf='!controlledTabs.length') {{t("当前无控制，终端可由用户操作。")}}
-      .codex-tab-control(*ngFor='let control of controlledTabs')
-        span {{t("{0}（{1}） · 命令执行中，终端输入已锁定 · {2}", [(control.title), (control.tabId), (control.command)])}}
-        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='releaseControlledTab(control.tabId)', [attr.aria-label]='t("临时释放终端 {0}", [control.title])') {{t("临时释放")}}
-    .codex-detail-section
-      strong {{t("自动转发：{0}", [(sourceTerminal ? t("已开启") : t("未绑定"))])}}
-      small(*ngIf='sourceTerminal') {{t("已绑定终端：{0}。仅自动转发新增输出；Codex 可按需访问所有标签。", [(sourceTerminal.title)])}}
-      small(*ngIf='!sourceTerminal') {{t("可从目标终端点击工具栏图标绑定；Codex 仍可按需访问所有标签。")}}
-      button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') {{t("停止自动转发")}}
+    .codex-detail-body
+      small(*ngIf='statusLoading') {{t("正在更新…")}}
+      small.codex-detail-error(*ngIf='statusError') {{t(statusError)}}
+      .codex-detail-grid
+        span {{t("连接")}}
+        strong {{t(connectionLabel)}}
+        span(*ngIf='apiMode') {{t("供应商")}}
+        strong(*ngIf='apiMode') {{agentLabel}} · {{claudeCodeMode ? t("本机引擎") : "API"}}
+        span {{t("任务状态")}}
+        strong.codex-detail-status {{t(status)}}
+        span {{t("工作目录")}}
+        strong {{cwd || t("未设置")}}
+        span {{t("会话")}}
+        strong {{threadId || t("未连接")}}
+        span {{t("回合")}}
+        strong {{t(turnLabel)}}
+        span {{t("会话状态（查询时）")}}
+        strong {{t(threadStateLabel)}}
+        span {{t("当前模型（查询时）")}}
+        strong {{threadStatus?.model || t("未上报")}}
+        span {{apiMode ? t("配置中的模型（重连生效）") : t("下回合模型")}}
+        strong {{settings.model || t("Codex 默认配置")}}
+        span {{t("当前推理强度（查询时）")}}
+        strong {{threadStatus?.reasoningEffort || t("未上报")}}
+        span {{t("下回合推理强度")}}
+        strong {{settings.reasoningEffort || (apiMode ? t("服务商默认") : t("Codex 默认配置"))}}
+        span {{apiMode ? t("上次请求输入") : t("上下文")}}
+        strong(*ngIf='contextUsedTokens !== null && contextWindowTokens !== null') {{contextUsedTokens | number:'1.0-0'}} / {{contextWindowTokens | number:'1.0-0'}} tokens（{{contextPercent | number:'1.0-0'}}%）
+        strong(*ngIf='contextUsedTokens === null || contextWindowTokens === null') {{t("未上报")}}
+        span {{apiMode ? t("已上报用量累计") : t("会话累计")}}
+        strong {{sessionTotalTokens === null ? t("未上报") : (sessionTotalTokens | number:'1.0-0') + ' tokens'}}
+        span(*ngIf='!apiMode') {{t(rateLimitLabel(statusRateLimits?.primary))}}
+        strong(*ngIf='!apiMode') {{t(rateLimitValue(statusRateLimits?.primary))}}
+        span(*ngIf='!apiMode && statusRateLimits?.secondary') {{t(rateLimitLabel(statusRateLimits?.secondary))}}
+        strong(*ngIf='!apiMode && statusRateLimits?.secondary') {{t(rateLimitValue(statusRateLimits?.secondary))}}
+        span(*ngIf='!apiMode') {{t("普通用量")}}
+        strong(*ngIf='!apiMode') {{t(ordinaryUsageLabel)}}
+        span {{t("目标")}}
+        strong {{t(goalLabel)}}
+        span {{apiMode ? t("下回合工具策略") : t("下回合文件权限")}}
+        strong {{apiMode ? (settings.sandbox === 'read-only' ? t("只读：禁止终端输入和控件操作") : t("可操作终端：使用终端账户权限")) : (settings.sandbox === 'read-only' ? t("只读") : settings.sandbox === 'workspace-write' ? t("工作区可写") : t("完全访问"))}}
+        span {{t("下回合审批")}}
+        strong {{settings.approvalPolicy === 'on-request' ? t("按需") : settings.approvalPolicy === 'untrusted' ? t("不可信时") : t("不询问")}}
+      .codex-detail-section
+        strong {{t("终端控制（{0}）", [(controlledTabs.length)])}}
+        small(*ngIf='!controlledTabs.length') {{t("当前无控制，终端可由用户操作。")}}
+        .codex-tab-control(*ngFor='let control of controlledTabs')
+          span {{t("{0}（{1}） · 命令执行中，终端输入已锁定 · {2}", [(control.title), (control.tabId), (control.command)])}}
+          button.btn.btn-outline-secondary.btn-sm(type='button', (click)='releaseControlledTab(control.tabId)', [attr.aria-label]='t("临时释放终端 {0}", [control.title])') {{t("临时释放")}}
+      .codex-detail-section
+        strong {{t("自动转发：{0}", [(sourceTerminal ? t("已开启") : t("未绑定"))])}}
+        small(*ngIf='sourceTerminal') {{t("已绑定终端：{0}。仅自动转发新增输出；Codex 可按需访问所有标签。", [(sourceTerminal.title)])}}
+        small(*ngIf='!sourceTerminal') {{t("可从目标终端点击工具栏图标绑定；Codex 仍可按需访问所有标签。")}}
+        button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') {{t("停止自动转发")}}
   .codex-history(*ngIf='historyOpen')
     .codex-history-heading
       strong {{t("当前目录的 Tabby AI Tools 会话")}}
@@ -219,7 +222,8 @@
     .codex-memory-actions
       button.btn.btn-link.btn-sm(type='button', (click)='openWorkflows()') {{t("任务流程")}}
       button.btn.btn-link.btn-sm(type='button', (click)='openSchedules()') {{t("定时任务{0}", [(scheduledApproval ? t(" · 待审批") : '')])}}
-    small.codex-permission-notice(*ngIf='apiMode') {{t("API 工具操作使用终端账户权限；追加输入在下一次模型请求时处理。Thinking 可在上方调整，下一回合生效。")}}
+    small.codex-permission-notice(*ngIf='claudeCodeMode') {{t("Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。")}}
+    small.codex-permission-notice(*ngIf='apiMode && !claudeCodeMode') {{t("API 工具操作使用终端账户权限；追加输入在下一次模型请求时处理。Thinking 可在上方调整，下一回合生效。")}}
     .codex-send-notice(*ngIf='sendNotice', role='alert') {{t(sendNotice)}}
     button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='goalStatus === "active" && !busy', (click)='continueTask()') {{t("继续当前目标")}}
     .codex-slash-menu(*ngIf='visibleSlashCommands.length && !request && !loading', role='listbox', [attr.aria-label]='t("命令")')
@@ -235,11 +239,11 @@
       small.codex-model-error(*ngIf='modelError') {{t(modelError)}}
       small(*ngIf='!modelLoading && !pendingModel') {{t("当前：{0} · {1}", [(settings.model || t("Codex 默认")), (settings.reasoningEffort || t("默认推理强度"))])}}
       .codex-model-manual(*ngIf='apiMode && !pendingModel')
-        input.form-control.form-control-sm([(ngModel)]='apiModelDraft', [attr.placeholder]='t("手动输入模型 ID")', [attr.aria-label]='t("手动输入 API 模型 ID")', [disabled]='modelSaving')
+        input.form-control.form-control-sm([(ngModel)]='apiModelDraft', [attr.placeholder]='t("手动输入模型 ID")', [attr.aria-label]='claudeCodeMode ? t("手动输入模型 ID") : t("手动输入 API 模型 ID")', [disabled]='modelSaving')
         button.btn.btn-outline-secondary.btn-sm(type='button', (click)='chooseModel(apiModelDraft)', [disabled]='modelLoading || modelSaving || !apiModelDraft.trim()') {{t("应用")}}
       small(*ngIf='!modelLoading && !pendingModel && !modelError && !models.length') {{t("未获取到可用模型，请手动填写模型 ID。")}}
       .codex-model-list(*ngIf='!modelLoading && !pendingModel')
-        button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') {{apiMode ? t("当前 API 配置") : t("当前 Codex 默认")}}（{{defaultModel.model}}）
+        button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') {{claudeCodeMode ? t("当前 Claude Code 配置") : apiMode ? t("当前 API 配置") : t("当前 Codex 默认")}}（{{defaultModel.model}}）
         button.codex-model-option(type='button', *ngFor='let model of otherModels', [class.codex-model-selected]='settings.model === model.model', [disabled]='modelSaving || permissionsSaving', [attr.title]='model.description || model.model', (click)='selectModel(model.model)')
           span {{model.displayName || model.model}}
           small {{model.model}}

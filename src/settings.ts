@@ -56,9 +56,10 @@ export class CodexSettingsComponent implements OnDestroy {
   private destroyed = false
   get settings (): AgentSettings { return this.config.store.codexAgent as AgentSettings }
   get profiles (): ApiProfile[] { return this.settings.apiProfiles || [] }
+  get claudeCodeSelected (): boolean { return this.selectedProfileId === 'claude-code' }
   get selectedProfile (): ApiProfile | undefined { return this.profiles.find(profile => profile.id === this.selectedProfileId) }
   constructor (public config: ConfigService, private secrets: AgentSecretsService, private zone: NgZone, private changeDetector?: ChangeDetectorRef, private memory?: TaskMemoryService, private schedules?: ScheduledTasksService) {
-    this.selectedProfileId = this.profiles.find(profile => profile.id === this.settings.defaultProfileId)?.id || this.profiles[0]?.id || ''
+    this.selectedProfileId = this.settings.defaultProfileId === 'claude-code' ? 'claude-code' : this.profiles.find(profile => profile.id === this.settings.defaultProfileId)?.id || this.profiles[0]?.id || ''
     this.scheduleSubscription = this.schedules?.changes$.subscribe(data => this.zone.run(() => {
       if (this.destroyed) return
       this.scheduleData = data

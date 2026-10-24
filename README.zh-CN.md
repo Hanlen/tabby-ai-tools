@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 0.3.2 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 开发版 界面示意：侧栏协调两个 SSH 终端，展示定时任务、API 连接、启动开关与语言设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
@@ -35,10 +35,13 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 | 连接方式 | 如何使用 |
 | --- | --- |
 | **ChatGPT 订阅 → 本机 Codex** | 本机安装 Codex CLI，执行 `codex login`，在插件中选择 **Codex（本机登录）**。 |
+| **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI，执行 `claude auth login`，确认 `claude auth status`，在侧栏选择 **Claude Code（本机登录）**。 |
 | **OpenAI API** | 添加 OpenAI 连接，配置 API Key、Base URL 和模型 ID。 |
 | **DeepSeek** | 添加 DeepSeek API 连接，选择模型与 Thinking 设置。 |
 | **GLM／智谱** | 添加 GLM API 连接，使用账号对应套餐的端点和模型。 |
 | **Claude／Anthropic** | 添加 Claude API 连接，配置其 API Key 和模型 ID。 |
+
+**Claude Code 订阅接入已在开发版本实现。** 插件运行本机官方 CLI，不读取或保存订阅凭据；账号权益、额度和实际认证方式由 CLI 决定。已有 API Key 或云平台配置可能走独立计费。安装与限制见 [Claude Code 接入说明](docs/claude-code.md)。尚未完成真实订阅账号的端到端验证。
 
 可保存多个命名连接，在侧栏切换；支持获取模型列表或手动填写模型 ID。API 连接使用对应供应商的 API 凭据和计费，无需安装 Codex CLI。使用代理时，端点须兼容所选供应商协议。
 

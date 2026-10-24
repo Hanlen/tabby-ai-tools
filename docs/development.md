@@ -91,3 +91,9 @@ npm run skill:check  # 检查内嵌知识与 skill 文件是否一致
 流程身份和验收采用结构化 `TaskStep.server/dependsOn/verification/verificationCommands`。`read_tab` 仅提取连接字段白名单和会话路径；`workflow_checkpoint` 由面板路由到 `TaskMemory`，使用同终端新观察和串行发送门禁。通用规则在 bundled skill，具体流程和约束由发送时隐藏提示注入。旧库字段可选保持兼容；新录制须有完整身份及逐步验收。不将单纯读取或发送回执作为成功证明，语义验收仍由模型判断。
 
 终端接管由 `send_input` 自动处理，不再生成 `local/terminalTakeover` 请求。检测未知（SSH、无枚举接口、枚举异常）时不因检测能力缺失暂停，不盲发 Ctrl+C；已检测的无关进程需要 `foregroundTaskNeeded=false`，发送 Ctrl+C 并验证停止。保留任务所需进程、会话/所有权检查、取消与只读限制。
+
+## Claude Code 本机引擎（开发版）
+
+方案和官方依据见 [Claude Code 接入](claude-code.md)。`claude-code-profile.ts` 提供独立的内置连接与配置；`claude-code-client.ts` 负责发现、能力／登录检查和有界进程回收；`claude-code-mcp.ts` 提供单次运行的认证 loopback MCP；`claude-code-agent.ts` 将官方 CLI 适配到已有会话与面板端口。`ApiAgent.createAdapter` 是可替换推理入口，MCP 与 API 的工具调用共用验证、审批、执行前持久化和重复循环检查。不得把本机连接交给 HTTP API 或密钥服务。
+
+`test/claude-code.test.js` 与 `test/fixtures/claude-cli.cjs` 使用真实子进程和 HTTP，所有模型输出均为夹具。新增代码不依赖 Agent SDK，也不下载或修改 Claude Code。常规验证不运行真实模型；跨平台桌面和真实订阅仍需要单独验证。

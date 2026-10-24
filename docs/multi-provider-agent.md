@@ -136,3 +136,7 @@ Goal 由本地 Runtime 持久化。一次模型请求结束只表示回合结束
 - [GLM 思考模式](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode)：交错思考及保留式思考的历史回传要求。
 - [Claude Tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works)：客户端工具执行循环与 stop_reason。
 - [Claude Thinking](https://platform.claude.com/docs/en/build-with-claude/thinking)：Thinking 块与签名的保留要求。
+
+## Claude Code 本机引擎
+
+开发版新增内置连接 `claude-code`，使用独立的 `claudeExecutable`、`claudeModel`、`claudeReasoningEffort`、`claudeThreads` 配置。它复用会话存储和面板事件端口，但模型循环由官方 CLI 执行，Tabby 工具经临时认证 MCP 回到原有执行器。`runtime: claude-code` 的 profile 是本机元数据，不是可发往 Anthropic HTTP API 的连接。Claude API Key 接入继续保持独立。完整研究、边界、恢复与限制见 [Claude Code 接入方案](claude-code.md)。
