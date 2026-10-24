@@ -251,13 +251,29 @@ Goal 通过证据检查和持续执行降低过早结束的概率，但无法数
 
 ## CLI 自动发现与启动排查
 
-`codexAgent.executable` 留空或保持默认 `codex` 时，先从 **Tabby 自身进程的 PATH** 查找并验证文件，随后检查 `CODEX_INSTALL_DIR`。Windows 再检查官方独立安装入口 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`，最后扫描桌面安装 `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`。桌面安装目录名可以是哈希，按有效 **codex.exe 的修改时间降序** 选择，时间相同按完整路径排序；不从目录名推断版本。每次启动后台进程都会重新查找，以适配升级和旧目录清理；已有连接复用当前进程。
+`codexAgent.executable` 留空或保持默认 `codex` 时，先从 **Tabby 自身进程的 PATH** 查找并验证文件，随后检查 `CODEX_INSTALL_DIR`。Windows 再检查官方独立安装入口 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`，再检查 `CODEX_HOME` 下的 standalone 内部入口，随后扫描桌面安装 `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`。桌面安装目录名可以是哈希，按有效 **codex.exe 的修改时间降序** 选择，时间相同按完整路径排序；不从目录名推断版本。每次启动后台进程都会重新查找，以适配升级和旧目录清理；已有连接复用当前进程。
 
-Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境，即使桌面 PATH 已经包含 Codex，也会读取用户 Shell 中的 Codex 配置。未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出。仅导入 PATH、CODEX_HOME / CODEX_SQLITE_HOME / CODEX_INSTALL_DIR、NVM_DIR、代理、证书及 OPENAI_API_KEY / CODEX_API_KEY / CODEX_ACCESS_TOKEN；其中非 PATH 变量以父进程已有值（包括空值）为准，不导入 Shell 的 NODE_OPTIONS 等运行时钩子，也不把环境变量内容写入诊断。
+Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境，即使桌面 PATH 已经包含 Codex，也会读取用户 Shell 中的 Codex 配置。未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出。仅导入 PATH、CODEX_HOME / CODEX_SQLITE_HOME / CODEX_INSTALL_DIR、NVM_DIR、HOMEBREW_PREFIX、NPM_CONFIG_PREFIX / npm_config_prefix、代理、证书及 OPENAI_API_KEY / CODEX_API_KEY / CODEX_ACCESS_TOKEN；其中非 PATH 变量以父进程已有值（包括空值）为准，不导入 Shell 的 NODE_OPTIONS 等运行时钩子，也不把环境变量内容写入诊断。
 
-默认 Codex 仍未找到时，补充检查 `~/.local/bin`、`~/.npm-global/bin`、`$NVM_DIR` 及 `~/.nvm` 下的 `current/bin` 和 `versions/node/v*/bin`，最后检查 `/opt/homebrew/bin` 和 `/usr/local/bin`。NVM 优先 current，其余按 Node 版本降序选择含有效 Codex 的目录；不要求 Shell 一定加载 NVM，也不固定用户名或 Node 版本。已通过桌面 PATH 或设置选定的 Codex 不会被 Shell 或目录扫描中的另一个安装替换。
+默认 Codex 仍未找到时，按下表补充安装来源。POSIX 先恢复用户 Shell 环境，再检查 standalone、配置的 prefix、NVM 和常见系统目录；Windows 保留上文的独立安装／桌面安装优先级，再查 npm 等目录。尚未找到时才查询包管理器 prefix，随后检查 macOS 桌面包，最后才扫描 IDE 扩展。已通过 PATH 或设置选定的 Codex 不会被另一安装替换。
 
-macOS 还会检查 `~/Applications/ChatGPT.app/Contents/Resources/codex` 和 `/Applications/ChatGPT.app/Contents/Resources/codex`。如果 ChatGPT.app 内包含可执行的 Codex，可在默认模式下自动发现；也可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写实际完整路径。应用安装位置或内部布局不同时，以本机存在且可执行的文件为准。
+| 来源 | macOS / Linux | Windows |
+| --- | --- | --- |
+| PATH | `codex` | `codex.exe`、`codex.cmd` 等 PATHEXT 支持的启动器 |
+| 官方 standalone | `~/.local/bin/codex` | `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` |
+| 自定义 standalone | `$CODEX_INSTALL_DIR/codex` | `%CODEX_INSTALL_DIR%\codex.exe` |
+| standalone 内部入口 | `${CODEX_HOME:-~/.codex}/packages/standalone/current/bin/codex`，兼容 `current/codex` | `%CODEX_HOME%\packages\standalone\current\bin\codex.exe`，兼容 `current\codex.exe`；未配置时使用 `%USERPROFILE%\.codex` |
+| Homebrew | `$(brew --prefix)/bin/codex`，也检查 `HOMEBREW_PREFIX/bin` 和常见 Homebrew/Linuxbrew 目录 | — |
+| npm | `$(npm prefix -g)/bin/codex`，也检查配置的 npm prefix、`~/.npm-global/bin` | `$(npm prefix -g)\codex.cmd`，也检查配置的 npm prefix 和 `%APPDATA%\npm` |
+| NVM | `$NVM_DIR` 和 `~/.nvm` 的 `current/bin`、`versions/node/v*/bin` | — |
+| macOS 新桌面包 | `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`，同样支持 `~/Applications` 和 `Codex.app` | — |
+| macOS 兼容入口 | `/Applications/ChatGPT.app/Contents/Resources/codex`、`/Applications/Codex.app/Contents/Resources/codex`，同样支持 `~/Applications` | — |
+| Windows 桌面兼容目录 | — | `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe` |
+| IDE 扩展最后兜底 | `~/.vscode/extensions/openai.chatgpt-*/bin/<platform>/codex` | `%USERPROFILE%\.vscode\extensions\openai.chatgpt-*\bin\<platform>\codex.exe` |
+
+包管理器只执行已安装命令的 `brew --prefix` / `npm prefix -g`，不安装或更新软件。两项查询并发，各限时 2 秒，stdout 最多 16 KiB，只接受单行绝对路径；失败、无效输出或超时后继续查找，关闭／切换配置会取消并回收查询进程树。npm 查询也可使用从 NVM 恢复的 Node。诊断不包含包管理器输出或环境变量值。standalone 路径与布局依据官方 [POSIX 安装脚本](https://github.com/openai/codex/blob/main/scripts/install/install.sh) 和 [Windows 安装脚本](https://github.com/openai/codex/blob/main/scripts/install/install.ps1)；npm prefix 与 bin 位置见 [npm prefix](https://docs.npmjs.com/cli/v12/commands/npm-prefix/) 和 [npm folders](https://docs.npmjs.com/cli/v12/configuring-npm/folders/)。
+
+NVM 优先 current，其余按 Node 版本降序。IDE 同时支持 `.vscode-insiders`、`.vscode-server` 和 `.vscode-server-insiders` 的 extensions 目录，只检查 `openai.chatgpt-*`，按扩展版本降序选择当前 OS／x64 或 arm64 架构的有效文件，跳过缺失或不兼容的候选；不运行扩展自带的任意安装脚本。IDE 和桌面包内部路径属于兼容兜底，布局变化或自定义位置仍可填写实际完整路径。POSIX 候选必须有执行权限，目录和断开的软链接不会被选中。
 
 查找结果与启动环境一起传递：Linux/macOS 把启动器所在目录放到子进程 PATH 首位。对于 `#!/usr/bin/env node`（含 `env -S node`）启动器，若 Node 不在同目录或 PATH，则从用户 Shell 及 NVM 等补充目录恢复 Node；这也适用于有效的显式路径和自定义命令名。找不到 Node 时报告运行环境错误，保留选定的 Codex。父进程环境不变，关闭或切换配置会取消尚未结束的探测。
 

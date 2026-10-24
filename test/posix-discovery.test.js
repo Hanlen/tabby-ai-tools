@@ -20,6 +20,7 @@ function fixture (t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const context = {
     platform: 'linux', home: root, cwd: root, systemDirectories: [], shellTimeoutMs: 500,
+    applicationDirectories: [path.join(root, 'Applications')], extensionDirectories: [],
     env: { HOME: root, PATH: path.join(root, 'desktop-bin'), SHELL: path.join(root, 'missing', 'bash') },
   }
   function file (relative, body) {

@@ -67,7 +67,7 @@
   "GLM（智谱）": "GLM (طيف الحكمة)",
   "High · 深入": "عالية · عميقة",
   "LOCALAPPDATA: 未设置，无法扫描 OpenAI/Codex/bin": "LOCALAPPDATA: لم يتم الضبط، لا يمكن فحص OpenAI/Codex/bin",
-  "Linux/macOS 支持用户 Shell、NVM 和常见安装目录；Windows 支持 Codex 独立安装和桌面安装目录；也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "يدعم Linux/macOS غلاف المستخدم وNVM وأدلة التثبيت الشائعة؛ يدعم Windows التثبيت المستقل لـ Codex وأدلة التثبيت على سطح المكتب؛ CODEX_INSTALL_DIR، المسارات التي تحتوي على مسافات و~/ المسارات مدعومة أيضًا. إذا كان المسار الصريح غير صالح، فسيتم الإبلاغ عن خطأ. بالنسبة لأسماء الأوامر المخصصة، سيتم تحديد PATH فقط. تعيين المفتاح: codexAgent.executable.",
+  "Codex 自动查找支持 PATH、standalone（含 CODEX_HOME）、Homebrew/npm、macOS 桌面包及 IDE 扩展兜底。也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "يبحث Codex في PATH وتثبيتات standalone (بما فيها CODEX_HOME) وHomebrew/npm وتطبيقات macOS، ثم إضافات IDE كخيار أخير. يدعم CODEX_INSTALL_DIR والمسارات التي تحتوي على مسافات ومسارات ~/. يؤدي المسار الصريح غير الصالح إلى خطأ؛ ويجري البحث عن الأوامر المخصصة في PATH فقط. الإعداد: codexAgent.executable.",
   "Low · 较快": "منخفض · أسرع",
   "Max · 最大": "الحد الأقصى·الحد الأقصى",
   "OpenAI 流缺少完整 output": "يفتقد دفق OpenAI الإخراج الكامل",

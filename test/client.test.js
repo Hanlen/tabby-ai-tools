@@ -31,6 +31,13 @@ function waitForEvent (client, method) {
   })
 }
 
+async function waitForProcess (client) {
+  const deadline = Date.now() + 2000
+  while (!client.process && Date.now() < deadline) await new Promise(resolve => setImmediate(resolve))
+  assert.ok(client.process, 'CLI discovery must spawn the initialization process')
+  return client.process
+}
+
 test('completion requires both a successful turn and a completed goal', () => {
   assert.equal(completionLabel('completed', 'complete'), '任务已完成')
   assert.notEqual(completionLabel('failed', 'complete'), '任务已完成')
@@ -199,10 +206,9 @@ test('switching executables during initialization rejects old calls and preserve
     const slow = mockServer(dir, 'slow', 'setInterval(() => {}, 1000)\n')
     const fast = mockServer(dir, 'fast', echoServer)
     const first = client.connect(slow)
-    await Promise.resolve() // CLI resolution now completes asynchronously.
-    const oldChild = client.process
-    const exited = once(oldChild, 'exit')
     const rejected = assert.rejects(first, /closed/)
+    const oldChild = await waitForProcess(client)
+    const exited = once(oldChild, 'exit')
     await client.connect(fast)
     await rejected
     await exited
@@ -232,10 +238,10 @@ rl.on('line', line => {
 })
 `)
     const first = client.connect(bad)
-    await Promise.resolve()
-    const child = client.process
+    const rejected = assert.rejects(first, /initialize rejected/)
+    const child = await waitForProcess(client)
     const exited = once(child, 'exit')
-    await assert.rejects(first, /initialize rejected/)
+    await rejected
     await exited
     assert.equal(client.isConnected, false)
     assert.equal(client.process, undefined)

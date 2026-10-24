@@ -67,7 +67,7 @@
   "GLM（智谱）": "GLM (Weisheitsspektrum)",
   "High · 深入": "Hoch · Tief",
   "LOCALAPPDATA: 未设置，无法扫描 OpenAI/Codex/bin": "LOCALAPPDATA: Nicht festgelegt, OpenAI/Codex/bin kann nicht gescannt werden",
-  "Linux/macOS 支持用户 Shell、NVM 和常见安装目录；Windows 支持 Codex 独立安装和桌面安装目录；也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "Linux/macOS unterstützt Benutzer-Shell, NVM und allgemeine Installationsverzeichnisse; Windows unterstützt Codex-unabhängige Installations- und Desktop-Installationsverzeichnisse; CODEX_INSTALL_DIR, Pfade mit Leerzeichen und ~/-Pfade werden ebenfalls unterstützt. Wenn der explizite Pfad ungültig ist, wird ein Fehler gemeldet. Bei benutzerdefinierten Befehlsnamen wird nur PATH überprüft. Schlüssel festlegen: codexAgent.executable.",
+  "Codex 自动查找支持 PATH、standalone（含 CODEX_HOME）、Homebrew/npm、macOS 桌面包及 IDE 扩展兜底。也支持 CODEX_INSTALL_DIR、含空格路径和 ~/ 路径。显式路径无效会报错，自定义命令名仅查 PATH。设置键：codexAgent.executable。": "Codex sucht in PATH, standalone-Installationen (einschließlich CODEX_HOME), Homebrew/npm, macOS-App-Paketen und zuletzt in IDE-Erweiterungen. CODEX_INSTALL_DIR, Pfade mit Leerzeichen und ~/ werden unterstützt. Ungültige explizite Pfade melden einen Fehler; eigene Befehlsnamen werden nur in PATH gesucht. Einstellung: codexAgent.executable.",
   "Low · 较快": "Niedrig · Schneller",
   "Max · 最大": "Max·Maximum",
   "OpenAI 流缺少完整 output": "Im OpenAI-Stream fehlt die vollständige Ausgabe",
