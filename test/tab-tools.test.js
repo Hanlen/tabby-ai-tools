@@ -137,22 +137,21 @@ test('read_tab waits for fresh output and can be stopped without reading the ter
   } finally { tools.ngOnDestroy() }
 })
 
-test('existing foreground process is preserved until the user approves interruption', async () => {
+test('existing foreground process is preserved when needed and unrelated tasks are interrupted automatically', async () => {
   const terminal = new FakeTerminal('Build', ['compiling'])
   terminal.children = [{ pid: 123, command: 'npm run build' }]
   const app = { tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() }
   const output = { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) }
   const tools = new TabbyTabToolsService(app, output)
-  const context = { owner: 'thread-1', confirmTakeover: async () => 'cancel' }
+  const context = { owner: 'thread-1' }
   try {
     const tabId = (await tools.call('list_tabs', {}))[0].id
     const blocked = await tools.call('send_input', { tabId, text: 'pwd', submit: true }, context)
     assert.equal(blocked.blocked, true)
     assert.deepEqual(terminal.sent, [])
-    const cancelled = await tools.call('send_input', { tabId, text: 'pwd', submit: true, foregroundTaskNeeded: false, purpose: 'Inspect directory' }, context)
-    assert.equal(cancelled.cancelled, true)
+    const needed = await tools.call('send_input', { tabId, text: 'pwd', submit: true, foregroundTaskNeeded: true }, context)
+    assert.equal(needed.blocked, true)
     assert.deepEqual(terminal.sent, [])
-    context.confirmTakeover = async () => 'interrupt'
     const sent = await tools.call('send_input', { tabId, text: 'pwd', submit: true, foregroundTaskNeeded: false }, context)
     assert.equal(sent.sent, true)
     assert.deepEqual(terminal.sent, ['\x03', 'pwd\r'])
@@ -162,18 +161,16 @@ test('existing foreground process is preserved until the user approves interrupt
   } finally { tools.ngOnDestroy() }
 })
 
-test('unknown remote terminal state requires confirmation and releases after the turn', async () => {
+test('unknown remote terminal state takes over automatically and releases after the turn', async () => {
   const terminal = new FakeTerminal('SSH', [])
   delete terminal.session.getChildProcesses
   const app = { tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() }
   const output = { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) }
   const tools = new TabbyTabToolsService(app, output)
-  let takeover
-  const context = { owner: 'thread-remote', confirmTakeover: async request => { takeover = request; return 'proceed' } }
+  const context = { owner: 'thread-remote' }
   try {
     const tabId = (await tools.call('list_tabs', {}))[0].id
     const sent = await tools.call('send_input', { tabId, text: 'ls', submit: true, foregroundTaskNeeded: false, purpose: 'List files' }, context)
-    assert.equal(takeover.unknown, true)
     assert.equal(sent.userInputLocked, true)
     terminal.sendInput('user input')
     assert.deepEqual(terminal.sent, ['ls\r'])
@@ -185,28 +182,21 @@ test('unknown remote terminal state requires confirmation and releases after the
   } finally { tools.ngOnDestroy() }
 })
 
-test('remote interruption waits for confirmation that the prompt returned', async () => {
-  const terminal = new FakeTerminal('SSH', [])
-  delete terminal.session.getChildProcesses
-  const app = { tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() }
-  const output = { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) }
-  const tools = new TabbyTabToolsService(app, output)
-  const phases = []
+test('stopping during automatic interruption prevents a late command', async () => {
+  const terminal = new FakeTerminal('Build', [])
+  terminal.children = [{ pid: 123, command: 'build' }]
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() },
+    { watch () {}, unwatch () {} })
   try {
-    const tabId = (await tools.call('list_tabs', {}))[0].id
-    const result = await tools.call('send_input', { tabId, text: 'pwd', submit: true }, {
-      owner: 'thread-remote', confirmTakeover: async request => {
-        phases.push(!!request.verifyIdle)
-        if (request.verifyIdle) {
-          assert.deepEqual(terminal.sent, ['\x03'])
-          return 'cancel'
-        }
-        return 'interrupt'
-      },
-    })
-    assert.deepEqual(phases, [false, true])
-    assert.equal(result.sent, false)
+    const [{ id: tabId }] = await tools.call('list_tabs', {})
+    const controller = new AbortController()
+    const originalSend = terminal.sendInput.bind(terminal)
+    terminal.sendInput = value => { originalSend(value); controller.abort() }
+    await assert.rejects(tools.call('send_input', { tabId, text: 'pwd', submit: true, foregroundTaskNeeded: false }, {
+      owner: 'task', signal: controller.signal,
+    }), /stopped/)
     assert.deepEqual(terminal.sent, ['\x03'])
+    assert.deepEqual(tools.controls$.value, [])
   } finally { tools.ngOnDestroy() }
 })
 
@@ -377,18 +367,18 @@ function ownershipFixture (type = 'ssh') {
   terminal.session.destroyed$ = new Subject()
   const app = { tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
   const tools = new TabbyTabToolsService(app, { watch () {}, unwatch () {}, cursor: () => 0, readSince: () => ({ text: '' }) })
-  const context = { owner: 'task', confirmTakeover: async request => { assert.equal(request.unknown, true); return 'proceed' } }
+  const context = { owner: 'task' }
   return { terminal, app, tools, context }
 }
 
-test('SSH placeholder [] requires takeover confirmation and cannot auto-attach an unknown agent', async () => {
+test('SSH placeholder [] allows commands without confirmation and cannot auto-attach an unknown agent', async () => {
   const f = ownershipFixture()
   try {
     const tabId = (await f.tools.call('list_tabs', {}))[0].id
     assert.equal((await f.tools.call('read_tab', { tabId })).runningProcesses, null)
-    await assert.rejects(f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' }), /confirmation/)
     await assert.rejects(f.tools.call('attach_process', { tabId, expectedProcess: 'codex', purpose: 'inspect' }, f.context), /Cannot verify/)
-    assert.deepEqual(f.terminal.sent, [])
+    assert.equal((await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' })).sent, true)
+    assert.deepEqual(f.terminal.sent, ['pwd\r'])
   } finally { f.tools.ngOnDestroy() }
 })
 
@@ -497,13 +487,13 @@ test('shell completion tolerates asynchronous alternate-screen rendering but not
   } finally { f.tools.ngOnDestroy() }
 })
 
-test('a pre-existing local alternate-screen process with empty enumeration still needs takeover confirmation', async () => {
+test('unknown local enumeration does not require takeover confirmation or send Ctrl+C', async () => {
   const f = ownershipFixture('local')
   try {
     const tabId = (await f.tools.call('list_tabs', {}))[0].id
     f.terminal.frontend.xterm.buffer.active.type = 'alternate'
-    await assert.rejects(f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' }), /confirmation/)
-    assert.deepEqual(f.terminal.sent, [])
+    assert.equal((await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' })).sent, true)
+    assert.deepEqual(f.terminal.sent, ['pwd\r'])
   } finally { f.tools.ngOnDestroy() }
 })
 
@@ -516,5 +506,64 @@ test('verified local attachment releases after the owned process actually disapp
     await new Promise(resolve => setTimeout(resolve, 1100))
     assert.equal(tools.getControl(context.owner), undefined)
     await assert.rejects(tools.call('send_keys', { tabId, key: 'Enter' }, context), /owned/)
+  } finally { tools.ngOnDestroy() }
+})
+
+test('sudo workflow preflight is injected into its target terminal and cleaned up on task release', async () => {
+  const tab = new FakeTerminal('Local', [])
+  const app = { tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
+  const output = { watch () {}, unwatch () {} }
+  const tools = new TabbyTabToolsService(app, output)
+  try {
+    const [{ id }] = await tools.call('list_tabs', {})
+    await tools.call('send_input', { tabId: id, text: 'sudo ls', submit: true }, { owner: 'sudo-task', sudoLease: true })
+    assert.match(tab.sent[0], /if sudo -n -v; then/)
+    assert.match(tab.sent[0], /sudo ls/)
+    assert.match(tab.sent[0], /sleep 30/)
+    tab.session.output$.next('\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07')
+    tools.releaseOwner('sudo-task')
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(tab.sent.length, 2)
+    assert.match(tab.sent[1], /unset __tabby_sudo_/)
+  } finally { tools.ngOnDestroy() }
+})
+
+test('sudo cleanup waits for a remote shell prompt and never enters a foreground process', async () => {
+  const tab = new FakeTerminal('Remote', [])
+  tab.profile.type = 'ssh'
+  const app = { tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
+  const tools = new TabbyTabToolsService(app, { watch () {}, unwatch () {} })
+  try {
+    const [{ id }] = await tools.call('list_tabs', {})
+    await tools.call('send_input', { tabId: id, text: 'sudo ls', submit: true }, { owner: 'sudo-task', sudoLease: true })
+    tools.releaseOwner('sudo-task')
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(tab.sent.length, 1)
+    tab.session.output$.next('still running')
+    assert.equal(tab.sent.length, 1)
+    tab.session.output$.next('\x1b]133;A\x07')
+    assert.equal(tab.sent.length, 1, 'a bare prompt is insufficient')
+    tab.session.output$.next('\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07')
+    assert.equal(tab.sent.length, 2)
+    assert.match(tab.sent[1], /unset __tabby_sudo_/)
+  } finally { tools.ngOnDestroy() }
+})
+
+test('terminal identity exposes stable connection IDs, IP and actual cwd without profile credentials', async () => {
+  const tab = new FakeTerminal('Renamed terminal', [])
+  tab.profile = { type: 'ssh', id: 'ssh-production', options: { host: '10.20.0.9', port: 2222, user: 'deploy', password: 'DO_NOT_EXPOSE', privateKey: 'PRIVATE_KEY_DATA', jumpHost: { password: 'NESTED_SECRET' } } }
+  tab.session.getWorkingDirectory = async () => '/srv/application'
+  const tools = new TabbyTabToolsService({ tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, { watch () {}, unwatch () {} })
+  try {
+    const [{ id }] = await tools.call('list_tabs', {})
+    const result = await tools.call('read_tab', { tabId: id, waitMs: 0 })
+    assert.deepEqual(result.server, { type: 'ssh', profileId: 'ssh-production', serverId: 'ssh-production', host: '10.20.0.9', ip: '10.20.0.9', port: 2222, username: 'deploy', cwd: '/srv/application' })
+    assert.doesNotMatch(JSON.stringify(result.server), /DO_NOT_EXPOSE|PRIVATE_KEY_DATA|NESTED_SECRET/)
+    tab.profile.options.host = 'app.internal'
+    tab.session.getWorkingDirectory = async () => '/srv/new-directory'
+    const changed = await tools.call('read_tab', { tabId: id, waitMs: 0 })
+    assert.equal(changed.server.ip, '', 'a configured hostname is not an observed IP')
+    assert.equal(changed.server.cwd, '/srv/new-directory')
+    assert.notEqual(changed.server.serverId, id, 'pane IDs are not stable server IDs')
   } finally { tools.ngOnDestroy() }
 })

@@ -22,6 +22,7 @@ const { CodexPanelComponent } = require('../src/codex-panel.component.ts')
 const { TaskMemory, TaskMemoryStore } = require('../src/task-memory.ts')
 Module._load = originalLoad
 require.extensions['.ts'] = originalTsLoader
+const localServer = { type: 'local', profileId: 'local-shell', serverId: 'local-machine', host: 'workstation', ip: '127.0.0.1', port: 0, username: 'test', cwd: '/project' }
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
 async function setup (t, api = false) {
@@ -40,7 +41,7 @@ async function setup (t, api = false) {
   const panel = new CodexPanelComponent({ store: { codexAgent: { apiProfiles: [profile], goalTokenBudget: 0 } } }, backend,
     { run: fn => fn() }, {}, { releaseOwner: () => {}, call: async (name, args) => {
       tools.push({ name, args })
-      return name === 'send_input' ? { sent: true, submitted: true } : { title: 'project shell', text: 'build output' }
+      return name === 'send_input' ? { sent: true, submitted: true } : { title: 'project shell', server: localServer, text: 'build output' }
     } }, agents)
   Object.assign(panel, { loading: false, threadId: 'thread', cwd: '/project', connected: true })
   panel.ensureSource = async () => {}
@@ -65,44 +66,45 @@ async function setup (t, api = false) {
 }
 
 for (const api of [false, true]) {
-  test(`${api ? 'API' : 'Codex'} panel archives a completed shell task and supplies its workflow with the next matching request`, async t => {
+  test(`${api ? 'API' : 'Codex'} panel records an explicit task and executes its alias`, async t => {
     const f = await setup(t, api)
-    f.panel.prompt = '构建前端项目并核对结果'
+    f.panel.prompt = '/remember 构建前端项目并核对结果'
     await f.panel.send()
     assert.equal(f.sent.length, 1)
     assert.equal(f.sent[0][1], '构建前端项目并核对结果')
-    assert.equal(f.sent[0][4], 'current terminal data')
+    assert.match(f.sent[0][4], /current terminal data/)
     await f.tool('read_tab', { tabId: 'ephemeral' })
     await f.tool('send_input', { tabId: 'ephemeral', text: 'pnpm build', submit: true, purpose: '构建前端项目' })
     await f.tool('read_tab', { tabId: 'ephemeral' })
+    await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'ephemeral', step: 1, criteria: '构建成功且产物存在', evidence: '本次构建退出成功，产物检查通过' })
     f.panel.entries.push({ kind: 'agent', text: '已核对构建产物' })
     await f.finish()
     const document = await f.library.store.read()
     assert.equal(document.workflows.length, 1)
-    assert.match(f.panel.memoryNotice, /已归档流程/)
+    assert.ok(f.panel.pendingWorkflow)
+    f.panel.workflowAlias = 'task1'
+    await f.panel.saveWorkflowAlias()
     f.panel.threadId = 'next-thread'
-    f.panel.prompt = '请帮我构建前端项目并核对结果'
+    f.panel.prompt = '/task1'
     await f.panel.send()
     assert.equal(f.sent.length, 2)
-    assert.equal(f.sent[1][1], '请帮我构建前端项目并核对结果', 'original user request stays intact')
-    assert.match(f.sent[1][4], /本地任务流程|pnpm build/)
+    assert.equal(f.sent[1][1], '/task1')
+    assert.match(f.sent[1][4], /pnpm build/)
     assert.match(f.sent[1][4], /current terminal data/)
     assert.doesNotMatch(f.sent[1][4], /ephemeral/)
     assert.equal(f.tools.length, 3, 'matching a workflow must never execute or replay a tool')
     assert.match(f.panel.memoryNotice, /参考流程/)
-    assert.equal(f.goals[1][1], '请帮我构建前端项目并核对结果', 'memory is not added to the stored goal')
+    assert.equal(f.goals[1][1], '/task1')
   })
 }
 
-test('per-request skip and global disable send ordinary prompts and do not record partial workflows', async t => {
+test('ordinary requests and global disable send ordinary prompts and do not record partial workflows', async t => {
   const f = await setup(t)
   await f.library.addPreference('使用 pnpm', '')
-  f.panel.skipTaskMemory = true
   f.panel.prompt = 'build frontend'
   await f.panel.send()
-  assert.equal(f.sent[0][4], 'current terminal data')
+  assert.match(f.sent[0][4], /pnpm/)
   assert.equal(f.library.token('thread'), undefined)
-  assert.equal(f.panel.skipTaskMemory, false)
   f.panel.busy = false
   f.memory.enabled = false
   f.panel.prompt = 'another task'
@@ -121,21 +123,26 @@ test('an unreadable memory store does not fail or duplicate a live task', async 
   assert.equal(f.panel.busy, true)
 })
 
-test('/remember persists a workspace preference without model inference and /workflows only fills a draft', async t => {
+test('/remember starts execution rather than saving a preference; workflow picker fills an alias', async t => {
   const f = await setup(t)
-  f.panel.prompt = '/remember 此项目优先使用 pnpm'
+  f.panel.prompt = '/remember build frontend'
   await f.panel.send()
-  const data = await f.library.store.read()
-  assert.equal(data.preferences[0].cwd, '/project')
-  assert.equal(data.preferences[0].text, '此项目优先使用 pnpm')
-  assert.equal(f.sent.length, 0)
-  assert.equal(f.tools.length, 0)
-  await f.panel.runSlashCommand('/workflows')
-  assert.equal(f.panel.workflowPanelOpen, true)
-  f.panel.useWorkflow({ title: '前端构建', objective: '构建前端项目' })
-  assert.equal(f.panel.prompt, '构建前端项目')
+  assert.equal((await f.library.store.read()).preferences.length, 0)
+  assert.equal(f.sent.length, 1)
+  assert.ok(f.library.token('thread'))
+  f.panel.useWorkflow({ title: '前端构建', objective: '构建前端项目', alias: 'task1' })
+  assert.equal(f.panel.prompt, '/task1')
   assert.equal(f.panel.workflowPanelOpen, false)
-  assert.equal(f.sent.length, 0)
+})
+
+test('sudo aliases include authentication instructions and enable terminal preflight', async t => {
+  const f = await setup(t)
+  await f.library.store.update(data => data.workflows.push({ id: 'sudo-task', title: 'restart', objective: 'restart app', cwd: '/project', alias: 'restart', instructions: 'sudo systemctl restart app', steps: [], outcome: '', completedAt: 1, successes: 1, uses: 0, enabled: true, edited: true }))
+  f.panel.prompt = '/restart'
+  await f.panel.send()
+  assert.match(f.sent[0][4], /sudo -v.*sudo ls/)
+  assert.equal(f.panel.sudoWorkflow, true)
+  assert.ok(f.library.token('thread'), 'alias execution has a checkpoint session')
 })
 
 for (const api of [false, true]) {
@@ -156,3 +163,32 @@ for (const api of [false, true]) {
     assert.equal(f.sent.length, 0)
   })
 }
+
+test('an early complete goal stays pending until workflow steps have actual checkpoints', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember restart database then application'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'db' })
+  await f.tool('send_input', { tabId: 'db', text: 'restart database', submit: true })
+  await f.tool('read_tab', { tabId: 'app' })
+  await f.tool('send_input', { tabId: 'app', text: 'restart application', submit: true })
+  assert.equal(f.tools.filter(call => call.name === 'send_input').length, 1, 'the dependent action never reaches the terminal tool')
+  assert.equal(f.replies.at(-1)[1].success, false)
+  await f.finish()
+  assert.equal(f.panel.goalStatus, 'active')
+  assert.match(f.panel.memoryNotice, /未经实际结果验收/)
+  assert.equal((await f.library.store.read()).workflows.length, 0)
+})
+
+test('continuing a workflow supplies its checkpoint state again as hidden context', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember restart database then application'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'db' })
+  await f.tool('send_input', { tabId: 'db', text: 'restart database', submit: true })
+  f.panel.busy = false
+  await f.panel.continueTask()
+  assert.match(f.sent[1][4], /workflow_checkpoint/)
+  assert.match(f.sent[1][4], /"pendingStep":\{"number":1,"runtimeTabId":"db"/)
+  assert.match(f.sent[1][4], /restart database/)
+})

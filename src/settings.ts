@@ -38,6 +38,7 @@ export class CodexSettingsComponent implements OnDestroy {
   memoryWorkflows: TaskWorkflow[] = []
   memoryPreferences: TaskPreference[] = []
   workflowDraftId = ''
+  workflowAlias = ''
   workflowTitle = ''
   workflowObjective = ''
   workflowInstructions = ''
@@ -144,6 +145,7 @@ export class CodexSettingsComponent implements OnDestroy {
   }
   editWorkflow (workflow: TaskWorkflow): void {
     this.workflowDraftId = workflow.id
+    this.workflowAlias = workflow.alias || ''
     this.workflowTitle = workflow.title
     this.workflowObjective = workflow.objective
     this.workflowInstructions = workflowInstructions(workflow)
@@ -163,7 +165,7 @@ export class CodexSettingsComponent implements OnDestroy {
   async saveWorkflow (): Promise<void> {
     const workflow = this.memoryWorkflows.find(item => item.id === this.workflowDraftId)
     if (!workflow || !this.memory) return
-    await this.changeMemory(() => this.memory!.library.saveWorkflow(workflow, this.workflowTitle, this.workflowObjective, this.workflowInstructions, this.workflowEnabled), '流程已保存；后续自动归档会保留你的修改')
+    await this.changeMemory(() => this.memory!.library.saveWorkflow(workflow, this.workflowTitle, this.workflowObjective, this.workflowInstructions, this.workflowEnabled, this.workflowAlias), '流程已保存；后续自动归档会保留你的修改')
   }
   async removeWorkflow (workflow: TaskWorkflow): Promise<void> {
     await this.changeMemory(async () => {

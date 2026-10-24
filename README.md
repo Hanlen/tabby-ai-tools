@@ -22,9 +22,11 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools 0.2.3 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 0.3.0 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
+
+Terminal takeover is automatic: unavailable foreground-process detection (including SSH) does not require a confirmation click. The agent inspects terminal output, preserves needed tasks, and can interrupt detected unrelated tasks.
 
 ## Multiple model providers, including your ChatGPT subscription
 
@@ -72,7 +74,7 @@ Describe the targets, order, conditions, and verification criteria. The assistan
 
 > Check application-to-database connectivity on staging-app and staging-db. Verify the database first, then inspect the application configuration. Explain any issue before asking me to authorize a fix, and verify the application health check afterward.
 
-Workflows can branch based on observed results and interact with other terminal Agents. Successfully completed terminal tasks can become reusable references for similar work, with fresh checks of the current environment. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
+Workflows can branch based on observed results and interact with other terminal Agents. Start a recording with `/remember TASK`. After successful completion, give the workflow an alias such as `task1`; send `/task1` to execute it again with fresh environment checks. Each step retains the server IP, stable connection/server ID, operation path and completion checks. Multi-server steps follow their saved order; a result checkpoint must confirm the preceding step before the next operation. Ordinary tasks are not recorded. Workflows containing sudo ask you to authenticate with `sudo -v` or `sudo ls` in each execution terminal, then keep that terminal’s credentials refreshed during the task. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
 
 ## Schedule checks, decisions, actions, and verification
 

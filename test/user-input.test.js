@@ -992,16 +992,6 @@ test('token usage events update the active session context gauge', () => {
   assert.equal(panel.contextPercent, 25)
 })
 
-test('terminal takeover waits for an explicit choice and cancellation leaves the terminal alone', async () => {
-  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, { client: {} }, { run: callback => callback() }, {}, fakeTabTools)
-  const pending = panel.confirmTakeover({ tabId: 'tab-1', title: 'Build', processes: ['npm test'], purpose: 'Run tests', unknown: false })
-  assert.equal(panel.request.method, 'local/terminalTakeover')
-  assert.match(panel.request.title, /Build/)
-  panel.decideTakeover('cancel')
-  assert.equal(await pending, 'cancel')
-  assert.equal(panel.request, undefined)
-})
-
 test('closing and reopening details ignores earlier in-flight status responses', async () => {
   const reads = []
   const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {

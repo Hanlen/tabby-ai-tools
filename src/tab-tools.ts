@@ -4,16 +4,19 @@ import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { BehaviorSubject, Subscription } from 'rxjs'
 import { CodexTerminalOutputService } from './terminal-output.service'
 import { TabbyCapabilitiesService } from './tabby-capabilities.service'
+import * as os from 'os'
+import { isIP } from 'net'
+import { WorkflowTarget, redactMemory } from './task-memory'
+import { SudoWorkflowLease } from './sudo-workflow'
 import { TABBY_MUTATIONS, TABBY_OPERATIONS } from './tabby-operations'
 import { matchesProcess, terminalKeySequence, terminalInteractionState } from './terminal-keys'
 
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
-export interface TakeoverRequest { tabId: string; title: string; processes: string[]; purpose: string; unknown: boolean; verifyIdle?: boolean }
 export interface TabToolContext {
   owner: string
   signal?: AbortSignal
   readOnly?: boolean
-  confirmTakeover?: (request: TakeoverRequest) => Promise<'interrupt' | 'proceed' | 'cancel'>
+  sudoLease?: boolean
 }
 
 interface ControlState extends ControlledTab {
@@ -35,6 +38,7 @@ export { TAB_TOOLS } from './tab-tool-definitions'
 @Injectable()
 export class TabbyTabToolsService implements OnDestroy {
   readonly controls$ = new BehaviorSubject<ControlledTab[]>([])
+  private sudoLeases = new Map<string, Map<BaseTerminalTabComponent<any>, { lease: SudoWorkflowLease; session: any }>>()
   private controlled = new Map<BaseTerminalTabComponent<any>, ControlState>()
   private ids = new WeakMap<BaseTabComponent, string>()
   private nextId = 0
@@ -83,7 +87,50 @@ export class TabbyTabToolsService implements OnDestroy {
   }
 
   releaseOwner (owner: string): void {
+    this.stopSudoLeases(owner)
     for (const state of Array.from(this.controlled.values())) if (state.owner === owner) this.release(state.tab)
+  }
+
+  private stopSudoLeases (owner: string): void {
+    const leases = this.sudoLeases.get(owner)
+    this.sudoLeases.delete(owner)
+    for (const [tab, entry] of leases || []) {
+      const state = this.controlled.get(tab)
+      const cleanup = () => {
+        if (tab.session !== entry.session || !entry.session?.open) return
+        if (this.controlled.has(tab)) return
+        tab.sendInput(entry.lease.cleanup() + '\r')
+      }
+      // Never put cleanup text into a foreground process or a different SSH session.
+      if (state?.completion === 'prompt') { this.release(tab); cleanup(); continue }
+      void this.processes(tab).then(processes => {
+        if (!state && processes !== null && !processes.length && !this.controlled.has(tab)) cleanup()
+        else {
+          let pending = ''
+          let completion = state?.completion
+          const subscription = entry.session?.output$?.subscribe((chunk: string) => {
+            pending = (pending + chunk).slice(-1024)
+            const sequence = /\x1b\]133;([ACD])(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/g
+            let match: RegExpExecArray | null, consumed = 0
+            while ((match = sequence.exec(pending))) {
+              consumed = sequence.lastIndex
+              if (match[1] === 'C') completion = 'running'
+              else if (match[1] === 'D' && completion === 'running') completion = 'ended'
+              else if (match[1] === 'A' && completion === 'ended') {
+                subscription?.unsubscribe()
+                cleanup()
+                break
+              }
+            }
+            if (consumed) pending = pending.slice(consumed)
+          })
+          // An unavailable shell prompt cannot safely accept injected cleanup. The lease
+          // also stops on terminal exit/authentication failure and has a 12-hour ceiling.
+          const timer = setTimeout(() => subscription?.unsubscribe(), 60000)
+          ;(timer as any).unref?.()
+        }
+      }).catch(() => undefined)
+    }
   }
 
   releaseTab (owner: string, tabId: string): boolean {
@@ -162,6 +209,20 @@ export class TabbyTabToolsService implements OnDestroy {
     checkStopped()
     if (!tab.session?.open || tab.session !== state.session || this.controlled.get(tab) !== state) throw new Error('The terminal session or input owner changed; interactive input was not sent')
     return state
+  }
+
+  private async serverIdentity (tab: BaseTerminalTabComponent<any>): Promise<WorkflowTarget> {
+    const profile = tab.profile as any
+    const options = profile?.options || {}
+    const local = profile?.type === 'local'
+    const host = local ? os.hostname() : typeof options.host === 'string' ? options.host : ''
+    let cwd = ''
+    try { cwd = await tab.session?.getWorkingDirectory() || '' } catch { /* Unknown paths require live verification. */ }
+    const clean = (value: any, limit = 300) => redactMemory(typeof value === 'string' ? value : '', limit)
+    return { type: clean(profile?.type, 40), profileId: clean(profile?.id), serverId: clean(profile?.id) || (local ? 'local:' + os.hostname() : ''),
+      host: clean(host), ip: local ? '127.0.0.1' : isIP(host) ? host : '',
+      port: Number.isInteger(options.port) && options.port > 0 && options.port <= 65535 ? options.port : local ? 0 : profile?.type === 'ssh' ? 22 : 0,
+      username: clean(options.user || options.username, 100), cwd: clean(cwd, 1000) }
   }
 
   private async processes (tab: BaseTerminalTabComponent<any>): Promise<string[] | null> {
@@ -350,6 +411,8 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'read_tab') {
       const maxLines = Math.max(1, Math.min(300, Number(args.maxLines) || 100))
       if (tab instanceof BaseTerminalTabComponent) {
+        const server = await this.serverIdentity(tab)
+        const commandState = this.controlled.get(tab)?.completion || 'unknown'
         const xterm = (tab.frontend as any)?.xterm
         const buffer = xterm?.buffer?.active
         if (buffer && typeof buffer.getLine === 'function') {
@@ -357,11 +420,11 @@ export class TabbyTabToolsService implements OnDestroy {
           const lines: string[] = []
           for (let i = start; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) || '')
           const text = lines.join('\n')
-          return { tabId: args.tabId, title: tab.title, text: text.slice(-20000), truncated: start > 0 || text.length > 20000, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), interaction: terminalInteractionState(xterm, start) }
+          return { tabId: args.tabId, title: tab.title, server, commandState, text: text.slice(-20000), truncated: start > 0 || text.length > 20000, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), interaction: terminalInteractionState(xterm, start) }
         }
         const end = this.output.cursor(tab)
         const slice = this.output.readSince(tab, Math.max(0, end - 20000), 20000)
-        return { tabId: args.tabId, title: tab.title, text: slice.text, truncated: slice.truncated, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
+        return { tabId: args.tabId, title: tab.title, server, commandState, text: slice.text, truncated: slice.truncated, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
       }
       const nodes: Node[] = (tab.hostView as any)?.rootNodes || []
       const text = nodes.map(node => node.textContent || '').join('\n').trim()
@@ -397,43 +460,46 @@ export class TabbyTabToolsService implements OnDestroy {
       if (running?.length || running === null) {
         if (args.foregroundTaskNeeded === true) return { sent: false, blocked: true, reason: 'Existing foreground task is needed; wait for it or interact using stdin mode if this session owns it.', runningProcesses: running }
         if (running?.length && args.foregroundTaskNeeded !== false) return { sent: false, blocked: true, reason: 'Inspect the existing process and decide whether the current task needs it before sending a new command.', runningProcesses: running }
-        if (!context?.confirmTakeover) throw new Error('User confirmation is required before taking over this terminal')
-        const choice = await context.confirmTakeover({ tabId: args.tabId, title: tab.title, processes: running || [], purpose: String(args.purpose || args.text).slice(0, 300), unknown: running === null })
-        if (choice === 'cancel') return { sent: false, cancelled: true, tabId: args.tabId }
-        if (tab.session !== session || this.controlled.has(tab)) throw new Error('The terminal changed while awaiting confirmation; command was not sent')
-        const current = await this.processes(tab)
-        checkStopped()
-        if (running !== null && current === null) throw new Error('Process status became unavailable; inspect the tab again')
-        if (running !== null && current !== null && current.length && JSON.stringify(current) !== JSON.stringify(running)) throw new Error('The running process changed while awaiting confirmation; inspect the tab again')
-        if (choice === 'interrupt') {
-          if (current === null || current.length) tab.sendInput('\x03')
-          if (current === null) {
-            const verified = await context.confirmTakeover({ tabId: args.tabId, title: tab.title, processes: [], purpose: String(args.purpose || args.text).slice(0, 300), unknown: true, verifyIdle: true })
-            if (verified !== 'proceed') return { sent: false, cancelled: true, interrupted: true, tabId: args.tabId }
-            if (tab.session !== session || this.controlled.has(tab)) throw new Error('The terminal changed while awaiting confirmation; command was not sent')
+        // The task authorizes takeover. Unknown enumeration (common over SSH)
+        // is not a reason to ask the user, nor evidence that Ctrl+C is needed.
+        if (running?.length) {
+          if (tab.session !== session || this.controlled.has(tab)) throw new Error('The terminal changed before takeover')
+          tab.sendInput('\x03')
+          let remaining: string[] | null = running
+          for (let attempt = 0; attempt < 6; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 300))
+            checkStopped()
+            if (tab.session !== session || !session.open || this.controlled.has(tab)) throw new Error('The terminal changed during takeover')
+            remaining = await this.processes(tab)
+            checkStopped()
+            if (remaining === null || !remaining.length) break
           }
-          if (current !== null && current.length) {
-            let remaining: string[] | null = current
-            for (let attempt = 0; attempt < 6; attempt++) {
-              await new Promise(resolve => setTimeout(resolve, 300))
-              remaining = await this.processes(tab)
-              if (!remaining?.length) break
-            }
-            if (remaining === null || remaining.length) throw new Error('The previous process could not be confirmed stopped after Ctrl+C; command was not sent')
-          }
-        } else if (choice !== 'proceed' || current !== null && current.length) throw new Error('The terminal is still occupied; command was not sent')
+          if (remaining === null || remaining.length) throw new Error('The previous process could not be confirmed stopped after Ctrl+C; command was not sent')
+        }
       }
       checkStopped()
-      if (this.controlled.has(tab)) throw new Error('The terminal was taken by another command while awaiting confirmation')
+      if (this.controlled.has(tab)) throw new Error('The terminal was taken by another command during takeover')
       if (tab.session !== session) throw new Error('The terminal session changed before the command was sent')
       if (!tab.session?.open) throw new Error('The terminal session closed before the command was sent')
+      const server = await this.serverIdentity(tab)
+      checkStopped()
+      if (tab.session !== session || this.controlled.has(tab)) throw new Error('Terminal changed while reading its identity')
       const state = this.lock(tab, owner, args.text.slice(0, 120))
       // A prompt between pasted lines does not prove the entire batch finished.
       // Multiline submissions require explicit release after inspecting their results.
       state.automaticCompletion = !/[\r\n]/.test(args.text)
-      try { this.sendControlled(state, args.text + (args.submit ? '\r' : '')) } catch (error) { this.release(tab); throw error }
+      let commandText = args.text
+      if (context?.sudoLease && args.submit) {
+        let leases = this.sudoLeases.get(owner)
+        if (!leases) { leases = new Map(); this.sudoLeases.set(owner, leases) }
+        let entry = leases.get(tab)
+        if (!entry || entry.session !== tab.session) { entry = { lease: new SudoWorkflowLease(), session: tab.session }; leases.set(tab, entry) }
+        commandText = entry.lease.wrap(commandText)
+        state.automaticCompletion = false
+      }
+      try { this.sendControlled(state, commandText + (args.submit ? '\r' : '')) } catch (error) { this.release(tab); throw error }
       if (!args.submit) this.release(tab)
-      return { sent: true, tabId: args.tabId, submitted: !!args.submit, userInputLocked: !!args.submit }
+      return { sent: true, tabId: args.tabId, server, submitted: !!args.submit, userInputLocked: !!args.submit }
     }
     if (name === 'attach_process') {
       if (!(tab instanceof BaseTerminalTabComponent) || !tab.session?.open) throw new Error('An open terminal is required')
@@ -469,6 +535,7 @@ export class TabbyTabToolsService implements OnDestroy {
   }
 
   ngOnDestroy (): void {
+    for (const owner of Array.from(this.sudoLeases.keys())) this.stopSudoLeases(owner)
     this.subscriptions.unsubscribe()
     for (const tab of Array.from(this.controlled.keys())) this.release(tab)
     for (const terminal of this.tracked) this.output.unwatch(terminal)
