@@ -111,7 +111,8 @@
 .codex-slash-option,.codex-model-option{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:5px 8px;border:0;background:transparent;color:inherit;text-align:start;cursor:pointer}
 .codex-slash-option:hover,.codex-slash-active,.codex-model-option:hover,.codex-model-selected{background:rgba(80,130,220,.16)}
 .codex-slash-option span,.codex-model-option small{font-size:.8em;opacity:.7}
-.codex-model-picker{display:flex;flex-direction:column;max-height:220px;padding:5px}
+.codex-model-picker{display:flex;flex-direction:column;max-height:300px;padding:5px}
+.codex-model-picker>label{margin:4px 0 0;font-size:11px;flex:none}
 .codex-model-heading{display:flex;align-items:center;justify-content:space-between;padding:0 4px}
 .codex-model-heading .btn{padding:0 4px}
 .codex-model-list{overflow-y:auto;min-height:0}

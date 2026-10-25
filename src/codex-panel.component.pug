@@ -16,20 +16,13 @@
     .codex-model-controls
       button.codex-model-summary(type='button', (click)='openModelPicker()', [disabled]='loading || modelLoading || modelSaving || (apiMode && busy)', [attr.title]='t("当前模型：{0}；reasoning：{1}；点击切换，下回合生效", [modelLabel, reasoningLabel])', [attr.aria-label]='t("当前模型与 reasoning 等级，点击切换")')
         span.codex-current-model {{modelLabel}}
-        span.codex-current-reasoning(*ngIf='!apiMode') reasoning: {{reasoningLabel}}
-  .codex-api-thinking(*ngIf='apiMode && !claudeCodeMode')
+        span.codex-current-reasoning reasoning: {{reasoningLabel}}
+  .codex-api-thinking(*ngIf='apiMode && !claudeCodeMode && supportsThinkingToggle')
     label([attr.for]='"api-thinking-" + threadId') {{t("Thinking")}}
     select.form-control.form-control-sm(*ngIf='supportsThinkingToggle', [id]='"api-thinking-" + threadId', [ngModel]='apiThinking', (ngModelChange)='setApiThinking($event, settings.reasoningEffort)', [disabled]='loading || busy || !!request || modelSaving', [attr.aria-label]='t("Thinking 模式")')
       option(value='default') {{t("服务商默认")}}
       option(value='enabled') {{t("开启")}}
       option(value='disabled') {{t("关闭")}}
-    select.form-control.form-control-sm(*ngIf='deepseekMode', [ngModel]='settings.reasoningEffort', (ngModelChange)='setApiThinking(apiThinking, $event)', [disabled]='loading || busy || !!request || modelSaving || apiThinking === "disabled"', [attr.aria-label]='t("Thinking 等级")')
-      option(value='') {{t("默认等级")}}
-      option(value='low') {{t("Low · 较快")}}
-      option(value='high') {{t("High · 深入")}}
-      option(value='max') {{t("Max · 最大")}}
-      option(*ngIf='settings.reasoningEffort && !["low", "high", "max"].includes(settings.reasoningEffort)', [value]='settings.reasoningEffort') {{settings.reasoningEffort}}
-    input.form-control.form-control-sm(*ngIf='!deepseekMode', [value]='settings.reasoningEffort', (change)='setApiThinking(apiThinking, $event.target.value)', [disabled]='loading || busy || !!request || modelSaving', [attr.placeholder]='t("推理强度（可选）")', [attr.aria-label]='t("Thinking 推理强度")')
   small.codex-detail-error(*ngIf='connectionError') {{t(connectionError)}}
   small.codex-detail-error(*ngIf='apiMode && modelError', role='alert') {{t(modelError)}}
   .codex-summary
@@ -240,7 +233,7 @@
       small(*ngIf='!modelLoading && !pendingModel') {{t("当前：{0} · {1}", [(settings.model || t("Codex 默认")), (settings.reasoningEffort || t("默认推理强度"))])}}
       .codex-model-manual(*ngIf='apiMode && !pendingModel')
         input.form-control.form-control-sm([(ngModel)]='apiModelDraft', [attr.placeholder]='t("手动输入模型 ID")', [attr.aria-label]='claudeCodeMode ? t("手动输入模型 ID") : t("手动输入 API 模型 ID")', [disabled]='modelSaving')
-        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='chooseModel(apiModelDraft)', [disabled]='modelLoading || modelSaving || !apiModelDraft.trim()') {{t("应用")}}
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='selectModel(apiModelDraft)', [disabled]='modelLoading || modelSaving || !apiModelDraft.trim()') {{t("应用")}}
       small(*ngIf='!modelLoading && !pendingModel && !modelError && !models.length') {{t("未获取到可用模型，请手动填写模型 ID。")}}
       .codex-model-list(*ngIf='!modelLoading && !pendingModel')
         button.codex-model-option(type='button', *ngIf='defaultModel', [class.codex-model-selected]='settings.model === defaultModel.model', [disabled]='modelSaving || permissionsSaving', (click)='selectModel("")') {{claudeCodeMode ? t("当前 Claude Code 配置") : apiMode ? t("当前 API 配置") : t("当前 Codex 默认")}}（{{defaultModel.model}}）
@@ -249,9 +242,14 @@
           small {{model.model}}
       small(*ngIf='pendingModel') {{pendingModel.displayName || pendingModel.model}}
       .codex-model-list(*ngIf='pendingModel')
+        button.codex-model-option(type='button', *ngIf='apiMode', [class.codex-model-selected]='settings.model === pendingModel.model && !settings.reasoningEffort', [disabled]='modelSaving || permissionsSaving', (click)='chooseModel(pendingModel.model, "")') {{t("服务商默认")}}
         button.codex-model-option(type='button', *ngFor='let option of pendingModel.supportedReasoningEfforts', [class.codex-model-selected]='settings.model === pendingModel.model && settings.reasoningEffort === option.reasoningEffort', [disabled]='modelSaving || permissionsSaving', [attr.title]='option.description', (click)='chooseModel(pendingModel.model, option.reasoningEffort)')
           span {{option.reasoningEffort}}
           small {{option.reasoningEffort === pendingModel.defaultReasoningEffort ? t("模型默认") : option.description}}
+      label(*ngIf='pendingModel && apiMode', [attr.for]='"api-effort-draft-" + threadId') {{t("推理强度（可选）")}}
+      .codex-model-manual(*ngIf='pendingModel && apiMode')
+        input.form-control.form-control-sm([id]='"api-effort-draft-" + threadId', [(ngModel)]='apiEffortDraft', [attr.placeholder]='t("服务商默认")', [attr.aria-label]='t("Thinking 推理强度")', [disabled]='modelSaving', maxlength='100')
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='chooseModel(pendingModel.model, apiEffortDraft.trim(), true)', [disabled]='modelSaving || permissionsSaving') {{t("应用")}}
       button.btn.btn-link.btn-sm(type='button', *ngIf='pendingModel', (click)='pendingModel = undefined', [disabled]='modelSaving') {{t("返回模型列表")}}
     textarea.form-control(dir='auto', rows='3', [ngModel]='prompt', (ngModelChange)='onPromptChanged($event)', [disabled]='!!request', [attr.placeholder]='t("描述任务或输入 / 选择命令")', (keydown)='onPromptKeydown($event)')
     .codex-compose-toolbar

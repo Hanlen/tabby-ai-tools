@@ -5,6 +5,10 @@ import { ApiProfile, apiKeySource } from './agent-types'
 export class AgentSecretsService {
   async read (profile: ApiProfile): Promise<string> {
     const source = apiKeySource(profile)
+    if (source === 'none') {
+      if (profile.provider !== 'custom') throw new Error('仅自定义连接支持无需密钥')
+      return ''
+    }
     if (source === 'direct') {
       const value = profile.apiKey?.trim()
       if (!value) throw new Error('请在 AI Tools 设置中填写 API Key')

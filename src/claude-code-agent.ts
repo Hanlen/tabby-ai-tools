@@ -12,6 +12,7 @@ import { createClaudeMcp } from './claude-code-mcp'
 import { inspectClaudeCode, runClaudeProcess } from './claude-code-client'
 import type { CodexModel } from './codex.service'
 import { redactMemory } from './task-memory'
+import { modelReasoningEfforts } from './model-reasoning'
 
 export { CLAUDE_CODE_ID, claudeCodeProfile } from './claude-code-profile'
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
@@ -131,7 +132,8 @@ export class ClaudeCodeAgent extends ApiAgent {
     // Official aliases, not a claim that an account is entitled to every model.
     return [...new Set([this.profile.model, 'sonnet', 'opus', 'haiku'])].map(model => ({ model, displayName: model,
       description: 'Claude Code model alias; availability follows your account. Custom model IDs can be entered manually.',
-      isDefault: model === this.profile.model, defaultReasoningEffort: '', supportedReasoningEfforts: [] }))
+      isDefault: model === this.profile.model, defaultReasoningEffort: '',
+      supportedReasoningEfforts: modelReasoningEfforts(this.profile, model).map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort })) }))
   }
   protected async createAdapter (session: ApiSession, _settings: AgentSettings, call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>): Promise<ApiProviderAdapter> {
     if (!this.executable) throw new Error('Claude Code 尚未连接，请重新连接')

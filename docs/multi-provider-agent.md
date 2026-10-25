@@ -1,10 +1,12 @@
 # 多模型 Agent 设计与评审
 
+v0.4.0 新增自定义 OpenAI 兼容连接（`provider: custom`）：`apiFormat` 显式选择 Chat Completions（缺省）或 Responses，不按模型名或 URL 推断协议。复用统一 Agent 工具循环、模型发现和上下文转换，不发送厂商专用 Thinking／缓存字段。可选直接 Key、环境变量或无认证；无认证模式不发 Authorization。历史指纹为自定义连接增加协议字段，保留既有供应商指纹。切换协议时导入通用文本和目标，避免将原生工具历史发到另一协议。配置与限制见[使用指南](guide.md#自定义-openai-兼容接口)。
+
 状态：设计评审完成，第一版已按下述范围实现。2026-10-17。
 
 ## 产品目标
 
-同一 Tabby 侧栏支持现有 Codex 登录，以及 DeepSeek、GLM、OpenAI、Claude 的商业 API。API 模式无需安装 Codex。保留流式回复、终端读取与操作、人工审批、按目录恢复历史、任务目标和停止操作。
+同一 Tabby 侧栏支持现有 Codex 登录，以及 DeepSeek、GLM、Kimi、OpenAI、Claude 的商业 API，以及 Kimi／百炼 Coding Plan。API 模式无需安装 Codex。保留流式回复、终端读取与操作、人工审批、按目录恢复历史、任务目标和停止操作。
 
 提供多个连接配置，每个配置有独立名称、供应商、Base URL、模型 ID、密钥来源和模型参数。面板选择连接后再开始会话。切换连接需要当前任务结束；API 连接之间及 API/Codex 双向切换时携带当前对话的通用文本上下文和目标，修改端点或模型也保留上下文。历史按目标配置另存快照，禁止把一个供应商的推理块直接交给另一个供应商。
 
@@ -17,7 +19,7 @@ flowchart TD
   Factory --> Native[API Agent Runtime]
   Native --> Providers[模型协议适配器]
   Providers --> OpenAI[OpenAI Responses]
-  Providers --> Chat[DeepSeek / GLM Chat Completions]
+  Providers --> Chat[DeepSeek / GLM / Kimi / Bailian Chat Completions]
   Providers --> Claude[Claude Messages]
   Native --> Store[本地会话与 Goal 存储]
   Codex --> Transfer[通用上下文导入与导出]
@@ -39,9 +41,11 @@ flowchart TD
 | OpenAI API | Responses | 带类型的 SSE、function_call/output、reasoning items |
 | DeepSeek API | Chat Completions | reasoning_content 回传、分片 tool_calls、Thinking 参数 |
 | GLM API | Chat Completions | reasoning_content 回传、Thinking 参数与不同端点 |
+| Kimi API / Coding Plan | Chat Completions | 独立国内／国际端点和 Key、思考模型差异、reasoning_content、会话级缓存标识 |
+| 百炼 Coding Plan | Chat Completions | 国内／国际套餐端点、专用 Key、enable_thinking；不走 Responses |
 | Claude API | Messages | content blocks、tool_use/tool_result、stop_reason、thinking signature |
 
-不把所有供应商简化成替换 Base URL。不硬编码最新模型名称；模型 ID 由用户配置。参数按供应商和模型显式选择，未知能力使用保守值。原始 reasoning blocks 保存在所属会话中，工具续轮时原样回传；默认 UI 不显示内部推理。
+不把所有供应商简化成替换 Base URL。Kimi 与百炼预填官方模型示例，模型 ID 仍由用户配置，不限制手动输入。参数按供应商和模型显式选择，未知能力使用保守值。原始 reasoning blocks 保存在所属会话中，工具续轮时原样回传；默认 UI 不显示内部推理。
 
 API 请求由本机 Node 网络层执行，避开浏览器 CORS 和把密钥混入页面状态的问题。支持 HTTPS、自定义端点与明确允许的本地 HTTP 测试端点；跨域重定向不携带密钥。实现必须兼容 Tabby 实际宿主 Node/Electron，不能只依赖构建机的 Node 20。
 
@@ -86,7 +90,7 @@ API 模式的“只读”禁止发送输入及操作控件；有副作用的终�
 
 顶部显示供应商与模型。模型选择使用当前配置中的模型 ID；设置页允许手动填写和多个配置。
 
-DeepSeek 侧栏提供 Thinking 开关和 low/high/max，修改后直接更新下一回合的配置快照，无需重连。协议层持续转发正文增量及不包含原始思考文本的思考接收进度；侧栏显式刷新 Node 回调产生的变化。设置页“测试连接”使用同一配置规范化与流式协议层发送简短无工具请求，在对应卡片显示进度、结果、取消和超时。
+所有连接的模型浮窗统一先选模型，再选 reasoning。API /models 上报等级优先；缺失时使用 `model-reasoning.ts` 中已知模型的保守等级，未知模型保留默认及手动输入。手动模型 ID 同样进入第二步。模型和等级一起保存、沿已有上下文交接路径应用；选择非空等级会重新开启已关闭的 Thinking。DeepSeek 顶部保留 Thinking 开关，开关修改直接更新下一回合的配置快照，无需重连。协议层持续转发正文增量及不包含原始思考文本的思考接收进度；侧栏显式刷新 Node 回调产生的变化。设置页“测试连接”使用同一配置规范化与流式协议层发送简短无工具请求，在对应卡片显示进度、结果、取消和超时。
 
 Codex 状态保留账户额度。API 模式显示模型用量和本地累计，不伪造“5 小时额度”“普通用量”等订阅信息。未提供上下文窗口时显示未知；上次请求输入占用与已上报累计 tokens 分开，tokens 统计不等同于货币计费。预算按已上报用量在请求边界检查，是软上限；在途请求可能超出，未上报用量无法计入。第一版不自动压缩历史，长对话需新建会话。
 
@@ -140,3 +144,16 @@ Goal 由本地 Runtime 持久化。一次模型请求结束只表示回合结束
 ## Claude Code 本机引擎
 
 开发版新增内置连接 `claude-code`，使用独立的 `claudeExecutable`、`claudeModel`、`claudeReasoningEffort`、`claudeThreads` 配置。它复用会话存储和面板事件端口，但模型循环由官方 CLI 执行，Tabby 工具经临时认证 MCP 回到原有执行器。`runtime: claude-code` 的 profile 是本机元数据，不是可发往 Anthropic HTTP API 的连接。Claude API Key 接入继续保持独立。完整研究、边界、恢复与限制见 [Claude Code 接入方案](claude-code.md)。
+
+## Goal continuation and effort capability sources
+
+API and Claude Code share the same active-goal continuation loop in `api-agent.ts`. A text response is persisted and followed by a continuation prompt while the goal remains active; provider-native tool/reasoning history stays intact. Completion, a real blocker, an explicit pause, cancellation, budget exhaustion, an explicitly configured tool cap or repeated no-progress evidence ends continuation. No fixed conversational-turn cap is added. The legacy default of 20 tool rounds migrates to zero; `toolRoundLimitConfigured` preserves newly explicit 20-round limits.
+
+Reasoning metadata from `/models` takes priority. Fallback menus use conservative documented subsets; unknown/custom models retain provider defaults and manual values. Source references (checked 2026-10-24):
+
+- [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning) and [GPT-5](https://developers.openai.com/api/docs/models/gpt-5).
+- [DeepSeek model metadata](https://api-docs.deepseek.com/api/list-models/).
+- [GLM thinking and effort](https://docs.bigmodel.cn/cn/guide/capabilities/thinking).
+- [Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort) and [Claude Code model settings](https://code.claude.com/docs/en/model-config). Alias resolution and CLI support remain account and installation dependent.
+
+Kimi 与百炼 Coding Plan 的端点、区域、模型和套餐边界见 [Coding Plan 配置](coding-plans.md)。三种新连接沿用通用 Agent 工具循环；Kimi 以持久会话 ID 作为 `prompt_cache_key`，确保工具续轮、后续回合及重启恢复稳定。客户端标识为真实产品名，不冒用已获准的其他工具。

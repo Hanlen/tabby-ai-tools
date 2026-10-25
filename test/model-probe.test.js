@@ -137,7 +137,7 @@ test('deadline and cancellation preserve already reported usage despite the abor
   await assert.rejects(cancelled, error => error.totalTokens === 601 && /取消/.test(error.message))
 })
 
-for (const [provider, variant] of [['openai', 'incomplete'], ['openai', 'failed'], ['openai', 'invalid-output'], ['deepseek', 'missing-finish'], ['deepseek', 'invalid-tool'], ['glm', 'missing-finish'], ['glm', 'invalid-tool'], ['claude', 'incomplete']]) {
+for (const [provider, variant] of [['openai', 'incomplete'], ['openai', 'failed'], ['openai', 'invalid-output'], ['deepseek', 'missing-finish'], ['deepseek', 'invalid-tool'], ['glm', 'missing-finish'], ['glm', 'invalid-tool'], ['kimi', 'missing-finish'], ['kimi', 'invalid-tool'], ['kimi-coding', 'missing-finish'], ['kimi-coding', 'invalid-tool'], ['bailian-coding', 'missing-finish'], ['bailian-coding', 'invalid-tool'], ['claude', 'incomplete']]) {
   test(`${provider}: real HTTP/SSE ${variant} retains usage before protocol failure`, async t => {
     const http = require('node:http')
     const event = provider === 'openai' ? { type: variant === 'invalid-output' ? 'response.completed' : `response.${variant}`, response: { usage: { input_tokens: 600, output_tokens: 0, total_tokens: 600 } } }

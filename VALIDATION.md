@@ -1,3 +1,11 @@
+# v0.4.0 release validation (2026-10-25)
+
+The release includes custom OpenAI-compatible Chat Completions/Responses connections, explicit no-key authentication, protocol-safe history/context transfer, Kimi/Alibaba Coding Plan presets, continuous API/Claude Code goals and model → reasoning selection. Local HTTP/SSE and CLI/MCP fixtures exercise discovery, native request parameters, streaming, continuous tool rounds, approvals, read-only behavior, cancellation, usage/budgets, repeated-loop protection, history recovery and context handoff. Existing provider fingerprints remain unchanged.
+
+Local checks: `npm run skill:bundle`, `npm run skill:check`, `npm run typecheck`, `npm test` (708 tests: 702 passed, 6 Windows-only skips), `npm run build` and `git diff --check`. The two READMEs are rendered and checked for title, model table, image paths and reduced-motion fallback. The versioned SVG/PNG illustration is previewed and the robot GIF's animation/static dimensions are checked. A real npm tarball is inspected for version, entry point, runtime dependency, complete docs, bilingual READMEs, images and bundled skill; local instructions, research, credentials and node_modules are excluded. Branch and tag Linux/macOS/Windows CI are checked during release; remote publication and artifact integrity are verified after upload.
+
+No paid model request was made. Real third-party gateways, membership access/quota deduction and full Tabby desktop/SSH behavior remain unverified. These limits also apply to the local Claude Code integration included since the previous npm release. The prior development validation records below describe their own scope and dates.
+
 # Claude Code local-login development validation (2026-10-24)
 
 The new native connection runs the installed official CLI with its own login and an authenticated loopback MCP bridge. Existing Claude API configuration remains separate. The implementation and official references are documented in [Claude Code integration](docs/claude-code.md).

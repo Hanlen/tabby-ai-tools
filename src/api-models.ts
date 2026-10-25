@@ -1,6 +1,8 @@
 import { ApiProfile, normalizeApiProfile } from './agent-types'
 import type { CodexModel } from './codex.service'
 import { apiUrl, getApiJson, withAbort } from './api-transport'
+import { modelReasoningEfforts } from './model-reasoning'
+import { apiHeaders } from './api-provider'
 
 /** Discover account models without inference, with one deadline including credential lookup and pagination. */
 export async function discoverApiModels (configured: ApiProfile, getKey: () => Promise<string>, signal?: AbortSignal): Promise<CodexModel[]> {
@@ -13,9 +15,7 @@ export async function discoverApiModels (configured: ApiProfile, getKey: () => P
   try {
     const url = apiUrl(profile.baseUrl, 'models')
     const key = await withAbort(getKey(), controller.signal)
-    const headers: Record<string, string> = profile.provider === 'claude'
-      ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
-      : { authorization: `Bearer ${key}` }
+    const headers = apiHeaders(profile, key)
     const models = new Map<string, CodexModel>()
     const cursors = new Set<string>()
     for (let page = 0; page < 100; page++) {
@@ -25,7 +25,7 @@ export async function discoverApiModels (configured: ApiProfile, getKey: () => P
         if (typeof item?.id !== 'string' || !item.id.trim() || models.has(item.id)) continue
         const levels: string[] = Array.isArray(item.effort?.supported_levels)
           ? item.effort.supported_levels.filter((value: unknown) => typeof value === 'string' && value)
-          : profile.provider === 'deepseek' ? ['low', 'high', 'max'] : []
+          : modelReasoningEfforts(profile, item.id)
         models.set(item.id, { model: item.id, displayName: item.display_name || item.name || item.id,
           description: typeof item.description === 'string' ? item.description.slice(0, 2000) : '',
           isDefault: item.id === profile.model,

@@ -25,7 +25,7 @@ require.extensions['.ts'] = (module, filename) => {
 const { ApiAgent } = require('../src/api-agent.ts')
 const { AgentStore, profileFingerprint } = require('../src/agent-store.ts')
 const { ApiProviderAdapter } = require('../src/api-provider.ts')
-const { normalizeApiProfile } = require('../src/agent-types.ts')
+const { normalizeApiProfile, PROVIDER_URLS, PROVIDER_ENV, PROVIDER_REGIONS } = require('../src/agent-types.ts')
 const { ApiToolLoopGuard } = require('../src/api-loop-guard.ts')
 const { apiUrl } = require('../src/api-transport.ts')
 const { discoverApiModels } = require('../src/api-models.ts')
@@ -51,7 +51,125 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const zone = { run: fn => fn(), runOutsideAngular: fn => fn() }
 const panelTools = { releaseOwner: () => {} }
 
-async function fixture (t, provider, handler) {
+test('custom preset preserves a proxy URL, model and key drafts, defaults to Chat Completions and requires an explicit endpoint', async () => {
+  const component = new CodexSettingsComponent({ store: { codexAgent: {} }, save: async () => {} }, {}, zone)
+  const profile = { id: 'custom-preset', provider: 'openai', baseUrl: 'https://proxy.example/v1/', model: 'user/model', apiKey: 'draft', keySource: 'direct', threads: {} }
+  component.changeProvider(profile, 'custom')
+  assert.equal(profile.baseUrl, 'https://proxy.example/v1/')
+  assert.equal(profile.model, 'user/model')
+  assert.equal(profile.apiFormat, 'chat-completions')
+  assert.equal(profile.apiKeyEnv, 'CUSTOM_API_KEY')
+  assert.equal(profile.apiKey, 'draft')
+  component.changeApiFormat(profile, 'responses')
+  assert.equal(profile.apiFormat, 'responses')
+  component.changeKeySource(profile, 'none')
+  assert.equal(await new AgentSecretsService().read(profile), '')
+  component.changeProvider(profile, 'openai')
+  assert.equal(profile.keySource, 'direct')
+  assert.equal(profile.baseUrl, PROVIDER_URLS.openai)
+  component.changeProvider(profile, 'custom')
+  assert.equal(normalizeApiProfile(profile).baseUrl, '')
+  assert.throws(() => apiUrl(normalizeApiProfile(profile).baseUrl, 'models'), /Base URL/)
+  component.ngOnDestroy()
+})
+
+test('custom protocol fingerprints isolate native histories and retain existing provider fingerprints', () => {
+  const profile = { id: 'fingerprint', provider: 'openai', baseUrl: 'https://proxy.example/v1/', model: 'same' }
+  const expected = require('node:crypto').createHash('sha256').update(JSON.stringify([profile.id, profile.provider, 'https://proxy.example/v1', profile.model])).digest('hex')
+  assert.equal(profileFingerprint(profile), expected)
+  const custom = { ...profile, provider: 'custom' }
+  assert.equal(profileFingerprint(custom), profileFingerprint({ ...custom, apiFormat: 'chat-completions' }))
+  assert.notEqual(profileFingerprint(custom), profileFingerprint({ ...custom, apiFormat: 'responses' }))
+  assert.throws(() => profileFingerprint({ ...custom, apiFormat: 'unsupported' }), /协议/)
+})
+
+for (const apiFormat of ['chat-completions', 'responses']) {
+  test(`custom ${apiFormat}: no-key discovery and streaming omit saved credentials and vendor parameters`, async t => {
+    const f = await fixture(t, 'custom', (req, res) => {
+      assert.equal(req.headers.authorization, undefined)
+      assert.equal(req.headers['x-api-key'], undefined)
+      assert.equal(req.headers['anthropic-version'], undefined)
+      if (req.method === 'GET') {
+        assert.equal(req.path, '/v1/models')
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ data: [{ id: 'custom/model' }] }))
+        return
+      }
+      assert.equal(req.path, apiFormat === 'responses' ? '/v1/responses' : '/v1/chat/completions')
+      assert.equal(req.body.thinking, undefined)
+      assert.equal(req.body.enable_thinking, undefined)
+      assert.equal(req.body.prompt_cache_key, undefined)
+      assert.equal(req.body.stream_options, undefined)
+      if (apiFormat === 'responses') assert.equal(req.body.reasoning.effort, 'high')
+      else assert.equal(req.body.reasoning_effort, 'high')
+      reply(apiFormat === 'responses' ? 'openai' : 'custom', res, 1, null)
+    }, { apiFormat, keySource: 'none', apiKey: 'must-not-be-sent', thinking: 'enabled', reasoningEffort: 'high' })
+    const getKey = () => new AgentSecretsService().read(f.profile)
+    assert.equal((await discoverApiModels(f.profile, getKey))[0].model, 'custom/model')
+    const adapter = new ApiProviderAdapter(f.profile, await getKey())
+    const result = await adapter.generate([adapter.user('Hi')], 'Test', [], new AbortController().signal, () => {})
+    assert.equal(result.text, '完成')
+    assert.equal(result.totalTokens, 15)
+  })
+}
+
+test('custom Responses executes two tool rounds, restores history and switches protocols through portable context', async t => {
+  let responseRounds = 0
+  const f = await fixture(t, 'custom', (req, res) => {
+    assert.equal(req.headers.authorization, 'Bearer fixture-secret')
+    if (req.path === '/v1/responses') {
+      responseRounds++
+      assert.equal(req.body.input[0].role, 'user')
+      if (responseRounds > 1) {
+        assert.ok(req.body.input.some(item => item.type === 'function_call_output' && item.call_id === 'call-1'))
+        assert.ok(req.body.input.some(item => item.type === 'reasoning' && item.encrypted_content === 'opaque-1'))
+      }
+      reply('openai', res, responseRounds, responseRounds <= 2 ? { name: 'list_tabs', args: {} } : null)
+    } else {
+      assert.equal(req.path, '/v1/chat/completions')
+      assert.ok(req.body.messages.some(item => item.content === '完成'))
+      assert.equal(req.body.messages.some(item => item.type === 'function_call_output' || item.tool_call_id), false)
+      reply('custom', res, 1, null)
+    }
+  }, { apiFormat: 'responses' })
+  const tools = []
+  f.agent.on('event', event => {
+    if (event.method === 'item/tool/call') {
+      tools.push(event.params.tool)
+      f.agent.respond(event.id, { success: true, contentItems: [{ text: '[]' }] })
+    }
+  })
+  const done = turnFinished(f.agent)
+  await f.agent.startTurn(f.id, 'Inspect', '/workspace', settings)
+  assert.equal((await done).status, 'completed')
+  assert.deepEqual(tools, ['list_tabs', 'list_tabs'])
+  const restored = new ApiAgent({ ...f.profile }, f.store, async () => 'fixture-secret')
+  t.after(() => restored.close())
+  assert.equal(await restored.resumeThread(f.id, '/workspace', settings), f.id)
+  const switched = new ApiAgent({ ...f.profile, apiFormat: 'chat-completions' }, f.store, async () => 'fixture-secret')
+  t.after(() => switched.close())
+  await assert.rejects(switched.resumeThread(f.id, '/workspace', settings), /其他连接/)
+  const nextId = await switched.openThread('/workspace', settings, f.id)
+  assert.notEqual(nextId, f.id)
+  const nextDone = turnFinished(switched)
+  await switched.startTurn(nextId, 'Continue', '/workspace', settings)
+  assert.equal((await nextDone).status, 'completed')
+})
+
+test('custom connection changes cancel stale tests and model lists without restoring old results', async () => {
+  const profile = { id: 'invalidate', provider: 'custom', baseUrl: 'https://proxy.example/v1', model: 'test' }
+  const component = new CodexSettingsComponent({ store: { codexAgent: {} }, save: async () => {} }, { read: () => new Promise(() => {}) }, zone)
+  const pending = component.testProfile(profile)
+  component.modelLists[profile.id] = { models: [{ model: 'old' }] }
+  component.changeApiFormat(profile, 'responses')
+  await pending
+  assert.equal(component.connectionTests[profile.id], undefined)
+  assert.equal(component.modelLists[profile.id], undefined)
+  await assert.rejects(new AgentSecretsService().read({ ...profile, provider: 'openai', keySource: 'none' }), /仅自定义/)
+  component.ngOnDestroy()
+})
+
+async function fixture (t, provider, handler, overrides = {}) {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tabby-api-test-'))
   const requests = []
   const errors = []
@@ -67,7 +185,7 @@ async function fixture (t, provider, handler) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const profile = { id: 'profile-one', name: 'Test', provider, baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
     model: 'test-model', apiKeyEnv: 'TEST_API_KEY', useVault: false, thinking: 'default', reasoningEffort: '',
-    contextWindow: 32000, maxOutputTokens: 4096, maxIterations: 5, threads: {} }
+    contextWindow: 32000, maxOutputTokens: 4096, maxIterations: 5, threads: {}, ...overrides }
   const store = new AgentStore(root)
   const agent = new ApiAgent(profile, store, async () => 'fixture-secret')
   t.after(async () => {
@@ -129,7 +247,144 @@ function reply (provider, res, round, tool) {
   }
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+test('Kimi and Alibaba presets keep API and membership endpoints, models and environment keys distinct', () => {
+  const component = new CodexSettingsComponent({ store: { codexAgent: {} }, save: async () => {} }, {}, zone)
+  const profile = { id: 'kimi-preset', apiKey: 'user-key', keySource: 'direct', threads: {}, maxOutputTokens: 4096 }
+  for (const [provider, url, model, env] of [
+    ['kimi', 'https://api.moonshot.cn/v1', 'kimi-k3.1-pro', 'MOONSHOT_API_KEY'],
+    ['kimi-coding', 'https://api.kimi.com/coding/v1', 'kimi-for-coding', 'KIMI_API_KEY'],
+    ['bailian-coding', 'https://coding.dashscope.aliyuncs.com/v1', 'qwen3.7-plus', 'BAILIAN_CODING_PLAN_API_KEY'],
+  ]) {
+    component.changeProvider(profile, provider)
+    assert.equal(profile.baseUrl, url)
+    assert.equal(profile.model, model)
+    assert.equal(profile.apiKeyEnv, env)
+    assert.equal(profile.maxOutputTokens, 32768)
+    assert.equal(profile.apiKey, 'user-key', 'keep the draft so the user can replace it with the matching platform key')
+    assert.equal(normalizeApiProfile({ ...profile, baseUrl: '' }).baseUrl, url)
+    assert.equal(PROVIDER_URLS[provider], url)
+    assert.equal(PROVIDER_ENV[provider], env)
+  }
+  component.ngOnDestroy()
+})
+
+for (const provider of ['kimi', 'kimi-coding', 'bailian-coding']) {
+  test(`${provider}: China/international presets invalidate model discovery and preserve custom URLs and key drafts`, () => {
+    let cancelled = false, saved = 0
+    const component = new CodexSettingsComponent({ store: { codexAgent: {} }, save: async () => { saved++ } }, {}, zone)
+    const profile = { id: 'region', provider, baseUrl: PROVIDER_URLS[provider], model: 'user-model', apiKey: 'user-draft' }
+    component.modelLists.region = { models: [{ model: 'old' }] }
+    component.fetchingModels.set('region', { abort: () => { cancelled = true } })
+    assert.equal(component.endpointRegion(profile), 'china')
+    component.changeEndpointRegion(profile, 'international')
+    assert.equal(profile.baseUrl, PROVIDER_REGIONS[provider].international)
+    assert.equal(component.endpointRegion(profile), 'international')
+    assert.equal(component.modelLists.region, undefined)
+    assert.equal(cancelled, true)
+    assert.equal(profile.model, 'user-model')
+    assert.equal(profile.apiKey, 'user-draft')
+    profile.baseUrl = 'https://proxy.example/custom/v1/'
+    assert.equal(component.endpointRegion(profile), 'custom')
+    component.changeEndpointRegion(profile, 'custom')
+    assert.equal(profile.baseUrl, 'https://proxy.example/custom/v1/')
+    component.changeEndpointRegion(profile, 'china')
+    assert.equal(profile.baseUrl, PROVIDER_URLS[provider])
+    profile.baseUrl += '/'
+    assert.equal(component.endpointRegion(profile), 'china')
+    assert.equal(saved, 2)
+    component.ngOnDestroy()
+  })
+}
+
+for (const thinking of ['default', 'enabled', 'disabled']) {
+  test(`Alibaba Coding Plan ${thinking}: uses Chat Completions and enable_thinking without native Kimi parameters`, async t => {
+    const f = await fixture(t, 'bailian-coding', (req, res, round) => {
+      assert.equal(req.path, '/v1/chat/completions')
+      assert.equal(req.headers['user-agent'], 'tabby-ai-tools')
+      assert.equal(req.headers.authorization, 'Bearer fixture-secret')
+      assert.equal(req.body.enable_thinking, thinking === 'default' ? undefined : thinking === 'enabled')
+      assert.equal(req.body.thinking, undefined)
+      assert.equal(req.body.prompt_cache_key, undefined)
+      assert.deepEqual(req.body.stream_options, { include_usage: true })
+      assert.equal(req.body.reasoning_effort, thinking === 'disabled' ? undefined : 'high')
+      reply('bailian-coding', res, round, null)
+    })
+    // Alibaba-hosted Kimi models still use the Alibaba protocol, not Moonshot's thinking controls.
+    const adapter = new ApiProviderAdapter({ ...f.profile, model: 'kimi-k2.5', thinking, reasoningEffort: 'high' }, 'fixture-secret')
+    const result = await adapter.generate([adapter.user('Hello')], '', [], new AbortController().signal, () => {})
+    assert.equal(result.totalTokens, 15)
+    assert.equal(f.requests.length, 1)
+  })
+}
+
+for (const provider of ['kimi', 'kimi-coding']) {
+  test(`${provider}: endpoint paths, honest client identity and cache key survive turns and restart`, async t => {
+    let cacheKey
+    const f = await fixture(t, provider, (req, res, round) => {
+      assert.equal(req.path, provider === 'kimi' ? '/v1/chat/completions' : '/coding/v1/chat/completions')
+      assert.equal(req.headers.authorization, 'Bearer fixture-secret')
+      assert.equal(req.headers['user-agent'], 'tabby-ai-tools')
+      assert.deepEqual(req.body.stream_options, { include_usage: true })
+      assert.ok(req.body.prompt_cache_key)
+      if (!cacheKey) cacheKey = req.body.prompt_cache_key
+      assert.equal(req.body.prompt_cache_key, cacheKey)
+      assert.equal(req.body.temperature, undefined)
+      if (round > 1) assert.equal(req.body.messages.find(message => message.role === 'assistant').reasoning_content, 'native-thought-1')
+      reply(provider, res, round, null)
+    })
+    if (provider === 'kimi-coding') f.profile.baseUrl = new URL('/coding/v1', f.profile.baseUrl).toString()
+    // Recreate after changing the test endpoint so its fingerprint matches persisted history.
+    const id = await f.agent.openThread('/workspace', settings)
+    cacheKey = id
+    let completed = turnFinished(f.agent)
+    await f.agent.startTurn(id, 'First', '/workspace', settings)
+    assert.equal((await completed).status, 'completed')
+    completed = turnFinished(f.agent)
+    await f.agent.startTurn(id, 'Second', '/workspace', settings)
+    assert.equal((await completed).status, 'completed')
+    const restored = new ApiAgent(f.profile, f.store, async () => 'fixture-secret')
+    t.after(() => restored.close())
+    await restored.resumeThread(id, '/workspace', settings)
+    completed = turnFinished(restored)
+    await restored.startTurn(id, 'After restart', '/workspace', settings)
+    assert.equal((await completed).status, 'completed')
+    assert.equal(f.requests.length, 3)
+  })
+}
+
+for (const model of ['kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed', 'kimi-k3', 'kimi-k2.7-code']) {
+  test(`Kimi API ${model}: omits unsupported thinking parameter and rejects disabling before HTTP`, async t => {
+    const f = await fixture(t, 'kimi', (req, res, round) => {
+      assert.equal(req.body.thinking, undefined)
+      assert.equal(req.body.reasoning_effort, 'high')
+      reply('kimi', res, round, null)
+    })
+    const adapter = new ApiProviderAdapter({ ...f.profile, model, thinking: 'enabled', reasoningEffort: 'high' }, 'fixture-secret')
+    await adapter.generate([adapter.user('Hello')], '', [], new AbortController().signal, () => {})
+    adapter.profile.thinking = 'disabled'
+    await assert.rejects(adapter.generate([adapter.user('Hello')], '', [], new AbortController().signal, () => {}), /仅支持思考/)
+    assert.equal(f.requests.length, 1)
+  })
+}
+
+test('Kimi Code K3.1 rejects disabling thinking; K2.6 API and coding alias retain explicit thinking controls', async t => {
+  const f = await fixture(t, 'kimi', (req, res, round) => {
+    assert.deepEqual(req.body.thinking, { type: 'disabled' })
+    assert.equal(req.body.reasoning_effort, undefined)
+    reply('kimi', res, round, null)
+  })
+  for (const [provider, model] of [['kimi', 'kimi-k2.6'], ['kimi-coding', 'kimi-for-coding']]) {
+    const adapter = new ApiProviderAdapter({ ...f.profile, provider, model, thinking: 'disabled', reasoningEffort: 'high' }, 'fixture-secret')
+    await adapter.generate([adapter.user('Hello')], '', [], new AbortController().signal, () => {})
+  }
+  for (const model of ['k3.1-pro', 'k3.1-pro-highspeed']) {
+    const adapter = new ApiProviderAdapter({ ...f.profile, provider: 'kimi-coding', model, thinking: 'disabled' }, 'fixture-secret')
+    await assert.rejects(adapter.generate([adapter.user('Hello')], '', [], new AbortController().signal, () => {}), /仅支持思考/)
+  }
+  assert.equal(f.requests.length, 2)
+})
+
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: discovers remote models with provider auth, pagination and deduplication without inference`, async t => {
     const f = await fixture(t, provider, (req, res, round) => {
       assert.equal(req.method, 'GET')
@@ -268,6 +523,99 @@ test('model picker ignores results from an older connection and retains manual m
   assert.equal(panel.modelPickerOpen, false)
 })
 
+for (const [provider, model, levels] of [
+  ['openai', 'gpt-5', ['minimal', 'low', 'medium', 'high']],
+  ['deepseek', 'deepseek-v4-pro', ['low', 'high', 'max']],
+  ['glm', 'glm-5.3', ['low', 'high', 'max']],
+  ['kimi', 'kimi-k3.1-pro', ['low', 'high', 'max']],
+  ['kimi-coding', 'kimi-for-coding', ['low', 'high', 'max']],
+  ['claude', 'claude-sonnet-4-6', ['low', 'medium', 'high']],
+]) {
+  test(`${provider}: picker selects model then reasoning, persists it and sends it on the next request`, async t => {
+    let expectedEffort = 'high'
+    const f = await fixture(t, provider, (req, res, round) => {
+      if (req.method === 'GET') { res.end(JSON.stringify({ data: [{ id: model }] })); return }
+      assert.equal(req.body.model, model)
+      assert.equal(req.body.reasoning?.effort || req.body.output_config?.effort || req.body.reasoning_effort, expectedEffort)
+      if (provider !== 'openai' && expectedEffort) assert.notEqual(req.body.thinking?.type, 'disabled')
+      reply(provider, res, round, null)
+    })
+    const configured = { ...f.profile, thinking: 'disabled' }
+    const config = { store: { codexAgent: { ...settings, threads: {}, tabToolThreads: {}, apiProfiles: [configured] } }, save: async () => {} }
+    let first = true, selected
+    const factory = { defaultProfileId: configured.id, create: () => {
+      if (first) { first = false; return f.agent }
+      selected = new ApiAgent({ ...configured }, f.store, async () => 'fixture-secret')
+      return selected
+    } }
+    const panel = new CodexPanelComponent(config, f.agent, zone, {}, panelTools, factory)
+    panel.cwd = '/workspace'; panel.threadId = f.id; panel.loading = false; panel.connected = true
+    t.after(() => panel.ngOnDestroy())
+    await panel.openModelPicker()
+    await panel.selectModel(model)
+    assert.equal(panel.pendingModel.model, model)
+    assert.deepEqual(panel.pendingModel.supportedReasoningEfforts.map(option => option.reasoningEffort), levels)
+    assert.equal(configured.model, 'test-model', 'first step must not apply a model early')
+    await panel.chooseModel(model, 'high')
+    assert.equal(panel.modelError, '')
+    assert.equal(panel.modelPickerOpen, false)
+    assert.equal(configured.reasoningEffort, 'high')
+    assert.equal(panel.reasoningLabel, 'high')
+    let finished = turnFinished(selected)
+    await selected.startTurn(panel.threadId, 'Inspect', '/workspace', settings)
+    assert.equal((await finished).status, 'completed')
+    expectedEffort = undefined
+    await panel.openModelPicker()
+    await panel.selectModel(model)
+    await panel.chooseModel(model, '')
+    assert.equal(configured.reasoningEffort, '')
+    finished = turnFinished(selected)
+    await selected.startTurn(panel.threadId, 'Inspect again', '/workspace', settings)
+    assert.equal((await finished).status, 'completed')
+  })
+}
+
+test('manual model IDs still enter the reasoning step and failed saves restore model, effort and thinking', async () => {
+  const profile = { id: 'manual', provider: 'glm', model: 'old', reasoningEffort: 'high', thinking: 'disabled', threads: {} }
+  let fail = false
+  const config = { store: { codexAgent: { apiProfiles: [profile] } }, save: async () => { if (fail) throw new Error('disk unavailable') } }
+  const backend = { client: {}, profile: { ...profile }, listModels: async () => { throw new Error('404') } }
+  const panel = new CodexPanelComponent(config, backend, zone, {}, panelTools)
+  panel.profileId = profile.id; panel.loading = false
+  await panel.openModelPicker()
+  await panel.selectModel('custom-model')
+  assert.equal(panel.pendingModel.model, 'custom-model')
+  assert.deepEqual(panel.pendingModel.supportedReasoningEfforts, [])
+  assert.equal(profile.model, 'old')
+  fail = true
+  await panel.chooseModel('custom-model', 'custom-effort', true)
+  assert.equal(profile.model, 'old')
+  assert.equal(profile.reasoningEffort, 'high')
+  assert.equal(profile.thinking, 'disabled')
+  assert.match(panel.modelError, /disk unavailable/)
+  fail = false
+  await panel.chooseModel('custom-model', 'custom-effort', true)
+  assert.equal(profile.model, 'custom-model')
+  assert.equal(profile.reasoningEffort, 'custom-effort')
+  assert.equal(profile.thinking, 'enabled')
+})
+
+test('reselecting the current effort re-enables Thinking and respects an explicitly empty capability list', async () => {
+  let saves = 0
+  const profile = { id: 'thinking', provider: 'glm', model: 'glm-5.3', reasoningEffort: 'high', thinking: 'disabled', threads: {} }
+  const config = { store: { codexAgent: { apiProfiles: [profile] } }, save: async () => { saves++ } }
+  const backend = { client: {}, profile: { ...profile }, listModels: async () => [{ model: 'glm-5.3', supportedReasoningEfforts: [], defaultReasoningEffort: '' }] }
+  const panel = new CodexPanelComponent(config, backend, zone, {}, panelTools)
+  panel.profileId = profile.id; panel.loading = false
+  await panel.openModelPicker()
+  await panel.selectModel(profile.model)
+  assert.deepEqual(panel.pendingModel.supportedReasoningEfforts, [], 'reported capabilities are authoritative')
+  await panel.chooseModel(profile.model, 'high', true)
+  assert.equal(saves, 1, 'an unchanged effort must still apply the Thinking change')
+  assert.equal(profile.thinking, 'enabled')
+  assert.equal(profile.reasoningEffort, 'high')
+})
+
 test('selecting a discovered API model applies it while carrying forward the conversation and goal', async t => {
   const f = await fixture(t, 'deepseek', (req, res, round) => {
     if (req.method === 'GET') { res.end(JSON.stringify({ data: [{ id: 'test-model' }, { id: 'remote-model' }] })); return }
@@ -275,7 +623,7 @@ test('selecting a discovered API model applies it while carrying forward the con
       assert.equal(req.body.reasoning_effort, 'high')
       assert.ok(JSON.stringify(req.body.messages).includes('Remember before switching models'))
     }
-    reply('deepseek', res, round, null)
+    reply('deepseek', res, round, round === 1 ? { name: 'agent_goal_update', args: { status: 'blocked', evidence: 'Waiting for the requested model switch' } } : null)
   })
   await f.agent.setGoal(f.id, 'Keep this goal', 1000)
   let completed = turnFinished(f.agent)
@@ -305,7 +653,7 @@ test('selecting a discovered API model applies it while carrying forward the con
   assert.equal((await completed).status, 'completed')
 })
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: streams, executes two tool rounds, preserves native reasoning and restores history`, async t => {
     const f = await fixture(t, provider, (req, res, round) => {
       assert.equal(req.path, provider === 'openai' ? '/v1/responses' : provider === 'claude' ? '/v1/messages' : '/v1/chat/completions')
@@ -326,7 +674,7 @@ for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
           assert.equal(messages.find(item => item.role === 'tool').tool_call_id, 'call-1')
         }
       }
-      reply(provider, res, round, round === 1 ? { name: 'list_tabs', args: {} } : round === 2 ? { name: 'read_tab', args: { tabId: 'tab-1', maxLines: 5 } } : null)
+      reply(provider, res, round, round === 1 ? { name: 'list_tabs', args: {} } : round === 2 ? { name: 'read_tab', args: { tabId: 'tab-1', maxLines: 5 } } : round === 3 ? { name: 'agent_goal_update', args: { status: 'complete', evidence: 'Terminal output checked' } } : null)
     })
     const calls = [], deltas = [], usage = []
     f.agent.on('event', event => {
@@ -343,9 +691,9 @@ for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
     assert.equal((await completed).status, 'completed')
     assert.deepEqual(calls, ['list_tabs', 'read_tab'])
     assert.equal(deltas.join(''), '完成')
-    assert.equal(usage.at(-1).total.totalTokens, 45)
+    assert.equal(usage.at(-1).total.totalTokens, 60)
     assert.equal(usage.at(-1).last.totalTokens, 10)
-    assert.equal((await f.agent.getGoal(f.id)).status, 'active', 'end of response does not imply goal completion')
+    assert.equal((await f.agent.getGoal(f.id)).status, 'complete', 'verified completion is explicit')
     const saved = await f.store.load(f.id)
     assert.equal(saved.messages.length > 3, true)
     assert.equal(JSON.stringify(saved).includes('fixture-secret'), false)
@@ -471,9 +819,110 @@ test('tool limits allow one closing request and token budgets stop additional mo
 })
 
 test('tool-round normalization preserves zero, explicit limits and a bounded numeric range', () => {
-  for (const [configured, expected] of [[undefined, 0], [0, 0], ['0', 0], [20, 20], [2.8, 2], [-1, 0], [200, 100], [Infinity, 0], ['bad', 0]]) {
+  for (const [configured, expected] of [[undefined, 0], [0, 0], ['0', 0], [20, 0], [2.8, 2], [-1, 0], [200, 100], [Infinity, 0], ['bad', 0]]) {
     assert.equal(normalizeApiProfile({ provider: 'deepseek', maxIterations: configured }).maxIterations, expected)
   }
+})
+
+test('legacy default limits migrate to unlimited while explicit limits survive settings saves', async () => {
+  let saves = 0
+  const legacy = { id: 'legacy', provider: 'deepseek', maxIterations: 20 }
+  const custom = { id: 'custom', provider: 'glm', maxIterations: 7 }
+  const explicit = { id: 'explicit', provider: 'claude', maxIterations: 20, toolRoundLimitConfigured: true }
+  const config = { store: { codexAgent: { apiProfiles: [legacy, custom, explicit] } }, save: async () => { saves++ } }
+  const component = new CodexSettingsComponent(config, {}, zone)
+  assert.equal(legacy.maxIterations, 0)
+  assert.equal(custom.maxIterations, 7)
+  assert.equal(explicit.maxIterations, 20)
+  assert.equal(saves, 1)
+  component.setToolRoundLimit(legacy, 20)
+  assert.equal(normalizeApiProfile(legacy).maxIterations, 20)
+  assert.equal(normalizeApiProfile({ provider: 'glm', maxIterations: 20 }).maxIterations, 0)
+  assert.equal(saves, 2)
+})
+
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
+  test(`${provider}: default goals continue past 20 tools and a text response without asking the user`, async t => {
+    const f = await fixture(t, provider, (req, res, round) => reply(provider, res, round,
+      round <= 24 || round === 26 ? { name: 'read_tab', args: { tabId: 'one', waitMs: 0 } }
+        : round === 27 ? { name: 'agent_goal_update', args: { status: 'complete', evidence: 'All terminal results verified' } } : null))
+    // Exercise the old saved default, not a newly-created profile already set to zero.
+    f.profile.maxIterations = 20
+    await f.agent.setGoal(f.id, 'Long task', 0)
+    let calls = 0, started = 0, finished = 0
+    f.agent.on('event', event => {
+      if (event.method === 'turn/started') started++
+      if (event.method === 'turn/completed') finished++
+      if (event.id) {
+        assert.equal(event.method, 'item/tool/call', 'continuation must not ask for approval')
+        calls++
+        f.agent.respond(event.id, { success: true, contentItems: [{ text: `progress ${calls}` }] })
+      }
+    })
+    const completed = turnFinished(f.agent)
+    await f.agent.startTurn(f.id, 'Long task', '/workspace', settings)
+    assert.equal((await completed).status, 'completed')
+    assert.equal(f.requests.length, 28)
+    assert.equal(calls, 25)
+    assert.equal(started, 1)
+    assert.equal(finished, 1)
+    const body = f.requests[25].body
+    assert.match(JSON.stringify(body.input || body.messages), /current goal is still active/)
+    const saved = await f.store.load(f.id)
+    assert.equal(saved.goal.status, 'complete')
+    assert.equal(saved.turns.length, 1)
+    assert.equal(saved.totalTokens, 420)
+  })
+
+  for (const status of ['blocked', 'paused']) {
+    test(`${provider}: a goal explicitly ${status} does not automatically resume`, async t => {
+      const f = await fixture(t, provider, (req, res, round) => reply(provider, res, round,
+        round === 1 ? { name: 'agent_goal_update', args: { status, evidence: status === 'paused' ? 'User requested a pause' : 'Missing required deployment credentials' } } : null))
+      f.profile.maxIterations = 0
+      await f.agent.setGoal(f.id, 'Task', 0)
+      const completed = turnFinished(f.agent)
+      await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
+      assert.equal((await completed).status, 'completed')
+      assert.equal(f.requests.length, 2)
+      assert.equal((await f.agent.getGoal(f.id)).status, status)
+    })
+  }
+}
+
+test('text-only goal stalls are detected without declaring success or imposing a fixed turn limit', async t => {
+  const f = await fixture(t, 'deepseek', (req, res, round) => reply('deepseek', res, round, null))
+  f.profile.maxIterations = 0
+  await f.agent.setGoal(f.id, 'Unfinished task', 0)
+  const completed = turnFinished(f.agent)
+  await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
+  assert.match((await completed).error.message, /重复工具循环/)
+  assert.equal(f.requests.length, 4)
+  assert.equal((await f.agent.getGoal(f.id)).status, 'blocked')
+})
+
+test('goal continuation respects budgets after a text response and can be interrupted while streaming', async t => {
+  let streaming
+  const began = new Promise(resolve => { streaming = resolve })
+  const f = await fixture(t, 'deepseek', (req, res, round) => {
+    if (round <= 2) { reply('deepseek', res, round, null); return }
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.write('data: {"choices":[{"delta":{"content":"continuing"}}]}\n\n')
+    streaming()
+  })
+  f.profile.maxIterations = 0
+  await f.agent.setGoal(f.id, 'Budgeted task', 10)
+  let completed = turnFinished(f.agent)
+  await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
+  assert.match((await completed).error.message, /预算/)
+  assert.equal(f.requests.length, 1)
+  await f.agent.setGoal(f.id, 'Interruptible task', 0)
+  completed = turnFinished(f.agent)
+  const id = await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
+  await began
+  await f.agent.interrupt(f.id, id)
+  assert.equal((await completed).status, 'interrupted')
+  assert.equal(f.requests.length, 3)
+  assert.equal((await f.agent.getGoal(f.id)).status, 'active')
 })
 
 test('queued text responses do not consume the tool-round allowance', async t => {
@@ -499,7 +948,7 @@ test('queued text responses do not consume the tool-round allowance', async t =>
   assert.equal(f.requests[2].body.tools, undefined)
 })
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: no fixed limit continues past the former default and keeps tool results paired`, async t => {
     const f = await fixture(t, provider, (req, res, round) => reply(provider, res, round,
       round <= 21 ? { name: 'read_tab', args: { tabId: 'tab-1', waitMs: 0 } } : null))
@@ -699,7 +1148,7 @@ test('longer cycles are detected within the bounded observation window', () => {
   assert.equal(guard.state.observations.length, 60)
 })
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: repeated A/B/C outcomes stop tools and block the goal even without a fixed limit`, { timeout: 5000 }, async t => {
     const f = await fixture(t, provider, (req, res, round) => {
       reply(provider, res, round, round <= 9 ? { name: 'send_input', args: { tabId: 'one', text: ['A', 'B', 'C'][(round - 1) % 3], submit: true } } : null)
@@ -865,11 +1314,11 @@ test('API credentials use plugin configuration/environment and never access lega
 
 })
 
-for (const source of ['openai', 'deepseek', 'glm', 'claude']) {
-  for (const target of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const source of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
+  for (const target of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
     test(`context handoff ${source} → ${target} keeps messages, tools, goal and restart history`, async t => {
       const first = await fixture(t, source, (req, res, round) => reply(source, res, round,
-        round === 1 ? { name: 'read_tab', args: { tabId: 'one' } } : null))
+        round === 1 ? { name: 'read_tab', args: { tabId: 'one' } } : round === 2 ? { name: 'agent_goal_update', args: { status: 'blocked', evidence: 'Waiting for a provider switch' } } : null))
       first.agent.on('event', event => {
         if (event.method === 'item/tool/call') first.agent.respond(event.id, { success: true, contentItems: [{ text: 'original terminal result' }] })
       })
@@ -899,14 +1348,14 @@ for (const source of ['openai', 'deepseek', 'glm', 'claude']) {
       completed = turnFinished(restored)
       await restored.startTurn(transferred, 'Continue after switching', '/workspace', settings)
       assert.equal((await completed).status, 'completed')
-      assert.equal((await second.store.load(transferred)).totalTokens, 45)
+      assert.equal((await second.store.load(transferred)).totalTokens, 60)
       assert.equal((await first.store.load(first.id)).turns.length, 1, 'source history remains intact')
     })
   }
 }
 
 test('changing a model keeps context and goals; an unchanged reconnect retains native messages', async t => {
-  const f = await fixture(t, 'claude', (req, res, round) => reply('claude', res, round, null))
+  const f = await fixture(t, 'claude', (req, res, round) => reply('claude', res, round, round === 1 ? { name: 'agent_goal_update', args: { status: 'blocked', evidence: 'Waiting for a model switch' } } : null))
   await f.agent.setGoal(f.id, 'Finish original task', 100)
   const completed = turnFinished(f.agent)
   await f.agent.startTurn(f.id, 'Original question', '/workspace', settings)
@@ -921,7 +1370,8 @@ test('changing a model keeps context and goals; an unchanged reconnect retains n
   assert.notEqual(id, f.id)
   assert.deepEqual(migrated.turns, original.turns)
   assert.deepEqual(migrated.goal, original.goal)
-  assert.deepEqual(migrated.messages, [{ role: 'user', content: 'Original question' }, { role: 'assistant', content: '完成' }])
+  assert.ok(migrated.messages.some(message => message.role === 'user' && message.content === 'Original question'))
+  assert.equal(migrated.messages.at(-1).content, '完成')
   await assert.rejects(changed.importContext(await f.agent.exportContext(f.id), '/elsewhere', settings), /工作目录/)
   same.close(); changed.close()
 })
@@ -1135,11 +1585,11 @@ test('DeepSeek Thinking switch and effort are sent on the next turn without reco
 
 test('DeepSeek → Codex → DeepSeek preserves displayed history, model context, goals and per-provider model settings', async t => {
   const f = await fixture(t, 'deepseek', (req, res, round) => {
-    if (round > 1) {
+    if (round > 2) {
       const wire = JSON.stringify(req.body.messages)
       for (const text of ['Original DS request', 'forwarded original terminal', 'Codex follow-up', 'Codex answer']) assert.equal(wire.includes(text), true, text)
     }
-    reply('deepseek', res, round, null)
+    reply('deepseek', res, round, round === 1 ? { name: 'agent_goal_update', args: { status: 'blocked', evidence: 'Waiting for Codex follow-up' } } : null)
   })
   await f.agent.setGoal(f.id, 'Shared task goal', 1000)
   let completed = turnFinished(f.agent)
@@ -1197,7 +1647,7 @@ test('DeepSeek → Codex → DeepSeek preserves displayed history, model context
   assert.equal(panel.currentModel, f.profile.model)
   assert.deepEqual(panel.entries.filter(entry => entry.kind === 'user').map(entry => entry.text), ['Original DS request', 'Codex follow-up'])
   assert.equal(panel.entries.some(entry => entry.text === 'Codex answer'), true)
-  assert.equal((await returned.getGoal(panel.threadId)).usedTokens, 20)
+  assert.equal((await returned.getGoal(panel.threadId)).usedTokens, 35)
   completed = turnFinished(returned)
   await returned.startTurn(panel.threadId, 'Continue on DS', '/workspace', settings)
   assert.equal((await completed).status, 'completed')
@@ -1207,7 +1657,7 @@ test('DeepSeek → Codex → DeepSeek preserves displayed history, model context
   assert.deepEqual((await f.store.load(panel.threadId)).messages, [])
 })
 
-for (const provider of ['openai', 'glm', 'claude']) {
+for (const provider of ['openai', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude']) {
   test(`${provider}: test connection uses the configured protocol without adding tools`, async t => {
     const f = await fixture(t, provider, (req, res, round) => {
       assert.equal(req.body.tools, undefined)
@@ -1376,7 +1826,7 @@ test('settings handle an empty list and select a neighboring connection after de
 })
 
 test('Tabby capability tools and bundled skill reach every API provider', async t => {
-  for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+  for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
     const f = await fixture(t, provider, (req, res, round) => {
       const system = req.body.instructions || req.body.system || req.body.messages[0].content
       assert.match(system, /Tabby application skill/)
@@ -1417,7 +1867,7 @@ for (const sandbox of ['read-only', 'workspace-write']) {
   })
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: scheduling from chat uses the task namespace without terminal approval or execution`, async t => {
     const f = await fixture(t, provider, (_req, res, round) => reply(provider, res, round, round === 1
       ? { name: 'scheduled_task_create', args: { title: '巡检', instructions: '检查服务并根据输出处理故障', scheduleType: 'interval', intervalMinutes: 5 } } : undefined))
@@ -1467,7 +1917,7 @@ for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
   })
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: interactive agent attachment and Shift+Left retain tool arguments and approval policy`, async t => {
     const plan = [
       { name: 'attach_process', args: { tabId: 'agent', expectedProcess: 'codex', purpose: 'supervise the requested agent' } },
@@ -1515,7 +1965,7 @@ function feedbackResults (provider, body) {
   return results
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   for (const variant of ['left-enter', 'down-tab', 'text-only']) {
     test(`${provider}: same user goal follows changing agent output (${variant}) and waits without typing`, async t => {
       let controlled = false
@@ -1603,7 +2053,7 @@ test('model connection metadata omits stored keys, endpoints and foreground conv
   assert.doesNotMatch(JSON.stringify(metadata), /secret-key|private-endpoint|PRIVATE_API_KEY|foreground-id/)
 })
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   test(`${provider}: conversation discovers model candidates and updates only its scheduled task`, async t => {
     let taskId
     const f = await fixture(t, provider, (req, res, round) => {
@@ -1657,7 +2107,7 @@ for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
   })
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   for (const failure of ['http-error', 'no-tool-call']) {
     test(`${provider}: candidate readiness ${failure} tests and selects the plugin default before saving`, async t => {
       const tested = []
@@ -1704,7 +2154,7 @@ for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
   }
 }
 
-for (const provider of ['openai', 'deepseek', 'glm', 'claude']) {
+for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
   for (const fixAuthorized of [false, true]) {
     test(`${provider}: supervisor preserves ${fixAuthorized ? 'authorized review-fix-verify' : 'review-only'} scope and receives the shared skill`, async t => {
       // The model response is a protocol fixture, not an evaluation of real model judgment.

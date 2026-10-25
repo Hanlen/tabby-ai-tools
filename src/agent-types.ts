@@ -2,14 +2,17 @@ import { EventEmitter } from 'events'
 import type { AgentSettings } from './config'
 import type { CodexModel, SavedSession, SessionPage, ThreadConfiguration } from './codex.service'
 
-export type ApiProvider = 'openai' | 'deepseek' | 'glm' | 'claude'
-export type ApiKeySource = 'direct' | 'environment' | 'vault'
+export type ApiProvider = 'openai' | 'deepseek' | 'glm' | 'kimi' | 'kimi-coding' | 'bailian-coding' | 'claude' | 'custom'
+export type ApiKeySource = 'direct' | 'environment' | 'vault' | 'none'
+export type ApiFormat = 'chat-completions' | 'responses'
 export interface ApiProfile {
   id: string
   /** Local CLI engine; never send this profile to an HTTP API adapter. */
   runtime?: 'claude-code'
   name: string
   provider: ApiProvider
+  /** Custom OpenAI-compatible connections default to Chat Completions. */
+  apiFormat?: ApiFormat
   baseUrl: string
   model: string
   apiKeyEnv: string
@@ -22,6 +25,8 @@ export interface ApiProfile {
   maxOutputTokens: number
   /** Maximum tool rounds per turn; 0 means no fixed limit. */
   maxIterations: number
+  /** Distinguishes a user-selected limit from the historical default of 20. */
+  toolRoundLimitConfigured?: boolean
   threads: Record<string, string>
 }
 
@@ -70,10 +75,41 @@ export const PROVIDER_URLS: Record<ApiProvider, string> = {
   openai: 'https://api.openai.com/v1',
   deepseek: 'https://api.deepseek.com',
   glm: 'https://open.bigmodel.cn/api/paas/v4',
+  kimi: 'https://api.moonshot.cn/v1',
+  'kimi-coding': 'https://api.kimi.com/coding/v1',
+  'bailian-coding': 'https://coding.dashscope.aliyuncs.com/v1',
   claude: 'https://api.anthropic.com/v1',
+  custom: '',
 }
 export const PROVIDER_ENV: Record<ApiProvider, string> = {
   openai: 'OPENAI_API_KEY', deepseek: 'DEEPSEEK_API_KEY', glm: 'ZAI_API_KEY', claude: 'ANTHROPIC_API_KEY',
+  kimi: 'MOONSHOT_API_KEY', 'kimi-coding': 'KIMI_API_KEY',
+  'bailian-coding': 'BAILIAN_CODING_PLAN_API_KEY',
+  custom: 'CUSTOM_API_KEY',
+}
+
+export function usesResponsesApi (profile: ApiProfile): boolean {
+  if (profile.provider === 'custom' && profile.apiFormat && !['chat-completions', 'responses'].includes(profile.apiFormat)) {
+    throw new Error('不支持的自定义 API 协议')
+  }
+  return profile.provider === 'openai' || profile.provider === 'custom' && profile.apiFormat === 'responses'
+}
+
+export function apiPath (profile: ApiProfile): string {
+  return usesResponsesApi(profile) ? 'responses' : profile.provider === 'claude' ? 'messages' : 'chat/completions'
+}
+
+export const PROVIDER_REGIONS: Partial<Record<ApiProvider, { china: string; international: string }>> = {
+  kimi: { china: PROVIDER_URLS.kimi, international: 'https://api.moonshot.ai/v1' },
+  'kimi-coding': { china: PROVIDER_URLS['kimi-coding'], international: 'https://api.kimi.ai/coding/v1' },
+  'bailian-coding': { china: PROVIDER_URLS['bailian-coding'], international: 'https://coding-intl.dashscope.aliyuncs.com/v1' },
+}
+
+export function isKimiProvider (provider: ApiProvider): boolean { return provider === 'kimi' || provider === 'kimi-coding' }
+
+/** These Moonshot models always reason and reject the K2.x thinking parameter. */
+export function kimiAlwaysThinks (profile: ApiProfile): boolean {
+  return profile.provider === 'kimi' && /^kimi-(k3(?:\.1-pro)?|k2\.7-code)(?:-highspeed)?$/i.test(profile.model)
 }
 
 /** Zero disables the fixed tool-round limit; token budgets and cancellation still apply. */
@@ -82,10 +118,14 @@ export function apiToolRoundLimit (value: unknown): number {
   return Number.isFinite(limit) ? Math.floor(Math.max(0, Math.min(100, limit))) : 0
 }
 
+export function configuredToolRoundLimit (profile: ApiProfile): number {
+  return Number(profile.maxIterations) === 20 && !profile.toolRoundLimitConfigured ? 0 : apiToolRoundLimit(profile.maxIterations)
+}
+
 export function normalizeApiProfile (configured: ApiProfile): ApiProfile {
   return { ...configured, threads: configured.threads || {}, baseUrl: configured.baseUrl?.trim() || PROVIDER_URLS[configured.provider],
     model: configured.model?.trim() || '', thinking: configured.thinking || 'default', reasoningEffort: configured.reasoningEffort || '',
     maxOutputTokens: Math.floor(Math.max(256, Math.min(131072, Number(configured.maxOutputTokens) || 4096))),
-    maxIterations: apiToolRoundLimit(configured.maxIterations) }
+    maxIterations: configuredToolRoundLimit(configured) }
 }
 export type { SavedSession }
