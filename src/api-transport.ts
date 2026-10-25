@@ -11,6 +11,7 @@ export function withAbort<T> (operation: Promise<T>, signal: AbortSignal): Promi
 }
 
 export function apiUrl (baseUrl: string, path: string): URL {
+  if (!baseUrl?.trim()) throw new Error('请填写 API Base URL')
   const url = new URL(baseUrl.replace(/\/+$/, '') + '/' + path)
   if (url.username || url.password || url.search || url.hash) throw new Error('API Base URL 不能包含凭据、查询参数或片段')
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {

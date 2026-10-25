@@ -28,6 +28,8 @@
 [data-provider] { --provider-rgb: 56, 161, 135; }
 [data-provider='deepseek'] { --provider-rgb: 79, 128, 234; }
 [data-provider='glm'] { --provider-rgb: 157, 112, 221; }
+[data-provider='kimi'], [data-provider='kimi-coding'] { --provider-rgb: 100, 171, 240; }
+[data-provider='bailian-coding'] { --provider-rgb: 239, 151, 70; }
 [data-provider='claude'] { --provider-rgb: 209, 135, 77; }
 [data-provider='codex'] { --provider-rgb: 109, 139, 164; }
 .connection-item { display: flex; position: relative; align-items: flex-start; gap: 10px; width: 100%; min-width: 0; padding: 12px 10px; border: 1px solid transparent; border-inline-start: 3px solid transparent; border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: start; cursor: pointer; }

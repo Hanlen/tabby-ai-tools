@@ -14,6 +14,7 @@ import { UserQuestion, answersComplete, formatAnswers, isUserInputMethod } from 
 import { ChatScroll } from './chat-scroll'
 import { AgentBackendFactory } from './agent-backend.service'
 import { AgentBackend, ApiProfile } from './agent-types'
+import { withModelReasoning } from './model-reasoning'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions, workflowNeedsSudo } from './task-memory'
 import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
@@ -105,6 +106,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   modelSaving = false
   modelError = ''
   apiModelDraft = ''
+  apiEffortDraft = ''
   private modelListSequence = 0
   sendNotice = ''
   private sendAttempt = 0
@@ -479,9 +481,17 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async selectModel (model: string): Promise<void> {
-    if (this.modelLoading || this.modelSaving || this.permissionsSaving) return
-    const selected = model ? this.models.find(item => item.model === model) : this.defaultModel
+    if (this.modelLoading || this.modelSaving || this.permissionsSaving || (this.apiMode && (this.busy || !!this.request))) return
+    model = model.trim()
+    let selected = model ? this.models.find(item => item.model === model) : this.defaultModel
     this.modelError = ''
+    if (this.codex.profile) {
+      if (!selected && !model) return
+      selected = selected || withModelReasoning(this.codex.profile, { model, displayName: model, description: '', isDefault: false, defaultReasoningEffort: '', supportedReasoningEfforts: [] })
+      this.apiEffortDraft = selected.model === this.settings.model ? this.settings.reasoningEffort || '' : ''
+      this.zone.run(() => { this.pendingModel = selected })
+      return
+    }
     if (selected?.supportedReasoningEfforts?.length) {
       this.zone.run(() => { this.pendingModel = selected })
       return
@@ -489,7 +499,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     await this.chooseModel(model)
   }
 
-  async chooseModel (model: string, effort?: string): Promise<void> {
+  async chooseModel (model: string, effort?: string, manualEffort = false): Promise<void> {
     if (this.modelLoading || this.modelSaving || this.permissionsSaving || (this.apiMode && (this.busy || !!this.request))) return
     model = model.trim()
     if (!model) {
@@ -500,24 +510,28 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       }
       model = defaultModel.model
     }
-    const selected = this.models.find(item => item.model === model)
+    const selected = this.pendingModel?.model === model ? this.pendingModel : this.models.find(item => item.model === model)
     const supported = selected?.supportedReasoningEfforts || []
-    if (effort !== undefined && !supported.some(option => option.reasoningEffort === effort)) {
+    if (effort !== undefined && !(this.apiMode && (effort === '' || manualEffort)) && !supported.some(option => option.reasoningEffort === effort)) {
       this.modelError = '此模型不支持所选推理强度，请重新选择'
       return
     }
     const reasoningEffort = effort ?? (model === this.settings.model && (!supported.length || supported.some(option => option.reasoningEffort === this.settings.reasoningEffort))
       ? this.settings.reasoningEffort : selected?.defaultReasoningEffort || '')
-    if (model === this.settings.model && reasoningEffort === (this.settings.reasoningEffort || '')) {
+    const configured = this.apiMode && !this.claudeCodeMode ? this.apiProfiles.find(profile => profile.id === this.profileId) : undefined
+    const enableThinking = !!configured && !!reasoningEffort && configured.thinking === 'disabled' && configured.provider !== 'openai'
+    if (model === this.settings.model && reasoningEffort === (this.settings.reasoningEffort || '') && !enableThinking) {
       this.modelPickerOpen = false
       this.pendingModel = undefined
       return
     }
     const previous = this.settings.model
     const previousEffort = this.settings.reasoningEffort
+    const previousThinking = configured?.thinking
     this.modelSaving = true
     this.settings.model = model
     this.settings.reasoningEffort = reasoningEffort
+    if (configured && enableThinking) configured.thinking = 'enabled'
     try {
       await this.config.save()
       this.zone.run(() => {
@@ -527,6 +541,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       })
       if (this.apiMode) await this.selectConnection(this.profileId, true)
     } catch (error: any) {
+      if (configured && previousThinking) configured.thinking = previousThinking
       this.zone.run(() => {
         this.settings.model = previous
         this.settings.reasoningEffort = previousEffort
@@ -1005,7 +1020,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.resetPromptHistory()
         this.prompt = ''
         await this.openModelPicker()
-        if (!this.modelError) await this.selectModel(args.join(' '))
+        if (!this.modelError || this.apiMode) await this.selectModel(args.join(' '))
         return
       }
       if (['/model', '/new', '/resume', '/status', '/workflows', '/schedules', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {

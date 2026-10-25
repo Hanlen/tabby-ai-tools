@@ -9,6 +9,12 @@ if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: scenario.logged
 const flag = name => args[args.indexOf(name) + 1]
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
 ;(async () => {
+  if (scenario.invocations) {
+    const counter = path.join(__dirname, 'invocations.json')
+    const index = fs.existsSync(counter) ? JSON.parse(fs.readFileSync(counter, 'utf8')) : 0
+    Object.assign(scenario, scenario.invocations[Math.min(index, scenario.invocations.length - 1)])
+    fs.writeFileSync(counter, JSON.stringify(index + 1))
+  }
   let input = ''
   for await (const part of process.stdin) input += part
   const config = JSON.parse(fs.readFileSync(flag('--mcp-config'), 'utf8')).mcpServers.tabby

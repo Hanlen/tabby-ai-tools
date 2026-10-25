@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1220" viewBox="0 0 1800 1220" role="img" aria-labelledby="title desc">
-<title id="title">Tabby AI Tools development preview — Claude Code local login, tools and schedules</title>
-<desc id="desc">Interface illustration, not a running screenshot. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. This is an unreleased development example.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1440" viewBox="0 0 1800 1440" role="img" aria-labelledby="title desc">
+<title id="title">Tabby AI Tools v0.4.0 interface illustration — Claude Code local login, continuous goals, reasoning picker and custom OpenAI-compatible connections</title>
+<desc id="desc">Interface illustration, not a running screenshot. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. A Kimi Coding Plan reasoning picker and China/international presets for Kimi and Alibaba Coding Plan are illustrated. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. This is a version 0.4.0 interface example.</desc>
 <defs>
 <linearGradient id="background" x2="1" y2="1"><stop stop-color="#0c1622"/><stop offset="1" stop-color="#151729"/></linearGradient>
 <linearGradient id="outline"><stop stop-color="#375d5d"/><stop offset="1" stop-color="#3b3d5c"/></linearGradient>
@@ -10,12 +10,12 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 .mono{font-family:"DejaVu Sans Mono",monospace}
 </style>
 
-<rect x="0" y="0" width="1800" height="1220" rx="24" fill="url(#background)"/>
+<rect x="0" y="0" width="1800" height="1440" rx="24" fill="url(#background)"/>
 <rect x="48" y="38" width="42" height="38" rx="10" fill="#173a33" stroke="#306355"/>
 <text x="56" y="65" font-size="23" font-weight="700" style="fill:#8ae6c2" class="mono">&gt;_</text>
 <text x="106" y="66" font-size="21" font-weight="700" style="fill:#a7b8cb">TABBY AI TOOLS</text>
 <rect x="1534" y="44" width="218" height="28" rx="6" fill="#22313f"/>
-<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">DEV  /  12 languages</text>
+<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">v0.4.0 / 12 languages</text>
 <text x="48" y="134" font-size="54" font-weight="700" style="fill:#f1f6ff">Your terminals. Working together.</text>
 <text x="50" y="176" font-size="23" font-weight="400" style="fill:#a7b8cb">Codex + Claude Code local login + APIs  /  Terminal tools  /  Scheduled AI tasks</text>
 <rect x="48" y="210" width="1704" height="632" rx="14" fill="#0d1520" stroke="url(#outline)"/>
@@ -40,7 +40,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="246" y="325" font-size="20" style="fill:#a7b8cb">⌄</text>
 <rect x="276" y="302" width="248" height="33" rx="5" fill="#202d40"/>
 <text x="284" y="325" font-size="14" style="fill:#e8eff9">sonnet</text>
-<text x="390" y="325" font-size="14" style="fill:#a7b8cb">local login</text>
+<text x="390" y="325" font-size="14" style="fill:#a7b8cb">reasoning: high</text>
 <g transform="translate(0 -40)">
 <rect x="72" y="384" width="88" height="28" rx="6" fill="#344132"/>
 <text x="82" y="404" font-size="15" font-weight="600" style="fill:#d4e9a1">Running</text>
@@ -55,7 +55,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <rect x="72" y="509" width="452" height="80" rx="8" fill="#1b2839" stroke="#344458"/>
 <text x="86" y="533" font-size="14" font-weight="600" style="fill:#8ae6c2">Assistant</text>
 <text x="86" y="557" font-size="17" font-weight="400" style="fill:#e8eff9">Database step verified. Application next.</text>
-<text x="86" y="578" font-size="17" font-weight="400" style="fill:#e8eff9">Verify server ID, IP and operation path.</text>
+<text x="86" y="578" font-size="17" font-weight="400" style="fill:#e8eff9">Goal active: continuing automatically.</text>
 <text x="75" y="606" font-size="15" font-weight="600" style="fill:#a7b8cb">Workflows</text>
 <text x="205" y="606" font-size="15" font-weight="600" style="fill:#8ae6c2">Scheduled tasks</text>
 <rect x="72" y="619" width="452" height="92" rx="7" fill="#1a2938" stroke="#35534f"/>
@@ -124,19 +124,38 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="892" y="1035" font-size="15" font-weight="400" style="fill:#8ca0b8">12 languages</text>
 <text x="1048" y="1035" font-size="20" font-weight="400" style="fill:#a7b8cb">⌄</text>
 <path d="M72 1061H1071" stroke="#2b3a4d"/>
-<text x="72" y="1086" font-size="18" font-weight="500" style="fill:#8ae6c2">Codex · Claude Code (local) · OpenAI · DeepSeek · GLM · Claude API</text>
-<text x="72" y="1115" font-size="14" style="fill:#a7b8cb">Claude Code: claude auth login → claude auth status → select local connection</text>
+<text x="72" y="1086" font-size="16" font-weight="500" style="fill:#8ae6c2">Codex · Claude Code · OpenAI · DeepSeek · GLM · Kimi API / Plan · Alibaba Plan · Claude API</text>
+<text x="72" y="1115" font-size="14" style="fill:#a7b8cb">Goals continue automatically · Default tool-round limit: 0 (unlimited)</text>
 <rect x="1122" y="878" width="630" height="254" rx="12" fill="#172130" stroke="#35475c"/>
-<text x="1146" y="915" font-size="24" font-weight="650" style="fill:#edf5ff">One setup, many targets</text>
-<circle cx="1153" cy="948" r="4" fill="#8ae6c2"/>
-<text x="1168" y="953" font-size="18" font-weight="600" style="fill:#e1ecf8">Local login or API connections</text>
-<text x="1168" y="976" font-size="15" font-weight="400" style="fill:#a7b8cb">Keep account setup on your computer.</text>
-<circle cx="1153" cy="1007" r="4" fill="#8ae6c2"/>
-<text x="1168" y="1012" font-size="18" font-weight="600" style="fill:#e1ecf8">Ordered workflows with result checks</text>
-<text x="1168" y="1035" font-size="15" font-weight="400" style="fill:#a7b8cb">Save host / IP / path; verify each step before the next.</text>
-<circle cx="1153" cy="1066" r="4" fill="#8ae6c2"/>
-<text x="1168" y="1071" font-size="18" font-weight="600" style="fill:#e1ecf8">Scheduled tasks with run records</text>
-<text x="1168" y="1094" font-size="15" font-weight="400" style="fill:#a7b8cb">Execute only while Tabby is open.</text>
-<text x="49" y="1176" font-size="16" font-weight="400" style="fill:#8ca0b8">INTERFACE ILLUSTRATION · Example connections and task output; not a running screenshot.</text>
-<text x="49" y="1201" font-size="14" font-weight="400" style="fill:#8ca0b8">Appearance varies with your Tabby theme, window size and configured connections.</text>
+<text x="1146" y="915" font-size="22" font-weight="650" style="fill:#edf5ff">Kimi Coding Plan  /  Step 2: reasoning</text>
+<text x="1146" y="946" font-size="16" style="fill:#a7b8cb">Region: China mainland / International / Custom</text>
+<rect x="1146" y="960" width="580" height="31" rx="5" fill="#233246"/>
+<text x="1160" y="981" font-size="16">kimi-for-coding · reasoning: max</text>
+<text x="1160" y="1015" font-size="16">low</text>
+<text x="1315" y="1015" font-size="16">high</text>
+<rect x="1475" y="997" width="251" height="28" rx="5" fill="#286a54"/>
+<text x="1490" y="1016" font-size="16" style="fill:#e8fff5">max  ✓</text>
+<text x="1146" y="1052" font-size="15" style="fill:#a7b8cb">Custom effort (optional)</text>
+<rect x="1146" y="1063" width="461" height="28" rx="5" fill="#233246"/>
+<text x="1160" y="1083" font-size="14" style="fill:#a7b8cb">Provider default</text>
+<rect x="1619" y="1063" width="107" height="28" rx="5" fill="#253348"/>
+<text x="1648" y="1083" font-size="14">Apply</text>
+<text x="1146" y="1116" font-size="15" style="fill:#8ae6c2">Alibaba Coding Plan also offers regional presets</text>
+<rect x="48" y="1152" width="1704" height="204" rx="12" fill="#172130" stroke="#35475c"/>
+<text x="72" y="1189" font-size="22" font-weight="650" style="fill:#edf5ff">Custom (OpenAI compatible)  /  Example connection settings</text>
+<text x="72" y="1223" font-size="16" style="fill:#a7b8cb">API protocol</text>
+<rect x="260" y="1201" width="580" height="33" rx="5" fill="#233246"/>
+<text x="276" y="1224" font-size="16">Chat Completions (default)  /  Responses</text>
+<text x="890" y="1223" font-size="16" style="fill:#a7b8cb">Key source</text>
+<rect x="1080" y="1201" width="646" height="33" rx="5" fill="#233246"/>
+<text x="1096" y="1224" font-size="16">Direct key  /  Environment variable  /  No API key</text>
+<text x="72" y="1271" font-size="16" style="fill:#a7b8cb">Base URL</text>
+<rect x="260" y="1249" width="580" height="33" rx="5" fill="#233246"/>
+<text x="276" y="1272" font-size="16">https://gateway.example/v1</text>
+<text x="890" y="1271" font-size="16" style="fill:#a7b8cb">Model ID</text>
+<rect x="1080" y="1249" width="646" height="33" rx="5" fill="#233246"/>
+<text x="1096" y="1272" font-size="16">your-model-id  /  Discover or enter manually</text>
+<text x="72" y="1326" font-size="16" style="fill:#8ae6c2">Streaming + function tools required  ·  localhost HTTP supported  ·  Connection test available</text>
+<text x="49" y="1393" font-size="16" font-weight="400" style="fill:#8ca0b8">INTERFACE ILLUSTRATION · Example connections and task output; not a running screenshot.</text>
+<text x="49" y="1418" font-size="14" font-weight="400" style="fill:#8ca0b8">Appearance varies with your Tabby theme, window size and configured connections.</text>
 </svg>

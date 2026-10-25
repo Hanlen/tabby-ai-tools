@@ -2,7 +2,7 @@
 
 [README](../README.md) · [中文使用指南](guide.md)
 
-This development change adds **Claude Code (local login)** alongside native Codex and the existing Claude API connection. It runs the user's installed, unmodified official CLI. Authentication, model access, subscription limits, and billing remain with Claude Code.
+Version 0.4.0 includes **Claude Code (local login)** alongside native Codex and the existing Claude API connection. It runs the user's installed, unmodified official CLI. Authentication, model access, subscription limits, and billing remain with Claude Code.
 
 ## Setup
 

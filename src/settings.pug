@@ -204,11 +204,32 @@
                     option(value='openai') OpenAI API
                     option(value='deepseek') DeepSeek
                     option(value='glm') {{t("GLM（智谱）")}}
+                    option(value='kimi') Kimi API
+                    option(value='kimi-coding') Kimi Coding Plan
+                    option(value='bailian-coding') {{t("阿里云百炼 Coding Plan")}}
                     option(value='claude') Claude（Anthropic）
+                    option(value='custom') {{t("自定义（OpenAI 兼容）")}}
+                .settings-field.settings-field-wide(*ngIf='profile.provider === "custom"')
+                  label([attr.for]='"api-format-" + profile.id') {{t("API 协议")}}
+                  select.form-control([id]='"api-format-" + profile.id', [ngModel]='profile.apiFormat || "chat-completions"', (ngModelChange)='changeApiFormat(profile, $event)', [attr.aria-describedby]='"api-format-hint-" + profile.id')
+                    option(value='chat-completions') Chat Completions · /chat/completions
+                    option(value='responses') Responses · /responses
+                  small.settings-muted([id]='"api-format-hint-" + profile.id') {{t("默认选择 Chat Completions；仅在服务明确支持时选择 Responses。终端任务需要流式响应和工具调用。")}}
+                .settings-field.settings-field-wide(*ngIf='providerRegions[profile.provider]')
+                  label([attr.for]='"api-region-" + profile.id') {{t("服务区域")}}
+                  select.form-control([id]='"api-region-" + profile.id', [ngModel]='endpointRegion(profile)', (ngModelChange)='changeEndpointRegion(profile, $event)', [attr.aria-describedby]='"api-region-hint-" + profile.id')
+                    option(value='china') {{t("中国内地")}}
+                    option(value='international') {{t("国际")}}
+                    option(*ngIf='endpointRegion(profile) === "custom"', value='custom') {{t("自定义地址")}}
+                  small.settings-muted([id]='"api-region-hint-" + profile.id') {{t("按购买平台与区域选择端点和 Key。切换区域后请核对密钥；也可手动修改 Base URL。")}}
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-url-" + profile.id') {{t("Base URL")}}
                   input.form-control([id]='"api-url-" + profile.id', [(ngModel)]='profile.baseUrl', (ngModelChange)='modelConnectionChanged(profile)', [attr.aria-describedby]='"api-url-hint-" + profile.id', spellcheck='false')
                   small.settings-muted([id]='"api-url-hint-" + profile.id') {{t("填写基础地址，不含 /responses、/messages 或 /chat/completions。支持代理地址；GLM 按套餐选择端点。")}}
+                  small.settings-muted(*ngIf='profile.provider === "custom"') {{t("示例：https://gateway.example/v1 或 http://localhost:1234/v1。保留服务要求的 /v1 等路径；HTTP 仅限本地回环地址。")}}
+                  small.settings-muted(*ngIf='profile.provider === "kimi"') {{t("Kimi API 使用开放平台 Key，按量计费。海外端点：https://api.moonshot.ai/v1")}}
+                  small.settings-muted(*ngIf='profile.provider === "kimi-coding"') {{t("使用 Kimi Code 控制台的套餐 Key，与普通 API Key 不通用。海外端点：https://api.kimi.ai/coding/v1。套餐限个人交互使用；定时任务请使用普通 API。")}}
+                  small.settings-muted(*ngIf='profile.provider === "bailian-coding"') {{t("使用百炼 Coding Plan 专用 Key（sk-sp-），与按量 API Key 不通用。套餐限交互式编程；定时任务请使用按量 API。")}}
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-model-" + profile.id') {{t("模型 ID")}}
                   .settings-input-action
@@ -228,6 +249,7 @@
                   select.form-control([id]='"api-source-" + profile.id', [ngModel]='keySource(profile)', (ngModelChange)='changeKeySource(profile, $event)')
                     option(value='direct') {{t("直接输入")}}
                     option(value='environment') {{t("环境变量")}}
+                    option(*ngIf='profile.provider === "custom"', value='none') {{t("无需密钥")}}
                     option(*ngIf='keySource(profile) === "vault"', value='vault', disabled='') {{t("旧 Vault 配置（请选择其他来源）")}}
                 .settings-field.settings-field-wide(*ngIf='keySource(profile) === "direct"')
                   label([attr.for]='"api-key-" + profile.id') {{t("API Key")}}
@@ -238,6 +260,7 @@
                   input.form-control([id]='"api-env-" + profile.id', [(ngModel)]='profile.apiKeyEnv', (ngModelChange)='modelConnectionChanged(profile)')
                   small.settings-muted {{t("使用 Tabby 进程继承的环境变量，修改变量后需要重启 Tabby。")}}
                 p.settings-notice(*ngIf='keySource(profile) === "vault"', role='status') {{t("插件不再访问 Vault。请选择直接输入或环境变量，并重新配置 API Key。")}}
+                p.settings-notice(*ngIf='keySource(profile) === "none"', role='status') {{t("仅用于不需要认证的服务；不会发送 Authorization 请求头。")}}
             .settings-advanced
               button.advanced-toggle(type='button', (click)='advancedOpen = !advancedOpen', [attr.aria-expanded]='advancedOpen', aria-controls='api-advanced-fields')
                 span.advanced-chevron(aria-hidden='true') {{advancedOpen ? '−' : '+'}}
@@ -247,11 +270,12 @@
               #api-advanced-fields.settings-fields(*ngIf='advancedOpen')
                 .settings-field
                   label([attr.for]='"api-thinking-" + profile.id') {{t("思考模式")}}
-                  select.form-control([id]='"api-thinking-" + profile.id', [(ngModel)]='profile.thinking', (ngModelChange)='save()', [disabled]='profile.provider === "openai"')
+                  select.form-control([id]='"api-thinking-" + profile.id', [(ngModel)]='profile.thinking', (ngModelChange)='save()', [disabled]='profile.provider === "openai" || profile.provider === "custom"')
                     option(value='default') {{t("服务商默认")}}
                     option(value='enabled') {{t("开启")}}
                     option(value='disabled') {{t("关闭")}}
                   small.settings-muted {{t("Claude 开启时使用 adaptive thinking；OpenAI 使用推理强度。")}}
+                  small.settings-muted(*ngIf='profile.provider === "custom"') {{t("自定义接口不发送厂商专用 Thinking 参数；推理强度留空时不发送，请按服务文档填写。")}}
                 .settings-field
                   label([attr.for]='"api-effort-" + profile.id') {{t("推理强度（可选）")}}
                   input.form-control([id]='"api-effort-" + profile.id', [(ngModel)]='profile.reasoningEffort', (ngModelChange)='save()', [attr.placeholder]='t("服务商默认")')
@@ -265,7 +289,7 @@
                   input.form-control(type='number', [id]='"api-output-" + profile.id', min='256', max='131072', [(ngModel)]='profile.maxOutputTokens', (ngModelChange)='save()')
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-iterations-" + profile.id') {{t("每回合工具轮数上限")}}
-                  input.form-control(type='number', [id]='"api-iterations-" + profile.id', min='0', max='100', [(ngModel)]='profile.maxIterations', (ngModelChange)='save()')
+                  input.form-control(type='number', [id]='"api-iterations-" + profile.id', min='0', max='100', [ngModel]='profile.maxIterations', (ngModelChange)='setToolRoundLimit(profile, $event)')
                   small.settings-muted {{t("0 表示不限固定轮数（默认）。1–100 限制工具调用轮数，另留收尾请求读取最后结果及更新目标；停止和目标 token 预算仍然生效。")}}
             .settings-test
               .settings-test-actions

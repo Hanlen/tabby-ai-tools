@@ -1,5 +1,13 @@
-import { ApiProfile } from './agent-types'
+import { randomUUID } from 'crypto'
+import { ApiProfile, apiKeySource, apiPath, usesResponsesApi, isKimiProvider, kimiAlwaysThinks } from './agent-types'
 import { apiUrl, streamApi } from './api-transport'
+
+/** Identify this client honestly, including when using Kimi membership endpoints. */
+export function apiHeaders (profile: ApiProfile, key: string): Record<string, string> {
+  if (profile.provider === 'custom' && apiKeySource(profile) === 'none') return {}
+  return profile.provider === 'claude' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
+    : { authorization: `Bearer ${key}`, ...(isKimiProvider(profile.provider) || profile.provider === 'bailian-coding' ? { 'user-agent': 'tabby-ai-tools' } : {}) }
+}
 
 export interface ToolDefinition { name: string; description: string; inputSchema: any }
 export interface ModelToolCall { id: string; name: string; arguments: string }
@@ -17,22 +25,22 @@ export interface ModelResult {
 }
 
 export class ApiProviderAdapter {
-  constructor (readonly profile: ApiProfile, private key: string) {}
+  constructor (readonly profile: ApiProfile, private key: string, private cacheKey: string = randomUUID()) {}
 
   user (text: string): any { return { role: 'user', content: text } }
 
   toolResults (results: ToolResult[]): any[] {
-    if (this.profile.provider === 'openai') return results.map(result => ({ type: 'function_call_output', call_id: result.id, output: result.result }))
+    if (usesResponsesApi(this.profile)) return results.map(result => ({ type: 'function_call_output', call_id: result.id, output: result.result }))
     if (this.profile.provider === 'claude') return [{ role: 'user', content: results.map(result => ({ type: 'tool_result', tool_use_id: result.id, content: result.result, is_error: !!result.error })) }]
     return results.map(result => ({ role: 'tool', tool_call_id: result.id, content: result.result }))
   }
 
   async generate (messages: any[], system: string, tools: ToolDefinition[], signal: AbortSignal, onText: (text: string) => void, onProgress?: (progress: StreamProgress) => void, onUsage?: (totalTokens: number) => void): Promise<ModelResult> {
     const p = this.profile
-    const openai = p.provider === 'openai'
+    const openai = usesResponsesApi(p)
     const claude = p.provider === 'claude'
-    const path = openai ? 'responses' : claude ? 'messages' : 'chat/completions'
-    const headers: Record<string, string> = claude ? { 'x-api-key': this.key, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${this.key}` }
+    const path = apiPath(p)
+    const headers = apiHeaders(p, this.key)
     const body: any = { model: p.model, stream: true }
     if (openai) {
       Object.assign(body, { instructions: system, input: messages, store: false, include: ['reasoning.encrypted_content'], max_output_tokens: p.maxOutputTokens,
@@ -48,10 +56,18 @@ export class ApiProviderAdapter {
       const history = p.provider === 'deepseek' ? messages.map(message => message.role === 'assistant'
         ? { ...message, content: message.content || '', reasoning_content: message.reasoning_content || '' } : message) : messages
       Object.assign(body, { messages: [{ role: 'system', content: system }, ...history], max_tokens: p.maxOutputTokens,
-        ...(p.provider === 'deepseek' ? { stream_options: { include_usage: true } } : {}),
+        ...(p.provider === 'deepseek' || isKimiProvider(p.provider) || p.provider === 'bailian-coding' ? { stream_options: { include_usage: true } } : {}),
+        ...(isKimiProvider(p.provider) ? { prompt_cache_key: this.cacheKey } : {}),
         ...(tools.length ? { tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } })) } : {}) })
-      if (p.thinking !== 'default') body.thinking = { type: p.thinking }
-      if (p.reasoningEffort && p.thinking !== 'disabled') body.reasoning_effort = p.reasoningEffort
+      const alwaysThinks = kimiAlwaysThinks(p)
+      if ((alwaysThinks || p.provider === 'kimi-coding' && /^k3\.1-pro(?:-highspeed)?$/i.test(p.model)) && p.thinking === 'disabled') {
+        throw new Error('此 Kimi 模型仅支持思考模式，请选择服务商默认或开启')
+      }
+      if (p.provider !== 'custom' && p.thinking !== 'default' && !alwaysThinks) {
+        if (p.provider === 'bailian-coding') body.enable_thinking = p.thinking === 'enabled'
+        else body.thinking = { type: p.thinking }
+      }
+      if (p.reasoningEffort && (p.provider === 'custom' || p.thinking !== 'disabled')) body.reasoning_effort = p.reasoningEffort
     }
     let inputTokens = 0, outputTokens = 0, totalTokens = 0
     let usageReported = false

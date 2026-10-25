@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, Injectable, NgZone, OnDestroy } from '@an
 import { ConfigService } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
 import { AgentSettings } from './config'
-import { ApiProfile, ApiProvider, ApiKeySource, apiKeySource, normalizeApiProfile, PROVIDER_ENV, PROVIDER_URLS } from './agent-types'
+import { ApiProfile, ApiProvider, ApiFormat, ApiKeySource, apiKeySource, apiPath, normalizeApiProfile, PROVIDER_ENV, PROVIDER_URLS, PROVIDER_REGIONS } from './agent-types'
 import { AgentSecretsService } from './agent-secrets.service'
 import { agentId } from './agent-store'
 import { apiUrl, withAbort } from './api-transport'
@@ -47,7 +47,8 @@ export class CodexSettingsComponent implements OnDestroy {
   preferenceDraftId = ''
   preferenceScope = 'global'
   preferenceCwd = ''
-  readonly providerNames: Record<ApiProvider, string> = { openai: 'OpenAI', deepseek: 'DeepSeek', glm: 'GLM · 智谱', claude: 'Claude' }
+  readonly providerNames: Record<ApiProvider, string> = { openai: 'OpenAI', deepseek: 'DeepSeek', glm: 'GLM · 智谱', kimi: 'Kimi API', 'kimi-coding': 'Kimi Coding Plan', 'bailian-coding': 'Alibaba Cloud Coding Plan', claude: 'Claude', custom: '自定义（OpenAI 兼容）' }
+  readonly providerRegions = PROVIDER_REGIONS
   notice = ''
   connectionTests: Record<string, { running: boolean; notice: string }> = {}
   modelLists: Record<string, { running: boolean; notice: string; models: CodexModel[] }> = {}
@@ -59,6 +60,13 @@ export class CodexSettingsComponent implements OnDestroy {
   get claudeCodeSelected (): boolean { return this.selectedProfileId === 'claude-code' }
   get selectedProfile (): ApiProfile | undefined { return this.profiles.find(profile => profile.id === this.selectedProfileId) }
   constructor (public config: ConfigService, private secrets: AgentSecretsService, private zone: NgZone, private changeDetector?: ChangeDetectorRef, private memory?: TaskMemoryService, private schedules?: ScheduledTasksService) {
+    let migrated = false
+    for (const profile of this.profiles) if (Number(profile.maxIterations) === 20 && !profile.toolRoundLimitConfigured) {
+      profile.maxIterations = 0
+      profile.toolRoundLimitConfigured = true
+      migrated = true
+    }
+    if (migrated) this.save()
     this.selectedProfileId = this.settings.defaultProfileId === 'claude-code' ? 'claude-code' : this.profiles.find(profile => profile.id === this.settings.defaultProfileId)?.id || this.profiles[0]?.id || ''
     this.scheduleSubscription = this.schedules?.changes$.subscribe(data => this.zone.run(() => {
       if (this.destroyed) return
@@ -200,6 +208,12 @@ export class CodexSettingsComponent implements OnDestroy {
     this.save()
   }
   save (): void { void this.config.save().catch(() => this.zone.run(() => { this.notice = '保存配置失败，请检查配置目录' })) }
+  setToolRoundLimit (profile: ApiProfile, value: number): void {
+    profile.toolRoundLimitConfigured = true
+    profile.maxIterations = value
+    profile.maxIterations = normalizeApiProfile(profile).maxIterations
+    this.save()
+  }
   addProfile (): void {
     if (!this.settings.apiProfiles) this.settings.apiProfiles = []
     const profile: ApiProfile = { id: agentId(), name: this.t('新的 API 连接'), provider: 'openai', baseUrl: PROVIDER_URLS.openai,
@@ -220,21 +234,38 @@ export class CodexSettingsComponent implements OnDestroy {
     this.save()
   }
   changeProvider (profile: ApiProfile, provider: ApiProvider): void {
-    this.clearModelList(profile)
+    const customUrl = profile.baseUrl?.trim().replace(/\/+$/, '') !== PROVIDER_URLS[profile.provider] ? profile.baseUrl : ''
     profile.provider = provider
-    profile.baseUrl = PROVIDER_URLS[provider]
+    profile.baseUrl = provider === 'custom' ? customUrl : PROVIDER_URLS[provider]
     profile.apiKeyEnv = PROVIDER_ENV[provider]
-    profile.model = ''
+    profile.apiFormat = 'chat-completions'
+    if (provider !== 'custom' && apiKeySource(profile) === 'none') profile.keySource = 'direct'
+    profile.model = provider === 'custom' ? profile.model : provider === 'kimi' ? 'kimi-k3.1-pro' : provider === 'kimi-coding' ? 'kimi-for-coding' : provider === 'bailian-coding' ? 'qwen3.7-plus' : ''
+    if (this.providerRegions[provider]) profile.maxOutputTokens = 32768
     profile.thinking = 'default'
     profile.reasoningEffort = ''
-    this.save()
+    this.modelConnectionChanged(profile)
+  }
+  changeApiFormat (profile: ApiProfile, format: ApiFormat): void {
+    profile.apiFormat = format
+    this.modelConnectionChanged(profile)
   }
   keySource (profile: ApiProfile): ApiKeySource { return apiKeySource(profile) }
+  endpointRegion (profile: ApiProfile): string {
+    const presets = this.providerRegions[profile.provider]
+    const baseUrl = (profile.baseUrl || '').trim().replace(/\/+$/, '')
+    return baseUrl === presets?.china ? 'china' : baseUrl === presets?.international ? 'international' : 'custom'
+  }
+  changeEndpointRegion (profile: ApiProfile, region: string): void {
+    const presets = this.providerRegions[profile.provider]
+    if (!presets || region !== 'china' && region !== 'international') return
+    profile.baseUrl = presets[region]
+    this.modelConnectionChanged(profile)
+  }
   changeKeySource (profile: ApiProfile, source: ApiKeySource): void {
-    this.clearModelList(profile)
     profile.keySource = source
     profile.useVault = false
-    this.save()
+    this.modelConnectionChanged(profile)
   }
   clearModelList (profile: ApiProfile): void {
     this.fetchingModels.get(profile.id)?.abort()
@@ -243,6 +274,9 @@ export class CodexSettingsComponent implements OnDestroy {
   }
   modelConnectionChanged (profile: ApiProfile): void {
     this.clearModelList(profile)
+    this.testing.get(profile.id)?.abort()
+    this.testing.delete(profile.id)
+    delete this.connectionTests[profile.id]
     this.save()
   }
   async fetchModels (profile: ApiProfile, refresh = false): Promise<void> {
@@ -267,7 +301,7 @@ export class CodexSettingsComponent implements OnDestroy {
     const snapshot = { ...profile }
     this.testing.set(profile.id, controller)
     const update = (notice: string, running = true) => {
-      if (this.destroyed) return
+      if (this.destroyed || this.testing.get(profile.id) !== controller) return
       this.zone.run(() => { this.connectionTests[profile.id] = { running, notice }; this.changeDetector?.detectChanges() })
     }
     update('正在测试连接…')
@@ -277,7 +311,7 @@ export class CodexSettingsComponent implements OnDestroy {
     try {
       Object.assign(snapshot, normalizeApiProfile(snapshot))
       if (!snapshot.model.trim()) throw new Error('请填写模型 ID')
-      apiUrl(snapshot.baseUrl, snapshot.provider === 'openai' ? 'responses' : snapshot.provider === 'claude' ? 'messages' : 'chat/completions')
+      apiUrl(snapshot.baseUrl, apiPath(snapshot))
       const key = await withAbort(this.secrets.read(snapshot), controller.signal)
       const adapter = new ApiProviderAdapter(snapshot, key)
       await adapter.generate([adapter.user('Reply with OK only.')], 'This is a connection test. Reply briefly and do not call tools.', [], controller.signal,
@@ -285,7 +319,7 @@ export class CodexSettingsComponent implements OnDestroy {
         progress => update(progress.phase === 'thinking' ? `连接已响应，模型正在思考（已接收 ${progress.receivedChars} 字符）…` : '连接已响应…'))
       update(`测试成功：${snapshot.model} · ${Date.now() - started} ms${chunks ? ` · 收到 ${chunks} 个正文流片段` : ' · SSE 响应完成'}`, false)
     } catch (error: any) { update(controller.signal.aborted ? '测试已取消或超时' : `测试失败：${error.message}`, false) }
-    finally { clearTimeout(timeout); this.testing.delete(profile.id) }
+    finally { clearTimeout(timeout); if (this.testing.get(profile.id) === controller) this.testing.delete(profile.id) }
   }
   cancelTest (profile: ApiProfile): void { this.testing.get(profile.id)?.abort() }
   ngOnDestroy (): void {

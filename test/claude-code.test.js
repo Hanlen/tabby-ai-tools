@@ -182,6 +182,34 @@ test('Claude token budget stops native tools before a terminal operation and kee
   assert.equal(calls, 0)
 })
 
+test('native Claude resumes an active goal after a normal response in the same turn', async t => {
+  const f = await fixture(t, { invocations: [
+    { tools: [{ name: 'read_tab', arguments: { tabId: 'one' } }] },
+    { tools: [
+      { name: 'read_tab', arguments: { tabId: 'one' } },
+      { name: 'agent_goal_update', arguments: { status: 'complete', evidence: 'Verified fresh terminal output' } },
+    ] },
+  ] })
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  await f.agent.setGoal(id, 'Finish the terminal task', 0)
+  let calls = 0, starts = 0
+  answerTools(f.agent, () => calls++)
+  f.agent.on('event', event => { if (event.method === 'turn/started') starts++ })
+  const finished = done(f.agent)
+  await f.agent.startTurn(id, 'Inspect', f.root, f.settings)
+  assert.equal((await finished).status, 'completed')
+  assert.equal(starts, 1)
+  assert.equal(calls, 2)
+  const capture = f.capture()
+  assert.ok(capture.args.includes('--resume'))
+  assert.match(capture.input, /current goal is still active/)
+  const saved = await f.store.load(id)
+  assert.equal(saved.goal.status, 'complete')
+  assert.equal(saved.totalTokens, 34)
+  assert.equal(saved.turns.length, 1)
+})
+
 test('MCP rejects unauthenticated, cross-origin, unknown and invalid requests, and serializes calls', async t => {
   const controller = new AbortController()
   let active = 0, maxActive = 0, called = 0
@@ -235,6 +263,38 @@ test('factory and settings expose a native Claude connection independently of AP
   panel.settings.threads[f.root] = 'native-session'
   assert.equal(config.store.codexAgent.claudeThreads[f.root], 'native-session')
   assert.ok(factory.modelConnections().some(item => item.profileId === 'claude-code'))
+})
+
+test('native Claude model picker selects reasoning before applying and passes it to the CLI', async t => {
+  const f = await fixture(t)
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const config = { store: { codexAgent: f.settings }, save: async () => {} }
+  let first = true, selected
+  const factory = { defaultProfileId: 'claude-code', create: () => {
+    if (first) { first = false; return f.agent }
+    selected = new ClaudeCodeAgent(claudeCodeProfile(f.settings), f.store, f.executable)
+    return selected
+  } }
+  const panel = new CodexPanelComponent(config, f.agent, { run: fn => fn() }, {}, { releaseOwner: () => {} }, factory)
+  panel.cwd = f.root; panel.threadId = id; panel.loading = false; panel.connected = true
+  t.after(() => panel.ngOnDestroy())
+  await panel.openModelPicker()
+  await panel.selectModel('opus')
+  assert.equal(panel.pendingModel.model, 'opus')
+  assert.deepEqual(panel.pendingModel.supportedReasoningEfforts.map(option => option.reasoningEffort), ['low', 'medium', 'high'])
+  assert.equal(f.settings.claudeModel, 'sonnet')
+  await panel.chooseModel('opus', 'high')
+  assert.equal(panel.connectionError, '')
+  assert.equal(f.settings.claudeModel, 'opus')
+  assert.equal(f.settings.claudeReasoningEffort, 'high')
+  assert.equal(f.settings.reasoningEffort, '', 'Codex settings remain independent')
+  const finished = done(selected)
+  await selected.startTurn(panel.threadId, 'Inspect', f.root, f.settings)
+  assert.equal((await finished).status, 'completed')
+  const args = f.capture().args
+  assert.equal(args[args.indexOf('--model') + 1], 'opus')
+  assert.equal(args[args.indexOf('--effort') + 1], 'high')
 })
 
 test('scheduled model probe tests native MCP confirmation without touching terminals', async t => {

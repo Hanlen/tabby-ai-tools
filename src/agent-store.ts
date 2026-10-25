@@ -1,12 +1,15 @@
 import { promises as fs } from 'fs'
 import * as path from 'path'
 import { randomBytes, createHash } from 'crypto'
-import { AgentContext, ApiProfile } from './agent-types'
+import { AgentContext, ApiProfile, usesResponsesApi } from './agent-types'
 import type { ToolLoopState } from './api-loop-guard'
 
 export function agentId (): string { return 'api-' + randomBytes(16).toString('hex') }
 export function profileFingerprint (p: ApiProfile): string {
-  return createHash('sha256').update(JSON.stringify([p.id, p.provider, p.baseUrl.replace(/\/+$/, ''), p.model])).digest('hex')
+  // Keep existing provider fingerprints stable; custom protocols have incompatible native history.
+  const identity = [p.id, p.provider, p.baseUrl.replace(/\/+$/, ''), p.model]
+  if (p.provider === 'custom') identity.push(usesResponsesApi(p) ? 'responses' : 'chat-completions')
+  return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
 }
 export interface ApiTurn {
   id: string

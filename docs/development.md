@@ -2,6 +2,12 @@
 
 [← 返回 README](../README.md) · [使用指南](guide.md)
 
+后续设置页的信息组织、Provider 定义和每周接入排期见 [Provider 配置改版与路线图](provider-roadmap.md)。该文档是待实施计划，功能与发布状态按每周验收记录更新。
+
+v0.4.0 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
+
+`test/api-agent.test.js` 覆盖自定义 Chat Completions 的现有 Agent 回归、Responses 连续工具往返与恢复、协议切换、无密钥模型发现与流式回复、配置失效及原供应商指纹兼容。全部使用本地 HTTP/SSE 夹具；真实第三方服务和桌面端需另行验证。协议参考：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Responses 迁移与原生历史](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
+
 ## 本地开发
 
 ```bash
@@ -54,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate-windows.ps1 -Executa
 
 `test/api-agent.test.js` 使用本地 HTTP/SSE 夹具测试真实请求格式、按连接显示的测试进度、鉴权错误、取消、非 SSE 响应，以及在服务端延迟结束请求时首个正文片段已经触发视图刷新。还覆盖 API/Codex 往返迁移、分页历史导出、首次原生消息前的重启恢复和目标延迟激活。真实供应商连通性与 Tabby 桌面 UI 需单独验证。
 
-模型列表测试覆盖四种供应商的 GET 鉴权、分页去重、错误脱敏、不跟随重定向、无模型配置时获取列表、刷新与配置变更失效，以及关闭连接时取消请求。实现遵循 [DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/)与 [Claude 模型列表及分页](https://platform.claude.com/docs/en/api/models/list)的接口；不提供模型列表的端点保留手动输入模型 ID。
+模型列表测试覆盖 OpenAI、DeepSeek、GLM、Kimi API、Kimi Coding Plan、百炼 Coding Plan 与 Claude的 GET 鉴权、分页去重、错误脱敏、不跟随重定向、无模型配置时获取列表、刷新与配置变更失效，以及关闭连接时取消请求。实现遵循 [DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/)与 [Claude 模型列表及分页](https://platform.claude.com/docs/en/api/models/list)的接口；不提供模型列表的端点保留手动输入模型 ID。
 
 可运行 `npm run smoke:context`（或 `npm run smoke:context -- /path/to/codex`）验证本机真实 Codex 的上下文导入、恢复、历史导出及目标保留。该脚本不发送 `turn/start`，并检查导入不会自动启动回合；测试线程在退出时归档，不调用模型或执行工具。
 
@@ -97,3 +103,11 @@ npm run skill:check  # 检查内嵌知识与 skill 文件是否一致
 方案和官方依据见 [Claude Code 接入](claude-code.md)。`claude-code-profile.ts` 提供独立的内置连接与配置；`claude-code-client.ts` 负责发现、能力／登录检查和有界进程回收；`claude-code-mcp.ts` 提供单次运行的认证 loopback MCP；`claude-code-agent.ts` 将官方 CLI 适配到已有会话与面板端口。`ApiAgent.createAdapter` 是可替换推理入口，MCP 与 API 的工具调用共用验证、审批、执行前持久化和重复循环检查。不得把本机连接交给 HTTP API 或密钥服务。
 
 `test/claude-code.test.js` 与 `test/fixtures/claude-cli.cjs` 使用真实子进程和 HTTP，所有模型输出均为夹具。新增代码不依赖 Agent SDK，也不下载或修改 Claude Code。常规验证不运行真实模型；跨平台桌面和真实订阅仍需要单独验证。
+
+## 默认持续执行与统一 reasoning 选择
+
+API / Claude Code 的 active Goal 在普通文本响应结束后由 `ApiAgent` 自动续行，保持同一个 turn、原生工具和推理历史、预算累计以及停止句柄。测试覆盖超过历史 20 轮、普通响应后的继续、完成/阻塞/显式暂停、文字空转检测与预算/中断。历史默认 20 迁移为 0；主动设置的限制带 `toolRoundLimitConfigured` 标记。
+
+`model-reasoning.ts` 为缺少服务端能力元数据的已知模型提供保守等级，模型浮窗对 API / Claude Code 统一提供第二步、默认值与手动输入。离线 HTTP / CLI 测试覆盖选中后保存、下一次推理请求中的供应商原生参数、默认值清除及保存失败回滚。不以真实模型调用作为常规验证。
+
+Kimi／百炼 Coding Plan 的实现与验证边界见 [配置说明](coding-plans.md)。本地夹具还验证区域端点预设、保留自定义代理和密钥草稿、切换区域取消旧模型发现、两套 Kimi Key 配置、持久缓存标识、仅思考模型参数和百炼 `enable_thinking`。没有运行收费模型或证明真实套餐准入；区域的可用模型与额度须以各平台控制台为准。
