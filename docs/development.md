@@ -4,7 +4,7 @@
 
 后续设置页的信息组织、Provider 定义和每周接入排期见 [Provider 配置改版与路线图](provider-roadmap.md)。该文档是待实施计划，功能与发布状态按每周验收记录更新。
 
-v0.4.0 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
+v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
 
 `test/api-agent.test.js` 覆盖自定义 Chat Completions 的现有 Agent 回归、Responses 连续工具往返与恢复、协议切换、无密钥模型发现与流式回复、配置失效及原供应商指纹兼容。全部使用本地 HTTP/SSE 夹具；真实第三方服务和桌面端需另行验证。协议参考：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Responses 迁移与原生历史](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
 

@@ -60,7 +60,9 @@ export async function runClaudeProcess (options: ClaudeProcessOptions): Promise<
   try {
     await new Promise<void>((resolve, reject) => {
       child.on('error', reject)
-      child.stdin.on('error', error => stop(error))
+      // Short-lived help/auth commands can close stdin before the parent finishes.
+      // Let the process exit status report EPIPE, as the Codex client does.
+      child.stdin.on('error', (error: NodeJS.ErrnoException) => { if (!closed && error.code !== 'EPIPE') stop(error) })
       child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString('utf8')).slice(-8000) })
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', chunk => {

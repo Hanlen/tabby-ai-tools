@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.4.0 界面示意：侧栏协调两个 SSH 终端，展示定时任务、Kimi 与百炼 Coding Plan 连接、国内国际区域、启动开关与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.4.1 界面示意：侧栏协调两个 SSH 终端，展示定时任务、Kimi 与百炼 Coding Plan 连接、国内国际区域、启动开关与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
@@ -45,15 +45,15 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 | **Claude／Anthropic** | 添加 Claude API 连接，配置其 API Key 和模型 ID。 |
 | **自定义 OpenAI 兼容服务** | 选择 **自定义（OpenAI 兼容）**，填写 Base URL 和模型 ID；协议默认 Chat Completions，也可选 Responses。支持直接输入密钥、环境变量或无需密钥。 |
 
-**v0.4.0 已支持 Claude Code 订阅接入。** 插件运行本机官方 CLI，不读取或保存订阅凭据；账号权益、额度和实际认证方式由 CLI 决定。已有 API Key 或云平台配置可能走独立计费。安装与限制见 [Claude Code 接入说明](docs/claude-code.md)。尚未完成真实订阅账号的端到端验证。
+**v0.4.1 已支持 Claude Code 订阅接入。** 插件运行本机官方 CLI，不读取或保存订阅凭据；账号权益、额度和实际认证方式由 CLI 决定。已有 API Key 或云平台配置可能走独立计费。安装与限制见 [Claude Code 接入说明](docs/claude-code.md)。尚未完成真实订阅账号的端到端验证。
 
-v0.4.0 已支持 Kimi 与阿里云百炼 Coding Plan 接入，均提供国内与国际端点预设。详见[端点、密钥与配置说明](docs/coding-plans.md)。套餐用于个人交互式编程，无人值守定时任务应使用适合该场景的普通 API。真实套餐准入和扣费尚未验证。
+v0.4.1 已支持 Kimi 与阿里云百炼 Coding Plan 接入，均提供国内与国际端点预设。详见[端点、密钥与配置说明](docs/coding-plans.md)。套餐用于个人交互式编程，无人值守定时任务应使用适合该场景的普通 API。真实套餐准入和扣费尚未验证。
 
 侧栏模型浮窗统一先选模型，再选 reasoning／推理强度，适用于 API 连接和 Claude Code；可选服务商默认或手动填写等级。API 与 Claude Code 的未完成目标默认自动继续，无需点击 Continue；停止、token 预算及主动设置的工具轮数上限仍然生效。
 
 可保存多个命名连接，在侧栏切换；支持获取模型列表或手动填写模型 ID。API 连接使用对应供应商的 API 凭据和计费，无需安装 Codex CLI。使用代理时，端点须兼容所选供应商协议。
 
-v0.4.0 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1` 或 `http://localhost:1234/v1`，不要附加 `/chat/completions` 或 `/responses`。终端任务要求 SSE 流式响应和工具调用；使用 `/models` 获取模型，不支持时可手动填写。HTTP 仅限本地回环地址。详见[自定义接口配置与限制](docs/guide.md#自定义-openai-兼容接口)。
+v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1` 或 `http://localhost:1234/v1`，不要附加 `/chat/completions` 或 `/responses`。终端任务要求 SSE 流式响应和工具调用；使用 `/models` 获取模型，不支持时可手动填写。HTTP 仅限本地回环地址。详见[自定义接口配置与限制](docs/guide.md#自定义-openai-兼容接口)。
 
 ## 内网服务器，也能使用 AI
 

@@ -33,6 +33,36 @@ const done = agent => new Promise(resolve => {
 })
 const settingsBase = { executable: 'codex', cwd: '', model: '', reasoningEffort: '', sandbox: 'workspace-write', approvalPolicy: 'never', goalTokenBudget: 0, threads: {}, tabToolThreads: {} }
 
+test('short-lived Claude commands tolerate stdin EPIPE and late pipe errors but preserve other failures', async t => {
+  const { EventEmitter } = require('node:events')
+  const { PassThrough } = require('node:stream')
+  const processes = require('node:child_process')
+  const cleanup = require('../src/codex-process.ts')
+  const originalSpawn = processes.spawn, originalTerminate = cleanup.terminateCodexProcess
+  t.after(() => { processes.spawn = originalSpawn; cleanup.terminateCodexProcess = originalTerminate })
+  let stopped = 0, code = 'EPIPE', child
+  cleanup.terminateCodexProcess = async () => { stopped++ }
+  processes.spawn = () => {
+    child = new EventEmitter()
+    child.stdin = new PassThrough()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.stdin.on('finish', () => setImmediate(() => {
+      child.stdin.emit('error', Object.assign(new Error('pipe failure'), { code }))
+      child.stdout.write('help output')
+      child.emit('close', 0, null)
+    }))
+    return child
+  }
+  const options = { executable: 'fixture.exe', args: ['--help'], cwd: process.cwd(), signal: new AbortController().signal }
+  assert.equal(await runClaudeProcess(options), 'help output')
+  child.stdin.emit('error', new Error('late pipe error'))
+  assert.equal(stopped, 0, 'completed commands must not signal a stale process group')
+  code = 'EIO'
+  await assert.rejects(runClaudeProcess(options), /pipe failure/)
+  assert.equal(stopped, 1, 'other pipe failures still terminate the owned command')
+})
+
 test('Windows Claude batch launchers use the CommonJS cross-spawn export and preserve piped arguments', async () => {
   const { EventEmitter } = require('node:events')
   const { PassThrough } = require('node:stream')
