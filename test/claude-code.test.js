@@ -32,6 +32,44 @@ const done = agent => new Promise(resolve => {
   agent.on('event', listener)
 })
 const settingsBase = { executable: 'codex', cwd: '', model: '', reasoningEffort: '', sandbox: 'workspace-write', approvalPolicy: 'never', goalTokenBudget: 0, threads: {}, tabToolThreads: {} }
+
+test('Windows Claude batch launchers use the CommonJS cross-spawn export and preserve piped arguments', async () => {
+  const { EventEmitter } = require('node:events')
+  const { PassThrough } = require('node:stream')
+  const calls = []
+  const launcher = kind => (executable, args, options) => {
+    calls.push({ kind, executable, args, options })
+    const child = new EventEmitter()
+    child.stdin = new PassThrough()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.stdin.on('finish', () => setImmediate(() => { child.stdout.write('fixture output'); child.emit('close', 0, null) }))
+    return child
+  }
+  // Use the actual CommonJS export shape without enabling TypeScript interop.
+  const crossSpawn = Object.assign(launcher('unexpected-default'), { spawn: launcher('batch') })
+  const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/claude-code-client.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 },
+  }).outputText
+  const exports = {}
+  require('node:vm').runInNewContext(source, {
+    exports, process: { platform: 'win32', env: {} }, Buffer, setTimeout, clearTimeout,
+    require: name => name === 'cross-spawn' ? crossSpawn : name === 'child_process' ? { spawn: launcher('native') }
+      : name === './codex-executable' || name === './codex-process' || name === './task-memory' ? {} : require(name),
+  })
+  const args = ['--model', 'custom model', '--mcp-config', 'C:\\path with spaces\\mcp.json']
+  for (const extension of ['cmd', 'bat', 'exe']) {
+    const executable = `C:\\path with spaces\\claude.${extension}`
+    assert.equal(await exports.runClaudeProcess({ executable, args, cwd: 'C:\\workspace', signal: new AbortController().signal }), 'fixture output')
+    const call = calls.at(-1)
+    assert.equal(call.kind, extension === 'exe' ? 'native' : 'batch')
+    assert.equal(call.executable, executable)
+    assert.equal(call.args, args)
+    assert.equal(call.options.shell, false)
+    assert.equal(call.options.detached, false)
+    assert.deepEqual([...call.options.stdio], ['pipe', 'pipe', 'pipe'])
+  }
+})
 async function fixture (t, scenario = {}) {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tabby claude test '))
   await fs.promises.copyFile(path.join(__dirname, 'fixtures/claude-cli.cjs'), path.join(root, 'cli.cjs'))
