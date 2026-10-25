@@ -1,6 +1,6 @@
 # 多模型 Agent 设计与评审
 
-v0.4.0 新增自定义 OpenAI 兼容连接（`provider: custom`）：`apiFormat` 显式选择 Chat Completions（缺省）或 Responses，不按模型名或 URL 推断协议。复用统一 Agent 工具循环、模型发现和上下文转换，不发送厂商专用 Thinking／缓存字段。可选直接 Key、环境变量或无认证；无认证模式不发 Authorization。历史指纹为自定义连接增加协议字段，保留既有供应商指纹。切换协议时导入通用文本和目标，避免将原生工具历史发到另一协议。配置与限制见[使用指南](guide.md#自定义-openai-兼容接口)。
+v0.4.1 新增自定义 OpenAI 兼容连接（`provider: custom`）：`apiFormat` 显式选择 Chat Completions（缺省）或 Responses，不按模型名或 URL 推断协议。复用统一 Agent 工具循环、模型发现和上下文转换，不发送厂商专用 Thinking／缓存字段。可选直接 Key、环境变量或无认证；无认证模式不发 Authorization。历史指纹为自定义连接增加协议字段，保留既有供应商指纹。切换协议时导入通用文本和目标，避免将原生工具历史发到另一协议。配置与限制见[使用指南](guide.md#自定义-openai-兼容接口)。
 
 状态：设计评审完成，第一版已按下述范围实现。2026-10-17。
 

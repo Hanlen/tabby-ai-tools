@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.4.0 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, custom OpenAI-compatible and Coding Plan connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.4.1 interface illustration: the assistant coordinates two SSH terminals, with scheduled tasks, custom OpenAI-compatible and Coding Plan connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -45,15 +45,15 @@ Terminal takeover is automatic: unavailable foreground-process detection (includ
 | **Claude / Anthropic** | Add a Claude API connection with its API key and model ID. |
 | **Custom OpenAI-compatible service** | Select **Custom (OpenAI compatible)**, enter a Base URL and model ID, and choose Chat Completions (default) or Responses. Use a direct key, an environment variable, or no key for services without authentication. |
 
-**Claude Code subscription support is available in v0.4.0.** The plugin runs the local official CLI without reading or saving subscription credentials. Entitlements, limits, and authentication follow the CLI; API keys or cloud configuration may use separate billing. See [setup and limitations](docs/claude-code.md). A real subscription end-to-end run remains unverified.
+**Claude Code subscription support is available in v0.4.1.** The plugin runs the local official CLI without reading or saving subscription credentials. Entitlements, limits, and authentication follow the CLI; API keys or cloud configuration may use separate billing. See [setup and limitations](docs/claude-code.md). A real subscription end-to-end run remains unverified.
 
-Kimi and Alibaba Cloud Coding Plan connections are available in v0.4.0, with separate China mainland and international presets. See [endpoints, keys and setup](docs/coding-plans.md). Plans are for personal interactive coding; use an appropriate ordinary API for unattended schedules. Real plan access and quota deduction remain unverified.
+Kimi and Alibaba Cloud Coding Plan connections are available in v0.4.1, with separate China mainland and international presets. See [endpoints, keys and setup](docs/coding-plans.md). Plans are for personal interactive coding; use an appropriate ordinary API for unattended schedules. Real plan access and quota deduction remain unverified.
 
 Choose a model, then choose reasoning effort in the sidebar model picker, including for API connections and Claude Code. Provider defaults and manual effort values are available. API and Claude Code goals continue automatically by default without asking you to click Continue; stop controls, token budgets, and explicitly configured tool limits still apply.
 
 Save multiple named connections and switch them in the sidebar. Discover available models or enter a model ID manually. API connections use the selected provider's credentials and billing plan; they can be used without Codex CLI. Compatible proxies must implement the selected provider's protocol.
 
-Custom connections are available in v0.4.0. For example, use `https://gateway.example/v1` or `http://localhost:1234/v1` as the Base URL, without `/chat/completions` or `/responses`. Terminal tasks require SSE streaming and function calling; model discovery uses `/models` with manual entry as a fallback. HTTP is restricted to loopback addresses. See [custom connection setup and limitations (中文)](docs/guide.md#自定义-openai-兼容接口).
+Custom connections are available in v0.4.1. For example, use `https://gateway.example/v1` or `http://localhost:1234/v1` as the Base URL, without `/chat/completions` or `/responses`. Terminal tasks require SSE streaming and function calling; model discovery uses `/models` with manual entry as a fallback. HTTP is restricted to loopback addresses. See [custom connection setup and limitations (中文)](docs/guide.md#自定义-openai-兼容接口).
 
 ## Work with servers on a private network
 

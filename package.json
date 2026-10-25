@@ -1,6 +1,6 @@
 {
   "name": "tabby-ai-tools",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A persistent AI agent sidebar for Tabby with Codex, Claude Code, OpenAI-compatible providers, DeepSeek, GLM, Kimi, and Alibaba Cloud Coding Plan support",
   "repository": {
     "type": "git",
