@@ -1,5 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
-import spawnWindowsLauncher from 'cross-spawn'
+import { spawn as spawnWindowsLauncher } from 'cross-spawn'
 import * as os from 'os'
 import * as path from 'path'
 import { executableFile, environmentValue, normalizeExecutable, ExecutableContext } from './codex-executable'
