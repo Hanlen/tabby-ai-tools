@@ -8,6 +8,8 @@ The first pre-tag Windows CI exposed a Claude batch-launcher default-import inte
 
 No paid model request was made. Real third-party gateways, membership access/quota deduction and full Tabby desktop/SSH behavior remain unverified. These limits also apply to the local Claude Code integration included since the previous npm release. The prior development validation records below describe their own scope and dates.
 
+The macOS CLI-discovery cancellation regression retains its ESRCH assertion but allows up to two seconds for kernel PID reaping after termination, avoiding an assumption that process IDs disappear synchronously. A still-running query continues to fail the test.
+
 # Claude Code local-login development validation (2026-10-24)
 
 The new native connection runs the installed official CLI with its own login and an authenticated loopback MCP bridge. Existing Claude API configuration remains separate. The implementation and official references are documented in [Claude Code integration](docs/claude-code.md).
