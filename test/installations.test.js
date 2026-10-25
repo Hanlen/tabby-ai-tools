@@ -165,6 +165,12 @@ test('cancelling a prefix query kills its process tree and cancels later discove
   const pid = Number(fs.readFileSync(pidFile, 'utf8'))
   controller.abort()
   await rejected
+  // macOS can briefly retain a terminated PID while the kernel reaps it.
+  // Keep the no-process assertion, but bound the wait instead of assuming it is immediate.
+  for (let i = 0; i < 200; i++) {
+    try { process.kill(pid, 0) } catch (error) { if (error.code === 'ESRCH') break; throw error }
+    await delay(10)
+  }
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
 })
 
