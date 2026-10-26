@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1440" viewBox="0 0 1800 1440" role="img" aria-labelledby="title desc">
-<title id="title">Tabby AI Tools v0.4.1 interface illustration — Claude Code local login, continuous goals, reasoning picker and custom OpenAI-compatible connections</title>
-<desc id="desc">Interface illustration, not a running screenshot. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. A Kimi Coding Plan reasoning picker and China/international presets for Kimi and Alibaba Coding Plan are illustrated. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. This is a version 0.4.1 interface example.</desc>
+<title id="title">Tabby AI Tools v0.4.1 interface illustration — on-demand terminal reads, backend retry waiting, local login and API connections</title>
+<desc id="desc">Interface illustration, not a running screenshot. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. Terminal output is read on demand without automatic forwarding; a Codex rate-limit wait and an example backend-provided retry time are shown. A Kimi Coding Plan reasoning picker and China/international presets for Kimi and Alibaba Coding Plan are illustrated. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. This is a version 0.4.1 interface example.</desc>
 <defs>
 <linearGradient id="background" x2="1" y2="1"><stop stop-color="#0c1622"/><stop offset="1" stop-color="#151729"/></linearGradient>
 <linearGradient id="outline"><stop stop-color="#375d5d"/><stop offset="1" stop-color="#3b3d5c"/></linearGradient>
@@ -28,7 +28,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="1647" y="239" font-size="15" font-weight="400" style="fill:#a7b8cb">+    Settings</text>
 <rect x="49" y="253" width="499" height="588" rx="0" fill="#172130"/>
 <path d="M548 253L548 842" stroke="#3b4b60"/>
-<text x="72" y="285" font-size="23" font-weight="700" style="fill:#eef4ff">Claude Code</text>
+<text x="72" y="285" font-size="23" font-weight="700" style="fill:#eef4ff">Codex</text>
 <text x="248" y="284" font-size="16" font-weight="400" style="fill:#8ca0b8">workspace</text>
 <rect x="368" y="263" width="62" height="28" rx="6" fill="#1a4a3a"/>
 <text x="378" y="283" font-size="14" font-weight="600" style="fill:#8ae6c2">Linked</text>
@@ -36,26 +36,26 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="448" y="283" font-size="14" font-weight="600" style="fill:#a7b8cb">Details</text>
 <text x="519" y="285" font-size="22" font-weight="400" style="fill:#8ca0b8">×</text>
 <rect x="72" y="302" width="196" height="33" rx="5" fill="#243247" stroke="#3a4c65"/>
-<text x="82" y="325" font-size="15" style="fill:#e8eff9">Claude Code (local)</text>
+<text x="82" y="325" font-size="15" style="fill:#e8eff9">Codex (local)</text>
 <text x="246" y="325" font-size="20" style="fill:#a7b8cb">⌄</text>
 <rect x="276" y="302" width="248" height="33" rx="5" fill="#202d40"/>
-<text x="284" y="325" font-size="14" style="fill:#e8eff9">sonnet</text>
+<text x="284" y="325" font-size="14" style="fill:#e8eff9">default</text>
 <text x="390" y="325" font-size="14" style="fill:#a7b8cb">reasoning: high</text>
 <g transform="translate(0 -40)">
 <rect x="72" y="384" width="88" height="28" rx="6" fill="#344132"/>
-<text x="82" y="404" font-size="15" font-weight="600" style="fill:#d4e9a1">Running</text>
+<text x="82" y="404" font-size="15" font-weight="600" style="fill:#d4e9a1">429 wait</text>
 <text x="174" y="405" font-size="15" font-weight="400" style="fill:#a7b8cb">Context —</text>
-<text x="290" y="405" font-size="15" font-weight="400" style="fill:#8ae6c2">Control 2</text>
-<text x="387" y="405" font-size="15" font-weight="600" style="fill:#8ae6c2">Release</text>
-<text x="461" y="405" font-size="14" font-weight="400" style="fill:#a7b8cb">Fwd on</text>
+<text x="290" y="405" font-size="15" font-weight="400" style="fill:#8ae6c2">Control —</text>
+
+<text x="461" y="405" font-size="14" font-weight="400" style="fill:#a7b8cb">Fwd off</text>
 <rect x="72" y="419" width="452" height="80" rx="8" fill="#21324b" stroke="#3b4f70"/>
 <text x="86" y="442" font-size="14" font-weight="600" style="fill:#b9d3f7">You</text>
 <text x="86" y="467" font-size="17" font-weight="400" style="fill:#e8eff9">Check staging-db first, then staging-app.</text>
 <text x="86" y="489" font-size="17" font-weight="400" style="fill:#e8eff9">Verify connectivity and the health check.</text>
 <rect x="72" y="509" width="452" height="80" rx="8" fill="#1b2839" stroke="#344458"/>
 <text x="86" y="533" font-size="14" font-weight="600" style="fill:#8ae6c2">Assistant</text>
-<text x="86" y="557" font-size="17" font-weight="400" style="fill:#e8eff9">Database step verified. Application next.</text>
-<text x="86" y="578" font-size="17" font-weight="400" style="fill:#e8eff9">Goal active: continuing automatically.</text>
+<text x="86" y="557" font-size="17" font-weight="400" style="fill:#e8eff9">Terminal check done; step 2 pending.</text>
+<text x="86" y="578" font-size="17" font-weight="400" style="fill:#e8eff9">429: waiting for backend auto-retry.</text>
 <text x="75" y="606" font-size="15" font-weight="600" style="fill:#a7b8cb">Workflows</text>
 <text x="205" y="606" font-size="15" font-weight="600" style="fill:#8ae6c2">Scheduled tasks</text>
 <rect x="72" y="619" width="452" height="92" rx="7" fill="#1a2938" stroke="#35534f"/>
@@ -64,8 +64,8 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="85" y="692" font-size="15" font-weight="400" style="fill:#8ae6c2">Run now    Pause    Run history</text>
 </g>
 <rect x="72" y="683" width="452" height="93" rx="7" fill="#101a27" stroke="#42546d"/>
-<text x="85" y="707" font-size="16" font-weight="400" style="fill:#8ca0b8">/task1 — run the saved workflow</text>
-<text x="85" y="728" font-size="12" font-weight="400" style="fill:#8ca0b8">Ctrl / Cmd + Enter to send</text>
+<text x="85" y="707" font-size="16" font-weight="400" style="fill:#8ca0b8">Waited 02:17 / Retry in 04:59</text>
+<text x="85" y="728" font-size="12" font-weight="400" style="fill:#8ca0b8">Backend estimate: 22:15 / Stop to cancel.</text>
 <text x="73" y="812" font-size="14" font-weight="400" style="fill:#a7b8cb">Tools</text>
 <rect x="115" y="792" width="159" height="28" rx="6" fill="#253348"/>
 <text x="125" y="812" font-size="14" font-weight="600" style="fill:#a7b8cb">Terminal tools</text>
@@ -73,7 +73,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <rect x="352" y="792" width="97" height="28" rx="6" fill="#253348"/>
 <text x="362" y="812" font-size="13" font-weight="600" style="fill:#a7b8cb">On request</text>
 <rect x="459" y="792" width="65" height="28" rx="6" fill="#286a54"/>
-<text x="469" y="812" font-size="15" font-weight="600" style="fill:#e8fff5">Send</text>
+<text x="469" y="812" font-size="15" font-weight="600" style="fill:#e8fff5">Stop</text>
 <rect x="549" y="253" width="1202" height="44" rx="0" fill="#151f2d"/>
 <rect x="562" y="261" width="221" height="36" rx="6" fill="#253347"/>
 <text x="577" y="286" font-size="17" font-weight="600" style="fill:#8ae6c2" class="mono">staging-db</text>
@@ -107,7 +107,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="1178" y="654" font-size="18" font-weight="400" style="fill:#8ca0b8" class="mono">}</text>
 <text x="1178" y="685" font-size="18" font-weight="400" style="fill:#c7b6f6" class="mono">deploy@staging-app:~$</text>
 <path d="M549 806H1751" stroke="#2b3a4d"/>
-<text x="574" y="830" font-size="16" font-weight="400" style="fill:#a7b8cb">2 SSH terminals · Input can be reclaimed from the sidebar at any time</text>
+<text x="574" y="830" font-size="16" font-weight="400" style="fill:#a7b8cb">2 SSH terminals · Output read on demand · Automatic forwarding off</text>
 <rect x="48" y="878" width="1050" height="254" rx="12" fill="#172130" stroke="#35475c"/>
 <text x="72" y="915" font-size="24" font-weight="650" style="fill:#edf5ff">Settings  /  AI Tools</text>
 <text x="72" y="952" font-size="18" font-weight="400" style="fill:#a7b8cb">Default connection</text>

@@ -842,5 +842,22 @@
   "自定义接口不发送厂商专用 Thinking 参数；推理强度留空时不发送，请按服务文档填写。": "Las conexiones personalizadas omiten los parámetros Thinking propios de proveedores. Deje el esfuerzo de razonamiento vacío para omitirlo o siga la documentación del servicio.",
   "不支持的自定义 API 协议": "Protocolo API personalizado no compatible",
   "仅自定义连接支持无需密钥": "Solo las conexiones personalizadas admiten funcionar sin clave API",
-  "请填写 API Base URL": "Introduzca una API Base URL"
+  "请填写 API Base URL": "Introduzca una API Base URL",
+  "终端上下文": "Contexto del terminal",
+  "解除绑定": "Desvincular",
+  "自动转发已停用；执行中由 AI 用 read_tab 按需读取。": "El reenvío automático está desactivado; la IA lee con read_tab cuando lo necesita.",
+  "已绑定终端：{0}。仅在发送或继续时附带有界摘要。": "Terminal vinculado: {0}. Se incluye un resumen limitado solo al enviar o continuar.",
+  "已解除终端上下文绑定；AI 仍可用 read_tab 按需读取标签。": "Contexto desvinculado; la IA aún puede leer pestañas con read_tab.",
+  "请求限流，等待后台自动重试": "Solicitud limitada; esperando el reintento del servicio",
+  "等待后台自动重试": "Esperando el reintento del servicio",
+  "后台未提供下次重试时间。": "El servicio no indicó la hora del próximo reintento.",
+  "下次重试：{0}（后台提供）": "Próximo reintento: {0} (indicado por el servicio)",
+  "请等待后台重试，可点击停止取消；不要反复新建任务。": "Espere el reintento o pulse Detener para cancelar. Evite crear tareas repetidamente.",
+  "请求受到限流或用量限制；429 本身不能证明长期额度耗尽。": "La solicitud alcanzó un límite de frecuencia o uso; un 429 no demuestra que se haya agotado la cuota a largo plazo.",
+  "正在停止当前回合…": "Deteniendo el turno actual…",
+  "停止失败：{0}": "Error al detener: {0}",
+  "已等待：{0}": "Tiempo de espera: {0}",
+  "距离后台预计重试：{0}": "Hasta el reintento estimado: {0}",
+  "预计时间已到，等待后台返回结果。": "Llegó la hora estimada; esperando la respuesta del servicio.",
+  "AI 正在等待模型；终端命令可能已经完成，恢复后会先核对结果。": "La IA espera al modelo. Los comandos pueden haber terminado; se comprobarán los resultados al reanudar."
 }

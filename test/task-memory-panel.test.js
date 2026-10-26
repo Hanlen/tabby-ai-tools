@@ -46,7 +46,6 @@ async function setup (t, api = false) {
   Object.assign(panel, { loading: false, threadId: 'thread', cwd: '/project', connected: true })
   panel.ensureSource = async () => {}
   panel.readOutput = () => ({ message: 'current terminal data', cursor: 0, length: 0 })
-  panel.scheduleOutputFlush = () => {}
   const tool = async (name, args) => {
     panel.handleEvent({ id: tools.length + 1, method: 'item/tool/call', params: { threadId: panel.threadId, namespace: 'tabby_tabs', tool: name, arguments: args } })
     await flush()
@@ -191,4 +190,32 @@ test('continuing a workflow supplies its checkpoint state again as hidden contex
   assert.match(f.sent[1][4], /workflow_checkpoint/)
   assert.match(f.sent[1][4], /"pendingStep":\{"number":1,"runtimeTabId":"db"/)
   assert.match(f.sent[1][4], /restart database/)
+})
+
+test('resuming after 429 verifies the completed pending step without replaying stash or extraction', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember prepare repository, extract and check patch, then continue'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('send_input', { tabId: 'repo', text: 'git stash', submit: true })
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'repository changes saved', evidence: 'stash saved and Git state checked' })
+  await f.tool('send_input', { tabId: 'repo', text: 'tar -xf update.tar && git apply --check fix.patch', submit: true })
+  f.panel.handleEvent({ method: 'error', params: { threadId: 'thread', turnId: 'turn-1', error: { message: '429 Too Many Requests' }, willRetry: true } })
+  assert.ok(f.panel.retryState)
+  f.panel.handleEvent({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn-1', status: 'interrupted' } } })
+  await f.panel.continueTask()
+  assert.match(f.sent[1][4], /"confirmedSteps":\[1\]/)
+  assert.match(f.sent[1][4], /"pendingStep":\{"number":2,"runtimeTabId":"repo"/)
+  assert.match(f.sent[1][4], /Git 状态/)
+  assert.match(f.sent[1][4], /不得因缺少验收而重放已发送命令/)
+  assert.equal(f.tools.filter(call => call.name === 'send_input').length, 2, 'resumption only starts a model turn')
+  await f.tool('send_input', { tabId: 'repo', text: 'next operation', submit: true })
+  assert.equal(f.replies.at(-1)[1].success, false, 'pending step still blocks further commands')
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 2, criteria: 'extraction and patch check succeeded', evidence: 'fresh terminal result, extracted artifacts and current Git state checked' })
+  assert.equal(f.replies.at(-1)[1].success, true)
+  await f.tool('send_input', { tabId: 'repo', text: 'next operation', submit: true })
+  assert.equal(f.replies.at(-1)[1].success, true)
+  assert.deepEqual(f.tools.filter(call => call.name === 'send_input').map(call => call.args.text), ['git stash', 'tar -xf update.tar && git apply --check fix.patch', 'next operation'])
 })

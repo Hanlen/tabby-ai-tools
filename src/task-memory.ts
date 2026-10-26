@@ -28,7 +28,8 @@ export const WORKFLOW_HINT = `任务流程执行协议：
 流程中的步骤数组和 dependsOn 是执行顺序，不得跨服务器并行抢跑。开始前用 list_tabs/read_tab/get_profile 重新绑定实际终端；profileId/serverId 是持久身份，临时 tab ID 不能存为服务器 ID。核对服务器 host/IP、SSH 端口、账户与操作路径，主机名不能冒充已知 IP；拿不到的字段要通过当前终端的可信检查确认，禁止猜测。profile 信息不能证明嵌套 SSH、容器或跳板后的实际目标。
 步骤之间的身份/路径探测命令使用 send_input(verificationFor=0)，再 read_tab，随后 workflow_checkpoint(action=bind_target,tabId,target,evidence) 绑定已观测身份。target.cwd 是该操作实际路径；cd、容器或嵌套 SSH 改变环境后重新核对绑定。
 所有流程 Shell 操作使用 tabby_tabs.send_input，不改用本机 commandExecution。每个操作先确定验收条件，只提交一个逻辑步骤；跨服务器依赖必须拆开，不把依赖步骤塞进同一批并行工具或 Shell 脚本。提交操作后 read_tab 读取同一终端的新结果；需要检查命令时 send_input(verificationFor=当前步骤号)，检查命令仅验证该步骤且在同一服务器执行，再 read_tab。读到输出、工具返回 sent、没有子进程、超时或旧成功文本都不等于完成。
-结果符合验收条件并确认命令结束后，调用 workflow_checkpoint(action=confirm_step,step=从1开始的步骤号,tabId,criteria,evidence)。evidence 只能简述本次实际观察的退出状态、健康检查或产物，不含凭据和原始日志。插件确认后才能执行下一步；失败、证据不足、目标或路径不符时停止后续依赖，先诊断或请用户补充。这里的确认由模型根据工具证据完成，只有额外授权或必要决策才询问用户。`
+结果符合验收条件并确认命令结束后，调用 workflow_checkpoint(action=confirm_step,step=从1开始的步骤号,tabId,criteria,evidence)。evidence 只能简述本次实际观察的退出状态、健康检查或产物，不含凭据和原始日志。插件确认后才能执行下一步；失败、证据不足、目标或路径不符时停止后续依赖，先诊断或请用户补充。这里的确认由模型根据工具证据完成，只有额外授权或必要决策才询问用户。
+终端输出不会自动追加到运行中的回合，必须用 read_tab 主动读取。限流、重试、中断或恢复后，先读取 pendingStep 的实际终端，检查产物、当前目录与 Git 状态，再验收已完成步骤并继续。模型等待不代表终端命令仍在运行；不得因缺少验收而重放已发送命令，尤其 stash、restore、apply 等操作。`
 
 function cleanTarget (value: any): WorkflowTarget | undefined {
   if (!value || typeof value !== 'object') return undefined

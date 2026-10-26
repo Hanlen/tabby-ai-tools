@@ -208,10 +208,9 @@ test('a rejected send shows quota guidance, restores the prompt and permits retr
   panel.threadId = 'current'
   panel.ensureSource = async () => {}
   panel.readOutput = () => ({ cursor: 0, length: 0, message: '' })
-  panel.scheduleOutputFlush = () => {}
   panel.prompt = 'My question'
   await panel.send()
-  assert.match(panel.sendNotice, /上限.*恢复/)
+  assert.match(panel.sendNotice, /限流.*用量限制/)
   assert.match(panel.sendNotice, /usage limit/)
   assert.equal(panel.prompt, 'My question')
   assert.equal(panel.busy, false)
@@ -242,7 +241,7 @@ test('asynchronous quota failures show reset information, release control and av
   panel.handleEvent({ method: 'error', params: { threadId: 'other', error, willRetry: false } })
   assert.equal(panel.sendNotice, '')
   panel.handleEvent({ method: 'error', params: { threadId: 'current', turnId: 'turn-1', error, willRetry: false } })
-  assert.match(panel.sendNotice, /上限/)
+  assert.match(panel.sendNotice, /限流.*用量限制/)
   assert.match(panel.sendNotice, /重置/)
   assert.equal(panel.busy, false)
   assert.equal(panel.turnId, '')

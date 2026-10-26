@@ -842,5 +842,22 @@
   "自定义接口不发送厂商专用 Thinking 参数；推理强度留空时不发送，请按服务文档填写。": "Les connexions personnalisées omettent les paramètres Thinking propres aux fournisseurs. Laissez l’effort de raisonnement vide pour l’omettre ou suivez la documentation du service.",
   "不支持的自定义 API 协议": "Protocole API personnalisé non pris en charge",
   "仅自定义连接支持无需密钥": "Seules les connexions personnalisées permettent de fonctionner sans clé API",
-  "请填写 API Base URL": "Saisissez une API Base URL"
+  "请填写 API Base URL": "Saisissez une API Base URL",
+  "终端上下文": "Contexte du terminal",
+  "解除绑定": "Dissocier",
+  "自动转发已停用；执行中由 AI 用 read_tab 按需读取。": "Le transfert automatique est désactivé ; l’IA lit avec read_tab au besoin.",
+  "已绑定终端：{0}。仅在发送或继续时附带有界摘要。": "Terminal associé : {0}. Un résumé limité est joint uniquement à l’envoi ou à la reprise.",
+  "已解除终端上下文绑定；AI 仍可用 read_tab 按需读取标签。": "Contexte dissocié ; l’IA peut toujours lire les onglets avec read_tab.",
+  "请求限流，等待后台自动重试": "Requête limitée ; en attente d’une nouvelle tentative du service",
+  "等待后台自动重试": "En attente d’une nouvelle tentative du service",
+  "后台未提供下次重试时间。": "Le service n’a pas indiqué l’heure de la prochaine tentative.",
+  "下次重试：{0}（后台提供）": "Prochaine tentative : {0} (indiquée par le service)",
+  "请等待后台重试，可点击停止取消；不要反复新建任务。": "Attendez la nouvelle tentative ou cliquez sur Arrêter pour annuler. Évitez de relancer des tâches à répétition.",
+  "请求受到限流或用量限制；429 本身不能证明长期额度耗尽。": "La requête a atteint une limite de débit ou d’usage ; un code 429 seul ne prouve pas l’épuisement durable du quota.",
+  "正在停止当前回合…": "Arrêt du tour actuel…",
+  "停止失败：{0}": "Échec de l’arrêt : {0}",
+  "已等待：{0}": "Attente écoulée : {0}",
+  "距离后台预计重试：{0}": "Avant la tentative estimée : {0}",
+  "预计时间已到，等待后台返回结果。": "L’heure estimée est arrivée ; en attente du résultat du service.",
+  "AI 正在等待模型；终端命令可能已经完成，恢复后会先核对结果。": "L’IA attend le modèle. Les commandes peuvent être terminées ; les résultats seront vérifiés à la reprise."
 }
