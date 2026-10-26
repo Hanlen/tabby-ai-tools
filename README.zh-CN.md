@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 开发版界面示意（含可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示重试等待、按需读屏、定时任务、Kimi 与百炼 Coding Plan 连接、国内国际区域、启动开关与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 开发版界面示意（含可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示重试等待、按需读屏、定时任务、Kimi 与百炼 Coding Plan 连接、国内国际区域、启动开关与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/1808f28f55fa9fbd9276020955c85b003a33d1b5/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
