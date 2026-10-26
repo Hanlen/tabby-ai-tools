@@ -313,3 +313,11 @@ NVM 优先 current，其余按 Node 版本降序。IDE 同时支持 `.vscode-ins
 
 本地安装后请在 **已安装插件** 中查看；**可用插件** 列表来自 npm 搜索，未发布到 npm 的本地包不会出现在该列表。
 
+
+## Pi 与上下文压缩（开发版）
+
+在 API 连接的“Agent 运行时”中选择 Pi SDK，填写外部 Node 22.19+ 的可执行文件路径，然后从侧栏重新连接。供应商、模型、Base URL 和密钥来源沿用连接设置；Pi 不提供订阅认证。仅开放 Tabby 宿主工具，审批、只读、终端所有权、sudo 与流程 checkpoint 继续生效。
+
+空闲时输入 `/compact` 手动压缩。内置 API 保留原始历史，按完整工具批次投影请求；Pi 保留自己的 JSONL 原始条目和压缩边界。自动压缩默认关闭，摘要本身消耗额度并计入 Goal 预算。Pi 的重试倒计时使用 SDK 结构化事件，取消会结束独立进程，不重放整段任务。中断后先读取真实终端再继续，未知动作不会自动重放。
+
+Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与 CI 使用 Node 22.19+；升级系统 Node 不会改变 Electron 内置 Node。当前已验证本地 HTTP 夹具，并在独立配置的 Linux Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）中跑通侧栏、Pi 子进程、宿主 list_tabs 与 Goal 完成；真实模型、SSH/PTY 修改操作和 macOS/Windows 桌面仍待实测。此功能尚未进入 npm 0.4.1。

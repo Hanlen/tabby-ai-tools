@@ -29,7 +29,7 @@ function outputMessage (text: string, truncated: boolean): string {
 
 interface ChatEntry { id: string; kind: 'user' | 'agent' | 'tool' | 'system'; text: string }
 interface PendingRequest { id: number; method: string; title: string; translateTitle?: boolean; questions?: UserQuestion[]; answers: Record<string, string>; otherAnswers: Record<string, string>; local?: boolean; permissions?: any; url?: string }
-interface HistorySnapshot { entries: ChatEntry[]; busy: boolean; turnId: string; notice: string }
+interface HistorySnapshot { entries: ChatEntry[]; busy: boolean; turnId: string; notice: string; tokenUsage?: any }
 interface ThreadStatusSnapshot { threadId: string; model: string | null; reasoningEffort: string | null; state: string }
 interface RateLimitWindowSnapshot { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null }
 interface RateLimitSnapshot { primary: RateLimitWindowSnapshot | null; secondary: RateLimitWindowSnapshot | null }
@@ -220,6 +220,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   decideScheduledApproval (accept: boolean): void { this.scheduledApproval?.decide(accept) }
   get claudeCodeMode (): boolean { return this.codex.profile?.runtime === 'claude-code' }
   get apiMode (): boolean { return !!this.codex.profile }
+  get runtimeInfo (): string { return this.codex.runtimeInfo || '' }
   get agentLabel (): string { return this.claudeCodeMode ? this.t('Claude Code（本机登录）') : this.codex.profile?.name || 'Codex' }
   get settings (): AgentSettings {
     return this.connectionSettings(this.profileId, this.codex)
@@ -279,6 +280,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       { command: '/new', description: '新会话' },
       { command: '/resume', description: '历史会话' },
       { command: '/status', description: '当前状态' },
+      ...(this.apiMode && !this.claudeCodeMode ? [{ command: '/compact', description: '压缩上下文，保留原始历史' }] : []),
       { command: '/workflows', description: '当前目录的任务流程库' },
       { command: '/schedules', description: '定时 AI 任务与执行记录' },
       { command: '/remember', description: '开始录制任务流程' },
@@ -580,6 +582,17 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         else await this.toggleHistory()
         break
       case '/status': await this.openStatus(); break
+      case '/compact':
+        if (!this.apiMode || this.claudeCodeMode) { this.status = '此连接不支持宿主上下文压缩'; break }
+        if (this.busy) { this.status = '请先停止当前回合，再压缩上下文'; break }
+        try {
+          if (!this.threadId) await this.reconnect()
+          if (!this.threadId) break
+          this.busy = true
+          this.status = '正在压缩上下文…'
+          this.turnId = await this.codex.startTurn(this.threadId, '/compact', this.cwd, this.settings)
+        } catch (error: any) { this.busy = false; this.status = error.message }
+        break
       case '/workflows': await this.openWorkflows(); break
       case '/schedules': await this.openSchedules(); break
       case '/remember': this.onPromptChanged('/remember '); this.status = '用法：/remember 任务描述；任务完成后可设置 /task1 等流程别名'; break
@@ -610,6 +623,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     })
     await Promise.all([
       this.codex.client.request('thread/read', { threadId, includeTurns: false }).then(result => this.zone.run(() => {
+        if (current() && result.thread?.tokenUsage) this.applyTokenUsage(result.thread.tokenUsage)
         if (current()) this.threadStatus = {
           threadId,
           model: result.thread?.model || this.codex.getThreadConfiguration?.(threadId)?.model || null,
@@ -634,6 +648,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.contextUsedTokens = null
     this.contextWindowTokens = null
     this.sessionTotalTokens = null
+  }
+
+  private applyTokenUsage (usage: any): void {
+    const used = Number(usage?.last?.totalTokens)
+    const windowSize = Number(usage?.modelContextWindow)
+    const total = Number(usage?.total?.totalTokens)
+    if (Number.isFinite(used) && used >= 0) this.contextUsedTokens = used
+    if (Number.isFinite(windowSize) && windowSize > 0) this.contextWindowTokens = windowSize
+    if (Number.isFinite(total) && total >= 0) this.sessionTotalTokens = total
   }
 
   private pauseForQuestion (): void {
@@ -863,7 +886,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const lastTurn = turns[turns.length - 1]
     const runtimeState = history.thread.status?.type
     const busy = lastTurn?.status === 'inProgress' && (!runtimeState || runtimeState === 'active')
-    return { entries, busy, turnId: busy ? lastTurn.id : '', notice }
+    return { entries, busy, turnId: busy ? lastTurn.id : '', notice, tokenUsage: history.thread.tokenUsage }
   }
 
   private applyHistory (history: HistorySnapshot, resetScroll = false): void {
@@ -874,6 +897,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.busy = history.busy
     this.turnId = history.turnId
     this.historyNotice = history.notice
+    if (history.tokenUsage) this.applyTokenUsage(history.tokenUsage)
     if (resetScroll) this.jumpToLatest()
   }
 
@@ -998,7 +1022,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         if (!this.modelError || this.apiMode) await this.selectModel(args.join(' '))
         return
       }
-      if (['/model', '/new', '/resume', '/status', '/workflows', '/schedules', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {
+      if (['/model', '/new', '/resume', '/status', '/compact', '/workflows', '/schedules', '/remember', '/help'].includes(command.toLowerCase()) && !args.length) {
         await this.runSlashCommand(command.toLowerCase())
         return
       }
@@ -1035,7 +1059,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       await this.ensureSource()
       if (this.busy && this.turnId) {
         await this.codex.steer(this.threadId, this.turnId, text)
-        this.status = this.claudeCodeMode ? '已排队，将在当前 Claude Code 执行结束后处理' : this.apiMode ? '已排队，将在下一次模型请求时处理' : '已追加到当前任务'
+        this.status = this.claudeCodeMode ? '已排队，将在当前 Claude Code 执行结束后处理' : this.codex.profile?.runtime === 'pi' ? '已排队，将在当前 Pi 执行结束后处理' : this.apiMode ? '已排队，将在下一次模型请求时处理' : '已追加到当前任务'
         return
       }
       this.busy = true
@@ -1280,13 +1304,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }
     switch (event.method) {
       case 'thread/tokenUsage/updated': {
-        const usage = p.tokenUsage
-        const used = Number(usage?.last?.totalTokens)
-        const windowSize = Number(usage?.modelContextWindow)
-        const total = Number(usage?.total?.totalTokens)
-        if (Number.isFinite(used) && used >= 0) this.contextUsedTokens = used
-        if (Number.isFinite(windowSize) && windowSize > 0) this.contextWindowTokens = windowSize
-        if (Number.isFinite(total) && total >= 0) this.sessionTotalTokens = total
+        this.applyTokenUsage(p.tokenUsage)
         break
       }
       case 'turn/started':
@@ -1305,6 +1323,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       case 'agent/progress':
         if (!this.request && !this.retryState) this.status = p.phase === 'thinking' ? `模型正在思考…（已接收 ${p.receivedChars} 字符）`
           : p.phase === 'tools' ? '正在接收工具调用…' : '等待模型响应…'
+        break
+      case 'agent/lifecycle':
+        if (!this.busy || p.turnId && p.turnId === this.cancelledTurnId) break
+        if (p.type === 'auto_retry_start' || p.type === 'summarization_retry_scheduled') {
+          this.retryState = { turnId: this.turnId, rateLimited: isRateLimitError({ message: p.errorMessage }), retryAt: Number.isFinite(p.delayMs) ? Date.now() + Math.max(0, p.delayMs) : null, startedAt: this.retryState?.startedAt || Date.now() }
+          this.status = this.retryState.rateLimited ? '请求限流，等待后台自动重试' : '等待后台自动重试'
+        } else if (p.type === 'auto_retry_end' || p.type === 'agent_settled') this.clearRetryState()
+        else if (p.type === 'compaction_start') this.status = '正在压缩上下文…'
+        else if (p.type === 'compaction_end') { this.clearRetryState(); this.status = p.errorMessage || '上下文压缩完成' }
         break
       case 'agent/notice':
         this.entries.push({ id: `notice-${Date.now()}`, kind: 'system', text: p.message })

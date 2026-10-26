@@ -63,7 +63,7 @@ export function redactMemory (value: string, limit = 4000): string {
     .slice(0, limit)
 }
 
-export const WORKFLOW_COMMANDS = ['model', 'new', 'resume', 'status', 'workflows', 'schedules', 'remember', 'help']
+export const WORKFLOW_COMMANDS = ['model', 'new', 'resume', 'status', 'compact', 'workflows', 'schedules', 'remember', 'help']
 export function normalizeAlias (value: string): string {
   const alias = value.trim().replace(/^\//, '').toLowerCase()
   if (!/^[a-z][a-z0-9_-]{0,47}$/.test(alias) || WORKFLOW_COMMANDS.includes(alias)) throw new Error('别名须以英文字母开头，只能包含字母、数字、下划线和短横线，且不能与内置命令重复')

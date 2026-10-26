@@ -859,5 +859,20 @@
   "已等待：{0}": "Attente écoulée : {0}",
   "距离后台预计重试：{0}": "Avant la tentative estimée : {0}",
   "预计时间已到，等待后台返回结果。": "L’heure estimée est arrivée ; en attente du résultat du service.",
-  "AI 正在等待模型；终端命令可能已经完成，恢复后会先核对结果。": "L’IA attend le modèle. Les commandes peuvent être terminées ; les résultats seront vérifiés à la reprise."
+  "AI 正在等待模型；终端命令可能已经完成，恢复后会先核对结果。": "L’IA attend le modèle. Les commandes peuvent être terminées ; les résultats seront vérifiés à la reprise.",
+  "Agent 运行时": "Environnement de l’agent",
+  "内置 API Agent": "API Agent intégré",
+  "Pi 使用独立 Node 进程；仅开放 Tabby 工具，保留现有审批与终端策略。": "Pi utilise un processus Node séparé avec les outils Tabby et les politiques d’approbation et de terminal existantes.",
+  "Node 可执行文件（22.19 或更新版本）": "Exécutable Node (22.19 ou plus récent)",
+  "自动压缩上下文": "Compacter automatiquement le contexte",
+  "默认关闭；可先用 /compact 手动压缩。摘要会消耗模型额度，原始历史保留。": "Désactivé par défaut ; essayez /compact. Les résumés consomment du quota ; l’historique original est conservé.",
+  "压缩上下文，保留原始历史": "Compacter le contexte et conserver l’historique",
+  "此连接不支持宿主上下文压缩": "Cette connexion ne permet pas de compacter le contexte",
+  "请先停止当前回合，再压缩上下文": "Arrêtez le tour actuel avant de compacter",
+  "正在压缩上下文…": "Compactage du contexte…",
+  "上下文压缩完成": "Compactage terminé",
+  "历史较短，无需压缩。": "L’historique est trop court pour être compacté.",
+  "上下文已压缩；原始历史和工具结果已保留。": "Contexte compacté ; historique et résultats conservés.",
+  "压缩失败，原始历史已保留": "Échec du compactage ; historique conservé",
+  "已排队，将在当前 Pi 执行结束后处理": "En attente ; le message sera traité à la fin de l’exécution Pi actuelle"
 }
