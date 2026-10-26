@@ -13,6 +13,7 @@
 .codex-current-model{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .codex-current-reasoning{min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
 .codex-send-notice{align-self:stretch;flex:none;max-height:120px;overflow:auto;padding:6px 8px;border:1px solid #d28c27;border-radius:5px;background:rgba(210,140,39,.12);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+.codex-retry-notice{max-height:180px}
 .codex-actions .btn{padding:1px 4px;font-size:11px;line-height:20px;white-space:nowrap}
 .codex-request-actions{display:flex;gap:6px;flex-wrap:wrap}
 .codex-connection{display:inline-flex;align-items:center;justify-content:center;width:24px;color:#fff;border:0}
