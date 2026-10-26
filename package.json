@@ -33,13 +33,15 @@
     "skill:check": "node scripts/bundle-tabby-skill.mjs --check",
     "skill:update": "node scripts/update-tabby-knowledge.mjs",
     "prebuild": "npm run skill:bundle",
-    "build": "webpack --mode production",
-    "typecheck": "tsc --noEmit",
+    "build": "webpack --mode production && npm run pi:build",
+    "typecheck": "tsc --noEmit && node node_modules/typescript-pi/bin/tsc -p runtime/pi/tsconfig.json --noEmit",
     "test": "node scripts/run-tests.cjs",
     "smoke:codex": "node scripts/smoke-codex.cjs",
     "smoke:context": "node scripts/smoke-context.cjs",
     "prepack": "npm run build",
-    "install:tabby": "node scripts/install-local.mjs"
+    "install:tabby": "node scripts/install-local.mjs",
+    "pi:build": "node node_modules/typescript-pi/bin/tsc -p runtime/pi/tsconfig.json",
+    "pretest": "npm run pi:build"
   },
   "files": [
     "dist",
@@ -64,10 +66,13 @@
     "tabby-terminal": "^1.0.231-nightly.0",
     "ts-loader": "^9.5.4",
     "typescript": "^4.9.5",
+    "typescript-pi": "npm:typescript@5.9.3",
     "webpack": "^5.102.1",
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "cross-spawn": "^7.0.6"
   }
 }

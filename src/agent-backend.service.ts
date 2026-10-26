@@ -6,6 +6,7 @@ import { CodexService } from './codex.service'
 import { AgentSecretsService } from './agent-secrets.service'
 import { AgentStore } from './agent-store'
 import { ApiAgent } from './api-agent'
+import { PiBackend, probePiModel } from './pi-agent'
 import { ClaudeCodeAgent, CLAUDE_CODE_ID, claudeCodeProfile, probeClaudeCodeModel } from './claude-code-agent'
 import { TaskMemoryService } from './task-memory.service'
 import type { ScheduledTasksService } from './scheduled-tasks.service'
@@ -36,6 +37,7 @@ export class AgentBackendFactory {
       const configured = (this.config.store.codexAgent.apiProfiles as ApiProfile[] || []).find(profile => profile.id === profileId)
       if (!configured) throw new Error('找不到所选 API 连接')
       const profile = normalizeApiProfile({ ...configured, model: settings.model, reasoningEffort: settings.reasoningEffort })
+      if (profile.runtime === 'pi') return probePiModel(profile, () => this.secrets.read(profile), testSignal, reportUsage)
       return probeApiModel(profile, () => this.secrets.read(profile), testSignal, reportUsage)
     }, signal)
   }
@@ -56,6 +58,6 @@ export class AgentBackendFactory {
     if (!configured) throw new Error('找不到所选 API 连接，请重新选择')
     const profile = normalizeApiProfile(configured)
     if (!store) throw new Error('无法定位 Tabby 配置目录，API 会话需要持久化存储')
-    return new ApiAgent(profile, store, () => this.secrets.read(profile))
+    return profile.runtime === 'pi' ? new PiBackend(profile, store, () => this.secrets.read(profile)) : new ApiAgent(profile, store, () => this.secrets.read(profile))
   }
 }

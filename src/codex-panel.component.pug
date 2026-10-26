@@ -60,6 +60,8 @@
         strong {{t(threadStateLabel)}}
         span {{t("当前模型（查询时）")}}
         strong {{threadStatus?.model || t("未上报")}}
+        span(*ngIf='runtimeInfo') {{t("Agent 运行时")}}
+        strong(*ngIf='runtimeInfo') {{runtimeInfo}}
         span {{apiMode ? t("配置中的模型（重连生效）") : t("下回合模型")}}
         strong {{settings.model || t("Codex 默认配置")}}
         span {{t("当前推理强度（查询时）")}}

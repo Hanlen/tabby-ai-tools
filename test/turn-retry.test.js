@@ -208,3 +208,38 @@ test('retry UI clock is cleared when its panel is destroyed', async t => {
   assert.equal(f.panel.retryState, undefined)
   for (const [ms, expected] of [[0, '00:00'], [-1000, '00:00'], [1500, '00:02'], [436000, '07:16']]) assert.equal(retryDuration(ms), expected)
 })
+
+test('structured Pi lifecycle uses explicit delay, stays busy until turn completion and ignores late cancellation events', async t => {
+  const f = fixture(t)
+  await start(f)
+  const now = Date.now()
+  f.event('agent/lifecycle', { type: 'auto_retry_start', turnId: f.panel.turnId, delayMs: 2500, attempt: 1, maxAttempts: 2, errorMessage: '429 Too Many Requests' })
+  assert.equal(f.panel.retryState.rateLimited, true)
+  assert.ok(f.panel.retryState.retryAt >= now + 2500)
+  assert.ok(f.panel.retryState.retryAt < now + 3000)
+  assert.equal(f.started.length, 1)
+  f.event('agent/lifecycle', { type: 'auto_retry_end', success: true })
+  assert.equal(f.panel.retryState, undefined)
+  f.event('agent/lifecycle', { type: 'compaction_start' })
+  assert.equal(f.panel.status, '正在压缩上下文…')
+  f.event('agent/lifecycle', { type: 'agent_settled' })
+  assert.equal(f.panel.busy, true)
+  await f.panel.stop()
+  f.event('agent/lifecycle', { type: 'auto_retry_start', turnId: 'turn-1', delayMs: 5000, errorMessage: '429' })
+  assert.equal(f.panel.retryState, undefined)
+})
+
+test('/compact uses a separate idle maintenance turn without creating or replacing a goal', async t => {
+  const f = fixture(t)
+  f.backend.profile = { id: 'pi', runtime: 'pi', name: 'Pi' }
+  f.backend.client.close = () => {}
+  let goals = 0
+  f.backend.setGoal = async () => { goals++ }
+  await f.panel.ngOnInit()
+  await f.panel.runSlashCommand('/compact')
+  assert.equal(f.started.length, 1)
+  assert.equal(f.started[0][1], '/compact')
+  assert.equal(goals, 0)
+  await f.panel.runSlashCommand('/compact')
+  assert.equal(f.started.length, 1, 'busy compaction cannot be queued or interleaved')
+})
