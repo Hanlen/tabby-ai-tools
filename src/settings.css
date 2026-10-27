@@ -61,6 +61,8 @@
 .settings-field-wide { grid-column: 1 / -1; }
 .settings-field > label { margin: 0; font-size: 12px; font-weight: 500; line-height: 1.5; }
 .settings-field .form-control { min-width: 0; width: 100%; }
+.settings-field > .settings-checkbox-label { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
+.settings-checkbox-label input { flex: none; width: 16px; height: 16px; margin: 0; }
 .settings-field small { display: block; overflow-wrap: anywhere; }
 .settings-input-action { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .settings-input-action input { flex: 1; }

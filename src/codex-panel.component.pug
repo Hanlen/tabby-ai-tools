@@ -33,7 +33,7 @@
     .codex-control-summary([class.codex-control-active]='controlledTabs.length > 0')
       button.codex-summary-item(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='controlledTabs.length ? t("当前控制 {0} 个终端，输入已锁定；点击查看列表", [controlledTabs.length]) : t("当前未控制终端，用户可操作")') {{t("控 {0}", [(controlledTabs.length || '—')])}}
       button.codex-release-all(type='button', *ngIf='controlledTabs.length', (click)='releaseControlledTabs()', [attr.title]='t("临时释放全部受控终端，取回输入权")', [attr.aria-label]='t("临时释放全部受控终端")') {{t("释放")}}
-    button.codex-summary-item.codex-forward-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='sourceTerminal ? t("自动转发已开启；点击详情可停止") : t("自动转发未绑定；可从目标终端点击工具栏图标绑定")') {{sourceTerminal ? t("转发开") : t("转发关")}}
+    button.codex-summary-item.codex-forward-summary(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.title]='t("自动转发已停用；执行中由 AI 用 read_tab 按需读取。")') {{t("转发关")}}
   .codex-status-detail(*ngIf='statusOpen')
     .codex-detail-heading
       strong {{t("当前状态")}}
@@ -60,6 +60,8 @@
         strong {{t(threadStateLabel)}}
         span {{t("当前模型（查询时）")}}
         strong {{threadStatus?.model || t("未上报")}}
+        span(*ngIf='runtimeInfo') {{t("Agent 运行时")}}
+        strong(*ngIf='runtimeInfo') {{runtimeInfo}}
         span {{apiMode ? t("配置中的模型（重连生效）") : t("下回合模型")}}
         strong {{settings.model || t("Codex 默认配置")}}
         span {{t("当前推理强度（查询时）")}}
@@ -90,10 +92,11 @@
           span {{t("{0}（{1}） · 命令执行中，终端输入已锁定 · {2}", [(control.title), (control.tabId), (control.command)])}}
           button.btn.btn-outline-secondary.btn-sm(type='button', (click)='releaseControlledTab(control.tabId)', [attr.aria-label]='t("临时释放终端 {0}", [control.title])') {{t("临时释放")}}
       .codex-detail-section
-        strong {{t("自动转发：{0}", [(sourceTerminal ? t("已开启") : t("未绑定"))])}}
-        small(*ngIf='sourceTerminal') {{t("已绑定终端：{0}。仅自动转发新增输出；Codex 可按需访问所有标签。", [(sourceTerminal.title)])}}
+        strong {{t("终端上下文")}}
+        small {{t("自动转发已停用；执行中由 AI 用 read_tab 按需读取。")}}
+        small(*ngIf='sourceTerminal') {{t("已绑定终端：{0}。仅在发送或继续时附带有界摘要。", [(sourceTerminal.title)])}}
         small(*ngIf='!sourceTerminal') {{t("可从目标终端点击工具栏图标绑定；Codex 仍可按需访问所有标签。")}}
-        button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') {{t("停止自动转发")}}
+        button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sourceTerminal', (click)='unbindSource()') {{t("解除绑定")}}
   .codex-history(*ngIf='historyOpen')
     .codex-history-heading
       strong {{t("当前目录的 Tabby AI Tools 会话")}}
@@ -217,7 +220,10 @@
       button.btn.btn-link.btn-sm(type='button', (click)='openSchedules()') {{t("定时任务{0}", [(scheduledApproval ? t(" · 待审批") : '')])}}
     small.codex-permission-notice(*ngIf='claudeCodeMode') {{t("Claude Code 工具使用终端账户权限；补充消息在当前执行结束后处理；token 用量不代表剩余订阅额度。")}}
     small.codex-permission-notice(*ngIf='apiMode && !claudeCodeMode') {{t("API 工具操作使用终端账户权限；追加输入在下一次模型请求时处理。Thinking 可在上方调整，下一回合生效。")}}
-    .codex-send-notice(*ngIf='sendNotice', role='alert') {{t(sendNotice)}}
+    .codex-send-notice.codex-retry-notice(*ngIf='retryState')
+      strong(role='status', aria-live='polite') {{t(retryState.rateLimited ? "请求限流，等待后台自动重试" : "等待后台自动重试")}}
+      div(aria-live='off') {{retryNotice}}
+    .codex-send-notice(*ngIf='sendNotice && !retryState', role='alert') {{t(sendNotice)}}
     button.btn.btn-outline-primary.btn-sm(type='button', *ngIf='goalStatus === "active" && !busy', (click)='continueTask()') {{t("继续当前目标")}}
     .codex-slash-menu(*ngIf='visibleSlashCommands.length && !request && !loading', role='listbox', [attr.aria-label]='t("命令")')
       button.codex-slash-option(type='button', role='option', *ngFor='let item of visibleSlashCommands; let index = index', [class.codex-slash-active]='slashSelection === index', [attr.aria-selected]='slashSelection === index', (click)='runSlashCommand(item.command)')
@@ -268,5 +274,5 @@
             option(value='never') {{t("不询问")}}
       .codex-compose-actions
         button.btn.btn-outline-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') {{t("停止")}}
-        button.btn.btn-primary.btn-sm(type='button', (click)='send()', [disabled]='!prompt.trim() || loading || !!request') {{busy ? t("追加指令") : t("发送")}}
+        button.btn.btn-primary.btn-sm(type='button', (click)='send()', [disabled]='!prompt.trim() || loading || !!request || !!retryState') {{busy ? t("追加指令") : t("发送")}}
     small.codex-permission-notice(*ngIf='permissionNotice') {{t(permissionNotice)}}

@@ -7,6 +7,7 @@ import { AgentSecretsService } from './agent-secrets.service'
 import { agentId } from './agent-store'
 import { apiUrl, withAbort } from './api-transport'
 import { ApiProviderAdapter } from './api-provider'
+import { probePiModel } from './pi-agent'
 import { discoverApiModels } from './api-models'
 import type { CodexModel } from './codex.service'
 import { TaskMemoryService } from './task-memory.service'
@@ -250,6 +251,11 @@ export class CodexSettingsComponent implements OnDestroy {
     profile.apiFormat = format
     this.modelConnectionChanged(profile)
   }
+  changeRuntime (profile: ApiProfile, runtime: 'api' | 'pi'): void {
+    if (runtime === 'pi') profile.runtime = 'pi'
+    else delete profile.runtime
+    this.modelConnectionChanged(profile)
+  }
   keySource (profile: ApiProfile): ApiKeySource { return apiKeySource(profile) }
   endpointRegion (profile: ApiProfile): string {
     const presets = this.providerRegions[profile.provider]
@@ -312,6 +318,11 @@ export class CodexSettingsComponent implements OnDestroy {
       Object.assign(snapshot, normalizeApiProfile(snapshot))
       if (!snapshot.model.trim()) throw new Error('请填写模型 ID')
       apiUrl(snapshot.baseUrl, apiPath(snapshot))
+      if (snapshot.runtime === 'pi') {
+        await probePiModel(snapshot, () => this.secrets.read(snapshot), controller.signal, () => {})
+        update(`测试成功：${snapshot.model} · ${Date.now() - started} ms · SSE 响应完成`, false)
+        return
+      }
       const key = await withAbort(this.secrets.read(snapshot), controller.signal)
       const adapter = new ApiProviderAdapter(snapshot, key)
       await adapter.generate([adapter.user('Reply with OK only.')], 'This is a connection test. Reply briefly and do not call tools.', [], controller.signal,

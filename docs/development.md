@@ -2,7 +2,7 @@
 
 [← 返回 README](../README.md) · [使用指南](guide.md)
 
-后续设置页的信息组织、Provider 定义和每周接入排期见 [Provider 配置改版与路线图](provider-roadmap.md)。该文档是待实施计划，功能与发布状态按每周验收记录更新。
+后续供应商设置页改版尚未实现；规划和研究资料仅保留在本地，不随插件分发。功能与发布状态以实际代码和发布说明为准。
 
 v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
 
@@ -111,3 +111,21 @@ API / Claude Code 的 active Goal 在普通文本响应结束后由 `ApiAgent` �
 `model-reasoning.ts` 为缺少服务端能力元数据的已知模型提供保守等级，模型浮窗对 API / Claude Code 统一提供第二步、默认值与手动输入。离线 HTTP / CLI 测试覆盖选中后保存、下一次推理请求中的供应商原生参数、默认值清除及保存失败回滚。不以真实模型调用作为常规验证。
 
 Kimi／百炼 Coding Plan 的实现与验证边界见 [配置说明](coding-plans.md)。本地夹具还验证区域端点预设、保留自定义代理和密钥草稿、切换区域取消旧模型发现、两套 Kimi Key 配置、持久缓存标识、仅思考模型参数和百炼 `enable_thinking`。没有运行收费模型或证明真实套餐准入；区域的可用模型与额度须以各平台控制台为准。
+
+## 终端回显与重试回归
+
+面板不订阅 `terminalOutput.updates$`，移除了 700ms / 2,000 字符批次经 `turn/steer` 注入的路径。终端服务仍使用有界缓冲供 `read_tab` 和用户发送／继续时的一次摘要读取；重试等待只用每秒刷新的本地 UI 时钟展示已等待时长与可用的倒计时，不创建模型请求或新的后台重试循环；恢复、断线、换会话、取消和销毁面板时清理 UI 时钟。
+
+`turn-retry.ts` 识别字符串错误类别与结构化 `httpStatusCode: 429`。本地 Codex app-server 生成的 `ErrorNotification` 仅包含 `error / willRetry / threadId / turnId`；`TurnError` 的 `message / additionalDetails` 可以包含重试时长，但没有独立截止时间字段。只解析明确的 `retry in/after N seconds/ms/minutes` 文本；缺失时显示未知。后台日志中未发给客户端的信息不会被推测或轮询数据库补齐。
+
+`test/turn-retry.test.js` 使用真实终端缓冲和模拟后台事件，覆盖一万段高频回显、等待期合并、重试时间缺失与显式时长、重复错误合并、旧回合事件、停止失败／成功、断线与恢复、UI 时钟自动刷新与清理。`test/task-memory-panel.test.js` 覆盖第二步已发送后限流、中断、恢复读取验收并继续，不重复发送 stash 或解压。全部为本地夹具；未访问用户 Windows 现场日志、未恢复原任务，也没有真实模型压力测试或 Tabby 桌面端到端验证。
+
+## Optional Pi sidecar and context projections
+
+Use Node 22.19+ (`.nvmrc` and both CI workflows pin 22.19.0). Angular 15/webpack retain TypeScript 4.9; `typescript-pi` aliases the pinned 5.9.3 compiler for `runtime/pi/tsconfig.json` in NodeNext mode. `npm run typecheck` checks both boundaries, `npm test` first builds the sidecar, and `npm run build` emits `dist/index.js` plus `dist/pi/sidecar.mjs`. Pi is a runtime npm dependency, loaded only in the external Node process. Do not import its ESM SDK into the Angular bundle or assume the host Electron Node meets its engine requirement.
+
+`PiBackend` reuses the host's API thread/UI/tool-policy port, while `PiAdapter` delegates the complete native loop to the SDK. The pipe acknowledges persisted session setup and accepted input before inference. Host action intents/results are stored before/after execution; repeated IDs use the saved result or return unknown-state evidence. Process exit aborts pending host tool waits. No process auto-restart or whole-prompt retry is allowed. `agent/lifecycle` carries structured retry, compaction and settled events; the panel clock only displays the supplied delay.
+
+`api-context.ts` owns immutable API request projections. Summaries record source hashes/ranges and retain whole batches from a user-turn boundary; private reasoning is not passed to the summarizer. Pi session JSONL is the authority for Pi model context, with the Tabby store used for UI, goals, journals and portable migrations. The existing structured workflow state and checkpoint enforcement stay in the host.
+
+`test/pi-agent.test.js` uses actual local HTTP streaming fixtures, without credentials or real model calls. Validate persistence, retry-after-tool, cancellation, budget/quota, repeated compaction and raw entry retention. The isolated Linux desktop fixture additionally loaded the plugin in official Tabby 1.0.238 (Electron 43.7.0 / Node 24.21.0), rendered runtime settings and exercised the sidebar → Node 22.19 Pi → host list_tabs → verified Goal flow. It used Xvfb and no real model. Windows/macOS, SSH/PTY mutations and real-provider execution still require their actual environments. See [runtime details](pi.md) and the [unreleased change note](releases/pi-runtime.md).
