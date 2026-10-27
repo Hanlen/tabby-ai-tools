@@ -46,11 +46,11 @@ async function fixture (t, handler, overrides = {}) {
   await agent.connect(settings)
   return { root, store, profile, agent, requests }
 }
-function reply (res, content, calls) {
+function reply (res, content, calls, finishReason) {
   res.writeHead(200, { 'content-type': 'text/event-stream' })
   res.write('data: ' + JSON.stringify({ id: 'chat-fixture', object: 'chat.completion.chunk', choices: [{ index: 0,
     delta: { role: 'assistant', ...(content ? { content } : {}), ...(calls ? { tool_calls: calls.map((call, index) => ({ index, id: call.id || `action-${index}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args || {}) } })) } : {}) }, finish_reason: null }] }) + '\n\n')
-  res.write('data: ' + JSON.stringify({ id: 'chat-fixture', choices: [{ index: 0, delta: {}, finish_reason: calls ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } }) + '\n\n')
+  res.write('data: ' + JSON.stringify({ id: 'chat-fixture', choices: [{ index: 0, delta: {}, finish_reason: finishReason || (calls ? 'tool_calls' : 'stop') }], usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } }) + '\n\n')
   res.end('data: [DONE]\n\n')
 }
 
@@ -477,4 +477,98 @@ integration('native Goal continuation treats fresh tool observations as progress
   assert.equal(result.status, 'completed', JSON.stringify(result))
   assert.equal(observed, 3)
   assert.equal(f.requests.length, 8)
+})
+
+for (const compactable of [false, true]) integration(`review regression: interrupted steering survives ${compactable ? 'real' : 'no-op'} compaction and restart`, { timeout: 30000 }, async t => {
+  const warmTurns = compactable ? 4 : 1
+  let reached
+  const pendingRequest = new Promise(resolve => { reached = resolve })
+  const f = await fixture(t, (_req, res, _data, n) => {
+    if (n === warmTurns + 1) { reached(); return }
+    reply(res, compactable ? 'Preserve constraints and observed evidence. '.repeat(180) : 'Observed.')
+  })
+  const id = await f.agent.openThread(process.cwd(), settings)
+  async function turn (agent, text) {
+    const done = finished(agent)
+    await agent.startTurn(id, text, process.cwd(), settings)
+    const result = await done
+    assert.equal(result.status, 'completed', JSON.stringify(result))
+  }
+  for (let i = 0; i < warmTurns; i++) await turn(f.agent, compactable ? 'Earlier constraints ' + 'observed terminal data '.repeat(180) : 'initial request')
+  const interrupted = finished(f.agent)
+  const running = await f.agent.startTurn(id, 'Wait for a result', process.cwd(), settings)
+  await pendingRequest
+  await f.agent.steer(id, running, 'QUEUED_CORRECTION: preserve this user constraint')
+  await f.agent.interrupt(id, running)
+  assert.equal((await interrupted).status, 'interrupted')
+  const before = await f.store.load(id)
+  assert.ok(JSON.stringify(before.messages.slice(before.piSession.messageCount)).includes('QUEUED_CORRECTION'))
+  const callsBefore = f.requests.length
+  await turn(f.agent, '/compact')
+  const after = await f.store.load(id)
+  assert.equal(after.piSession.messageCount, before.piSession.messageCount, 'compaction must not acknowledge unimported host input')
+  const entries = fs.readFileSync(after.piSession.file, 'utf8').trim().split('\n').map(JSON.parse)
+  assert.equal(entries.filter(e => e.type === 'compaction').length, compactable ? 1 : 0)
+  assert.equal(f.requests.length > callsBefore, compactable)
+  const resumed = new PiBackend(f.profile, f.store, async () => '')
+  t.after(() => resumed.close())
+  await resumed.connect(settings)
+  await resumed.resumeThread(id, process.cwd(), settings)
+  await turn(resumed, 'Continue from actual state')
+  const handoff = JSON.stringify(f.requests.at(-1).body.messages.filter(m => m.role === 'user').at(-1).content)
+  assert.ok(handoff.includes('QUEUED_CORRECTION'), 'the queued correction must reach Pi on continuation')
+  assert.ok(handoff.includes('上一回合中断或失败'), 'the unknown-outcome recovery notice must also reach Pi')
+  const native = fs.readFileSync(after.piSession.file, 'utf8').trim().split('\n').map(JSON.parse)
+  assert.equal(native.filter(e => e.type === 'message' && e.message.role === 'user' && JSON.stringify(e.message).includes('QUEUED_CORRECTION')).length, 1)
+})
+
+for (const activeGoal of [false, true]) integration(`review regression: length-limited reply remains incomplete ${activeGoal ? 'with' : 'without'} a Goal`, { timeout: 15000 }, async t => {
+  const f = await fixture(t, (_req, res) => reply(res, 'PARTIAL_REPLY', undefined, 'length'))
+  const id = await f.agent.openThread(process.cwd(), settings)
+  if (activeGoal) await f.agent.setGoal(id, 'Finish the requested answer', 0)
+  const done = finished(f.agent)
+  await f.agent.startTurn(id, 'Answer the request', process.cwd(), settings)
+  const result = await done
+  assert.equal(result.status, 'failed', JSON.stringify(result))
+  assert.match(result.error.message, /output.*limit|incomplete/i)
+  assert.equal(f.requests.length, 1, 'truncation must not silently replay the prompt or continue the Goal')
+  const saved = await f.store.load(id)
+  assert.ok(saved.turns.at(-1).items.some(item => item.type === 'agentMessage' && item.text.includes('PARTIAL_REPLY')))
+  assert.equal(saved.totalTokens, 30)
+  if (activeGoal) assert.equal(saved.goal.status, 'active')
+})
+
+for (const baseUrl of ['https://api.kimi.com/coding/v1', 'https://api.kimi.ai/coding/v1', 'https://proxy.example/kimi/v1']) integration(`review regression: Kimi Coding wire compatibility at ${baseUrl}`, { timeout: 15000 }, async t => {
+  const { pathToFileURL } = require('node:url')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-kimi-wire-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const entry = path.join(root, 'capture.mjs')
+  // Intercept the real SDK fetch boundary, keeping production URLs for URL inference.
+  // No DNS, credentials or real model traffic is involved.
+  fs.writeFileSync(entry, `globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+    const body = JSON.parse(await request.text())
+    process.stdout.write(JSON.stringify({type:'wire',url:request.url,body})+'\\n')
+    const events = [{id:'fixture',choices:[{index:0,delta:{role:'assistant',content:'OK'},finish_reason:null}]},
+      {id:'fixture',choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}}]
+    return new Response(events.map(e=>'data: '+JSON.stringify(e)+'\\n\\n').join('')+'data: [DONE]\\n\\n',{headers:{'content-type':'text/event-stream'}})
+  }
+  await import(${JSON.stringify(pathToFileURL(path.resolve(__dirname, '../dist/pi/sidecar.mjs')).href)})`)
+  let wire
+  const result = await runPiProcess(process.execPath, { directory: path.join(root, 'sessions'), key: 'fixture-key',
+    profile: { provider: 'kimi-coding', baseUrl, model: 'kimi-for-coding', thinking: 'enabled', reasoningEffort: 'high', contextWindow: 8000, maxOutputTokens: 512 },
+    system: 'Use the supplied system instructions.', tools: [], sourceOffset: 0, sourceMessages: [[{ role: 'user', content: 'Reply OK' }]], activeGoal: false,
+  }, new AbortController().signal, async (message, send) => {
+    if (message.type === 'ready') send({ type: 'start' })
+    if (message.type === 'accepted') send({ type: 'accepted' })
+    if (message.type === 'wire') wire = message
+  }, entry)
+  assert.equal(result.text, 'OK')
+  assert.equal(wire.url, baseUrl + '/chat/completions')
+  assert.ok(wire.body.messages.some(m => m.role === 'system'))
+  assert.ok(wire.body.messages.every(m => m.role !== 'developer'))
+  assert.equal(wire.body.max_tokens, 512)
+  assert.equal(wire.body.max_completion_tokens, undefined)
+  assert.equal(wire.body.reasoning_effort, 'high')
+  assert.deepEqual(wire.body.thinking, { type: 'enabled' })
 })

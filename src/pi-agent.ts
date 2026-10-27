@@ -149,7 +149,9 @@ export class PiAdapter extends ApiProviderAdapter {
     }).catch(error => { throw new Error(safe(String(error.message || error))) })
     if (compact) { text = result.text; onText(text) }
     // Only UI/portable history is kept here; Pi JSONL is the sole native model context.
-    this.session.piSession!.messageCount = messages.length + recorded.length + 1
+    // Compaction does not import host messages. Keep its input, queued steering and
+    // recovery notices pending until a normal prompt acknowledges them in Pi.
+    if (!compact) this.session.piSession!.messageCount = messages.length + recorded.length + 1
     await fs.chmod(this.session.piSession!.file, 0o600)
     return { text, messages: [...recorded, { role: 'assistant', content: text }], tools: [], inputTokens, outputTokens: 0, totalTokens: total, usageReported: !compact, stop: 'end' }
   }
