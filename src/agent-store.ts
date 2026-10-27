@@ -9,6 +9,7 @@ export function profileFingerprint (p: ApiProfile): string {
   // Keep existing provider fingerprints stable; custom protocols have incompatible native history.
   const identity = [p.id, p.provider, p.baseUrl.replace(/\/+$/, ''), p.model]
   if (p.provider === 'custom') identity.push(usesResponsesApi(p) ? 'responses' : 'chat-completions')
+  if (p.runtime === 'pi') identity.push('pi')
   return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
 }
 export interface ApiTurn {
@@ -27,7 +28,11 @@ export interface ApiSession {
   messages: any[]
   turns: ApiTurn[]
   totalTokens: number
+  lastInputTokens?: number
   claudeSession?: { id: string; messageCount: number }
+  piSession?: { file: string; messageCount: number }
+  compactions?: { summary: string; firstKeptIndex: number; sourceHash: string; createdAt: number; tokens: number }[]
+  actions?: Record<string, { signature: string; status: 'pending' | 'completed'; result?: { id: string; result: string; error?: boolean } }>
   toolLoopState?: ToolLoopState
   goal?: { objective: string; status: string; tokenBudget: number; usedTokens: number }
 }
@@ -35,6 +40,7 @@ export interface ApiSession {
 export class AgentStore {
   private writes = Promise.resolve()
   constructor (private root: string) {}
+  piDirectory (id: string): string { this.file(id); return path.join(this.root, 'pi', id) }
   private file (id: string): string {
     if (!/^api-[a-f0-9]{32}$/.test(id)) throw new Error('无效的 API 会话 ID')
     return path.join(this.root, id + '.json')

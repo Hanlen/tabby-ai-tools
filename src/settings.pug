@@ -195,6 +195,20 @@
                 span.section-dot(aria-hidden='true')
                 | {{t("连接设置")}}
               .settings-fields
+                .settings-field.settings-field-wide
+                  label([attr.for]='"api-runtime-" + profile.id') {{t("Agent 运行时")}}
+                  select.form-control([id]='"api-runtime-" + profile.id', [ngModel]='profile.runtime || "api"', (ngModelChange)='changeRuntime(profile, $event)')
+                    option(value='api') {{t("内置 API Agent")}}
+                    option(value='pi') Pi SDK
+                  small.settings-muted(*ngIf='profile.runtime === "pi"') {{t("Pi 使用独立 Node 进程；仅开放 Tabby 工具，保留现有审批与终端策略。")}}
+                .settings-field.settings-field-wide(*ngIf='profile.runtime === "pi"')
+                  label([attr.for]='"pi-node-" + profile.id') {{t("Node 可执行文件（22.19 或更新版本）")}}
+                  input.form-control([id]='"pi-node-" + profile.id', [(ngModel)]='profile.piNodeExecutable', (ngModelChange)='modelConnectionChanged(profile)', placeholder='node', spellcheck='false')
+                .settings-field.settings-field-wide
+                  label.settings-checkbox-label([attr.for]='"api-compact-" + profile.id')
+                    input(type='checkbox', [id]='"api-compact-" + profile.id', [(ngModel)]='profile.autoCompact', (ngModelChange)='save()')
+                    span {{t("自动压缩上下文")}}
+                  small.settings-muted {{t("默认关闭；可先用 /compact 手动压缩。摘要会消耗模型额度，原始历史保留。")}}
                 .settings-field
                   label([attr.for]='"api-name-" + profile.id') {{t("连接名称")}}
                   input.form-control([id]='"api-name-" + profile.id', [(ngModel)]='profile.name', (ngModelChange)='save()', [attr.placeholder]='t("为这个连接取个名字")')

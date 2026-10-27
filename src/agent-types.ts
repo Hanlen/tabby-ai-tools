@@ -8,7 +8,10 @@ export type ApiFormat = 'chat-completions' | 'responses'
 export interface ApiProfile {
   id: string
   /** Local CLI engine; never send this profile to an HTTP API adapter. */
-  runtime?: 'claude-code'
+  runtime?: 'claude-code' | 'pi'
+  /** External Node >=22.19 executable, never the Electron executable. */
+  piNodeExecutable?: string
+  autoCompact?: boolean
   name: string
   provider: ApiProvider
   /** Custom OpenAI-compatible connections default to Chat Completions. */
@@ -55,6 +58,7 @@ export interface AgentClient extends EventEmitter {
 export interface AgentBackend {
   readonly client: AgentClient
   readonly profile?: ApiProfile
+  readonly runtimeInfo?: string
   getThreadConfiguration(threadId: string): ThreadConfiguration | undefined
   connect(settings: AgentSettings): Promise<void>
   openThread(cwd: string, settings: AgentSettings, savedId?: string): Promise<string>
@@ -123,6 +127,7 @@ export function configuredToolRoundLimit (profile: ApiProfile): number {
 }
 
 export function normalizeApiProfile (configured: ApiProfile): ApiProfile {
+  if (configured.runtime && !['claude-code', 'pi'].includes(configured.runtime)) throw new Error('不支持的 Agent 运行时')
   return { ...configured, threads: configured.threads || {}, baseUrl: configured.baseUrl?.trim() || PROVIDER_URLS[configured.provider],
     model: configured.model?.trim() || '', thinking: configured.thinking || 'default', reasoningEffort: configured.reasoningEffort || '',
     maxOutputTokens: Math.floor(Math.max(256, Math.min(131072, Number(configured.maxOutputTokens) || 4096))),
