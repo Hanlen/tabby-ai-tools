@@ -1,3 +1,14 @@
+import type { OpenAICompletionsCompat } from '@earendil-works/pi-ai'
+
+/** Provider identity is lost when registering models under the isolated tabby ID. */
+export function providerCompat (profile: { provider: string }): OpenAICompletionsCompat | undefined {
+  if (profile.provider === 'kimi-coding') return {
+    supportsDeveloperRole: false, maxTokensField: 'max_tokens', supportsStore: false,
+    supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true,
+  }
+  return undefined
+}
+
 /** Keep the existing Tabby connection settings meaningful at Pi's request boundary. */
 export function providerPayload (profile: any, payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload

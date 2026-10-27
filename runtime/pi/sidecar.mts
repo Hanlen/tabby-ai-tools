@@ -3,7 +3,7 @@ import { mkdir, chmod } from 'node:fs/promises'
 import path from 'node:path'
 import { InMemoryCredentialStore, createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai'
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent'
-import { providerPayload } from './provider.mjs'
+import { providerCompat, providerPayload } from './provider.mjs'
 
 process.umask(0o077)
 
@@ -40,6 +40,7 @@ async function run (input: any) {
   const baseUrl = profile.provider === 'claude' ? profile.baseUrl.replace(/\/v1\/?$/, '') : profile.baseUrl
   runtime.registerProvider('tabby', { baseUrl, api, apiKey: 'tabby-runtime-key', authHeader: !!input.key,
     models: [{ id: profile.model, name: profile.model, api, input: ['text'], reasoning: profile.thinking === 'enabled' || profile.thinking !== 'disabled' && !!profile.reasoningEffort,
+      compat: providerCompat(profile),
       thinkingLevelMap: { minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
       contextWindow: profile.contextWindow || 128000, maxTokens: profile.maxOutputTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] })
@@ -125,7 +126,8 @@ async function run (input: any) {
     }
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message as AssistantMessage
-      lastError = message.stopReason === 'error' ? message.errorMessage || 'Pi inference failed' : ''
+      lastError = message.stopReason === 'length' ? 'Pi response reached the output token limit; the reply is incomplete.'
+        : message.stopReason === 'error' ? message.errorMessage || 'Pi inference failed' : ''
       lastText = message.content.filter(part => part.type === 'text').map(part => part.text).join('')
     }
     if (['auto_retry_start', 'auto_retry_end', 'compaction_start', 'compaction_end', 'summarization_retry_scheduled', 'agent_settled'].includes(event.type)) send({ type: 'lifecycle', event })
