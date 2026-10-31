@@ -2,10 +2,12 @@
 
 Version 0.5.0 offers **Pi SDK** as an optional runtime for API connections. It uses pinned `@earendil-works/pi-coding-agent` / `pi-ai` 1.4.0 in a separate ESM Node process. Codex and Claude Code remain independent CLI connections.
 
+Since **0.5.1**, the release includes a self-contained Pi JavaScript bundle and third-party notices. Tabby installs no Pi SDK dependency tree and runs no Pi dependency postinstall scripts. Installing the plugin does not require a system `node` command. Only using the optional Pi runtime requires external Node 22.19+; the Codex, Claude Code and built-in API connections keep their existing requirements. Version 0.5.0 could fail installation when `protobufjs` tried to run its postinstall script without `node` on PATH; update to 0.5.1 rather than disabling install scripts globally.
+
 ## Setup
 
 1. Install an external **Node 22.19.0 or newer**. Updating your shell's Node does not update Electron's embedded Node.
-2. Install or update `tabby-ai-tools` to version 0.5.0 or newer in **Settings → Plugins**, then restart Tabby. For source installations, use Node 22.19+ to run `npm ci`, `npm run build` and `npm run install:tabby -- "<Plugins Directory>"`; the installer also installs runtime dependencies.
+2. Install or update `tabby-ai-tools` to version 0.5.1 or newer in **Settings → Plugins**, then restart Tabby. For source installations, use Node 22.19+ to run `npm ci`, `npm run build` and `npm run install:tabby -- "<Plugins Directory>"`; the installer copies the built runtime without running npm in the plugin directory.
 3. In **Settings → AI Tools**, select an API connection, choose **Agent runtime → Pi SDK**, and enter its external Node executable if `node` is absent from Tabby's PATH. Use a real Node executable, not Tabby's executable or a shell command with flags.
 4. Keep the existing provider, Base URL, model ID and key source. OpenAI uses Responses, Claude API uses Anthropic Messages, and the other presets use Chat Completions; custom connections keep their selected protocol. Kimi Coding explicitly uses `system` messages and `max_tokens`, including international and proxy endpoints, rather than relying on SDK URL detection. API billing applies; choosing Pi does not provide a ChatGPT or Claude subscription login.
 5. Connect from the sidebar. The sidebar’s **Details** panel reports external Node and host Node/Electron versions. The explicit connection test uses the real Pi process and a harmless nonce tool; it consumes model quota when requested.

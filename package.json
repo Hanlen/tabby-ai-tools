@@ -1,6 +1,6 @@
 {
   "name": "tabby-ai-tools",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A persistent AI agent sidebar for Tabby with Codex, Claude Code, OpenAI-compatible providers, DeepSeek, GLM, Kimi, and Alibaba Cloud Coding Plan support",
   "repository": {
     "type": "git",
@@ -40,7 +40,8 @@
     "smoke:context": "node scripts/smoke-context.cjs",
     "prepack": "npm run build",
     "install:tabby": "node scripts/install-local.mjs",
-    "pi:build": "node node_modules/typescript-pi/bin/tsc -p runtime/pi/tsconfig.json",
+    "pi:build": "node scripts/build-pi.mjs",
+    "test:package": "node scripts/check-package-install.mjs",
     "pretest": "npm run pi:build"
   },
   "files": [
@@ -55,9 +56,12 @@
     "@angular/common": "^15.2.10",
     "@angular/core": "^15.2.10",
     "@angular/forms": "^15.2.10",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^18.19.0",
     "apply-loader": "^2.0.0",
+    "esbuild": "0.28.2",
     "pug": "^2.0.4",
     "pug-loader": "^2.4.0",
     "rxjs": "^7.8.2",
@@ -71,8 +75,6 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
     "cross-spawn": "^7.0.6"
   }
 }

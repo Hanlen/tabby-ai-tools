@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, copyFileSync, cpSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pluginsDir = process.argv[2]
@@ -27,23 +26,14 @@ mkdirSync(destination, { recursive: true })
 copyFileSync(join(projectDir, 'package.json'), join(destination, 'package.json'))
 cpSync(join(projectDir, 'dist'), join(destination, 'dist'), { recursive: true, force: true })
 if (existsSync(join(projectDir, 'docs'))) {
-  cpSync(join(projectDir, 'docs'), join(destination, 'docs'), { recursive: true, force: true })
+  cpSync(join(projectDir, 'docs'), join(destination, 'docs'), { recursive: true, force: true,
+    filter: source => !/roadmap|research/i.test(basename(source)) })
 }
 cpSync(join(projectDir, 'skills'), join(destination, 'skills'), { recursive: true, force: true })
 for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'VALIDATION.md']) {
   if (existsSync(join(projectDir, file))) copyFileSync(join(projectDir, file), join(destination, file))
 }
-// The ESM sidecar loads Pi at runtime, outside webpack's plugin bundle.
-// Use npm's JS entry to avoid Windows .cmd quoting and install only runtime dependencies.
-const npmCli = process.env.npm_execpath
-if (!npmCli || !existsSync(npmCli)) {
-  console.error('请通过 npm run install:tabby 运行，以便安装 Pi 运行依赖。')
-  process.exit(1)
-}
-const installed = spawnSync(process.execPath, [npmCli, 'install', '--omit=dev', '--ignore-scripts', '--package-lock=false', '--no-audit', '--no-fund'], { cwd: destination, stdio: 'inherit', shell: false })
-if (installed.error || installed.status !== 0) {
-  console.error('Pi 运行依赖安装失败。请修复 npm 连接后重试 install:tabby。')
-  process.exit(installed.status || 1)
-}
+// Both runtime bundles already contain their JavaScript dependencies. Source
+// installs copy the same built files and do not invoke a package manager.
 console.log(`已安装到 ${destination}`)
 console.log('请完全退出并重启 Tabby，然后在设置的已安装插件中查看 AI Tools。')

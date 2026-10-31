@@ -27,6 +27,34 @@ const finished = agent => new Promise(resolve => {
   const handler = event => { if (event.method === 'turn/completed') { agent.off('event', handler); resolve(event.params.turn) } }
   agent.on('event', handler)
 })
+
+integration('packaged Pi sidecar works outside the repository without installed SDK packages', { timeout: 15000 }, async t => {
+  const f = await fixture(t, (_req, res, _body, count) => count === 1
+    ? reply(res, '', [{ name: 'fixture_probe', arguments: '{}' }])
+    : reply(res, 'STANDALONE_OK'))
+  const directory = path.join(f.root, 'isolated-runtime')
+  fs.mkdirSync(directory)
+  const sidecar = path.join(directory, 'sidecar.mjs')
+  fs.copyFileSync(path.resolve(__dirname, '../dist/pi/sidecar.mjs'), sidecar)
+  let calls = 0
+  const result = await runPiProcess(process.execPath, {
+    directory: path.join(f.root, 'sessions'), profile: f.profile, key: '', system: 'Use only the supplied host tool.',
+    tools: [{ name: 'fixture_probe', description: 'Return local fixture evidence.', inputSchema: { type: 'object', properties: {} } }],
+    sourceOffset: 0, sourceMessages: [[{ role: 'user', content: 'Use fixture_probe, then reply STANDALONE_OK.' }]], activeGoal: false,
+  }, new AbortController().signal, async (message, send) => {
+    if (message.type === 'ready') send({ type: 'start' })
+    if (message.type === 'accepted') send({ type: 'accepted' })
+    if (message.type === 'tool') {
+      assert.equal(message.name, 'fixture_probe')
+      calls++
+      send({ type: 'tool_result', id: message.id, result: '{"verified":true}', error: false })
+    }
+  }, sidecar)
+  assert.equal(result.text, 'STANDALONE_OK')
+  assert.equal(calls, 1)
+  assert.equal(f.requests.length, 2)
+  assert.deepEqual(f.requests[0].body.tools.map(tool => tool.function.name), ['fixture_probe'])
+})
 async function fixture (t, handler, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-pi 中文 space-'))
   const store = new AgentStore(root)
