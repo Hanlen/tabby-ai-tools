@@ -15,6 +15,6 @@ module.exports = {
     { test: /\.css$/, type: 'asset/source' },
   ] },
   externals: [
-    'child_process', 'path', 'fs', 'readline', 'os', /^rxjs/, /^@angular/, /^tabby-/,
+    'child_process', 'path', 'fs', 'readline', 'os', '@electron/remote', /^rxjs/, /^@angular/, /^tabby-/,
   ],
 }

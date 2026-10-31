@@ -15,7 +15,7 @@ Module._load = function (request, parent, main) {
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019, experimentalDecorators: true },
 }).outputText, filename)
-const { PiBackend, PiAdapter, runPiProcess } = require('../src/pi-agent.ts')
+const { PiBackend, PiAdapter, runPiProcess, inspectPiRuntime } = require('../src/pi-agent.ts')
 const { AgentStore, agentId, profileFingerprint } = require('../src/agent-store.ts')
 const { compactionBoundary, contextHash, projectApiContext } = require('../src/api-context.ts')
 const { ApiAgent } = require('../src/api-agent.ts')
@@ -26,6 +26,38 @@ const settings = { sandbox: 'workspace-write', approvalPolicy: 'never', goalToke
 const finished = agent => new Promise(resolve => {
   const handler = event => { if (event.method === 'turn/completed') { agent.off('event', handler); resolve(event.params.turn) } }
   agent.on('event', handler)
+})
+
+integration('Pi defaults to the host runtime even with no node on PATH', { timeout: 15000 }, async t => {
+  const env = { ...process.env }
+  t.after(() => { for (const name of Object.keys(process.env)) if (!(name in env)) delete process.env[name]; Object.assign(process.env, env) })
+  for (const name of Object.keys(process.env)) if (name.toUpperCase() === 'PATH') process.env[name] = ''
+  const f = await fixture(t, (_req, res) => reply(res, 'HOST_NODE_OK'), { piNodeExecutable: '' })
+  assert.match(f.agent.runtimeInfo, /Tabby built-in Node/)
+  const id = await f.agent.openThread(process.cwd(), settings)
+  const done = finished(f.agent)
+  await f.agent.startTurn(id, 'Reply HOST_NODE_OK', process.cwd(), settings)
+  assert.equal((await done).status, 'completed')
+  assert.equal(f.requests.length, 1)
+})
+
+test('Pi selects the Electron main bridge before any external executable lookup', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron')
+  Object.defineProperty(process.versions, 'electron', { value: 'fixture', configurable: true })
+  const load = Module._load
+  let owner
+  const bridge = { inspect: () => ({ node: '24.21.0' }), fork: id => { owner = id; return {} } }
+  Module._load = function (request, parent, main) {
+    if (request === '@electron/remote') return { getGlobal: () => ({ getBuiltinModule: () => ({ createRequire: () => () => bridge }) }), getCurrentWebContents: () => ({ id: 7 }) }
+    return load.call(this, request, parent, main)
+  }
+  try {
+    const runtime = await inspectPiRuntime({ piNodeExecutable: '' }, process.cwd(), new AbortController().signal)
+    assert.equal(runtime.source, 'host')
+    assert.equal(runtime.version, '24.21.0')
+    runtime.launch()
+    assert.equal(owner, 7)
+  } finally { Module._load = load; if (descriptor) Object.defineProperty(process.versions, 'electron', descriptor); else delete process.versions.electron }
 })
 
 integration('packaged Pi sidecar works outside the repository without installed SDK packages', { timeout: 15000 }, async t => {

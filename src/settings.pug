@@ -200,10 +200,10 @@
                   select.form-control([id]='"api-runtime-" + profile.id', [ngModel]='profile.runtime || "api"', (ngModelChange)='changeRuntime(profile, $event)')
                     option(value='api') {{t("内置 API Agent")}}
                     option(value='pi') Pi SDK
-                  small.settings-muted(*ngIf='profile.runtime === "pi"') {{t("Pi 使用独立 Node 进程；仅开放 Tabby 工具，保留现有审批与终端策略。")}}
+                  small.settings-muted(*ngIf='profile.runtime === "pi"') {{t("Pi 默认使用 Tabby 内置运行时；仅开放 Tabby 工具，保留现有审批与终端策略。")}}
                 .settings-field.settings-field-wide(*ngIf='profile.runtime === "pi"')
-                  label([attr.for]='"pi-node-" + profile.id') {{t("Node 可执行文件（22.19 或更新版本）")}}
-                  input.form-control([id]='"pi-node-" + profile.id', [(ngModel)]='profile.piNodeExecutable', (ngModelChange)='modelConnectionChanged(profile)', placeholder='node', spellcheck='false')
+                  label([attr.for]='"pi-node-" + profile.id') {{t("兼容 Node 可执行文件（可选，22.19 或更新版本）")}}
+                  input.form-control([id]='"pi-node-" + profile.id', [(ngModel)]='profile.piNodeExecutable', (ngModelChange)='modelConnectionChanged(profile)', [attr.placeholder]='t("留空使用 Tabby 内置运行时")', spellcheck='false')
                 .settings-field.settings-field-wide
                   label.settings-checkbox-label([attr.for]='"api-compact-" + profile.id')
                     input(type='checkbox', [id]='"api-compact-" + profile.id', [(ngModel)]='profile.autoCompact', (ngModelChange)='save()')

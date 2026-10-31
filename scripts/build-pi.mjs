@@ -62,4 +62,9 @@ for (const [directory, manifest] of [...packages].sort((a, b) => a[1].name.local
   }
 }
 await writeFile(join(output, 'THIRD_PARTY_NOTICES.txt'), notices.join(''))
+await build({
+  absWorkingDir: root, entryPoints: ['runtime/pi/electron-host.cts'],
+  outfile: join(output, 'electron-host.cjs'), bundle: true,
+  platform: 'node', format: 'cjs', target: 'node22.19', external: ['electron'],
+})
 console.log(`Built self-contained Pi runtime with notices for ${packages.size} packages`)

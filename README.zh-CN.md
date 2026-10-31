@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.5.1 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、按需读屏、定时任务、Pi 的外部 Node 与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.5.1 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
@@ -30,9 +30,9 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 终端输出由 AI 使用 `read_tab` 按需读取，不再自动追加到运行中的回合。后台重试期间，侧栏持续显示等待状态和已等待时长；后台提供重试时间时才显示下次重试时间及倒计时。停止取消 AI 回合，终端命令可能已经完成；继续前先核对实际终端和流程验收点，避免重复执行。详见[流程恢复](docs/task-workflows.md#限流中断与恢复)。
 
-**v0.5.0 新增：** API 连接可选 Pi SDK 运行时（独立 Node 22.19+），支持 `/compact`、流程归档状态查询与对话设置别名；自动压缩默认关闭。在连接设置的“Agent 运行时”中选择 Pi SDK；[配置、恢复与验证范围](docs/pi.md)见说明。
+**v0.5.0 新增：** API 连接可选 Pi SDK 运行时，支持 `/compact`、流程归档状态查询与对话设置别名；自动压缩默认关闭。在连接设置的“Agent 运行时”中选择 Pi SDK；[配置、恢复与验证范围](docs/pi.md)见说明。
 
-**v0.5.1 安装修复：** Pi SDK 已打包进插件。通过 Tabby 安装或升级时，不再安装 Pi 的依赖链，也不要求系统中能找到 `node` 命令；只有选择运行 Pi 时才需要外部 Node 22.19+。
+**v0.5.1 安装修复：** Pi SDK 已打包进插件。通过 Tabby 安装或升级时，不再安装 Pi 的依赖链，也不要求系统中能找到 `node` 命令；Pi 也默认复用 Tabby 自带 Node，通过 Electron 独立进程运行；兼容版本的 Tabby 无需额外安装 Node，仅保留可选的 Node 22.19+ 兼容路径。
 
 ## 多模型适配，支持本机 ChatGPT 订阅登录
 

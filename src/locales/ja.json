@@ -886,5 +886,8 @@
   "尚无可归档的终端操作步骤": "No terminal operation steps are available to archive.",
   "流程步骤尚未全部验收": "Workflow steps have not all been verified.",
   "流程步骤缺少已核对的服务器身份或绝对操作路径": "Workflow steps lack verified server identity or an absolute operation path.",
-  "流程归档失败：{0}；可用 workflow_set_alias 重试归档并保存别名，无需重跑终端操作": "Workflow archive failed: {0}; use workflow_set_alias to retry archiving and save the alias without replaying terminal operations."
+  "流程归档失败：{0}；可用 workflow_set_alias 重试归档并保存别名，无需重跑终端操作": "Workflow archive failed: {0}; use workflow_set_alias to retry archiving and save the alias without replaying terminal operations.",
+  "Pi 默认使用 Tabby 内置运行时；仅开放 Tabby 工具，保留现有审批与终端策略。": "Pi は標準で Tabby 内蔵ランタイムを使用します。Tabby ツールと既存の承認・端末ポリシーを維持します。",
+  "兼容 Node 可执行文件（可选，22.19 或更新版本）": "互換用 Node 実行ファイル（任意、22.19 以降）",
+  "留空使用 Tabby 内置运行时": "空欄で Tabby 内蔵ランタイムを使用"
 }

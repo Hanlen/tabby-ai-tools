@@ -4,5 +4,5 @@
     "strict": true, "skipLibCheck": true, "types": ["node"],
     "outDir": "../../dist/pi", "rootDir": "."
   },
-  "include": ["*.mts"]
+  "include": ["*.mts", "*.cts"]
 }
