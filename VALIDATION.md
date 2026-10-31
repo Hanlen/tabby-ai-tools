@@ -1,3 +1,11 @@
+# v0.5.2 trusted publishing validation (2026-10-31)
+
+The release workflow uses npm Trusted Publishing with GitHub OIDC. It has read-only repository/actions access plus the publish job's id-token permission, with no stored npm token. A published stable GitHub Release triggers validation of its annotated tag, the exact commit's branch/tag three-platform checks, the attached tarball digest and review-note checksum, package identity, required artifacts and private-file exclusions. The same attachment is published without rebuilding; registry processing and downloaded bytes are verified before success. Manual dispatch defaults to a dry run. Already-published identical versions are no-ops; version overwrites and a backward latest tag are rejected.
+
+Local Linux / Node 22.19.0 passed all seven release checks and 772 tests (766 passed, 6 Windows-only skips). Five new policy tests cover stable-tag parsing, wrong source commits/workflows, incomplete or failed platform checks, wrong package/repository/version, install hooks, SDK dependencies, archive traversal and local instructions/research. A real dry run validated the existing v0.5.1 GitHub artifact, both successful CI matrices and npm integrity, without sending a publish request. The one-time npm publisher binding and the first actual OIDC publication are checked during release; they are not inferred from dry-run success.
+
+The runtime and missing-Node installation checks from 0.5.1 remain in the full test/build/package pipeline. The version label in the SVG/PNG overview and both README image descriptions is current; the robot GIF and static fallback remain unchanged. No paid inference or original-task replay is performed. CI/publish results and the exact release artifact checksum are recorded in the GitHub Release.
+
 # v0.5.1 installation compatibility validation (2026-10-31)
 
 The 0.5.0 release checks did not exercise installation without system Node. Its ordinary Pi dependencies caused every installation to install the SDK dependency tree, including a `protobufjs` postinstall script. A local reproduction with lifecycle scripts enabled, an explicit system shell and no `node` on PATH failed with `protobufjs@7.6.6 postinstall`, `node scripts/postinstall`, `/bin/sh: node: not found` and exit 127. The same environment successfully installs the 0.5.1 tarball.
