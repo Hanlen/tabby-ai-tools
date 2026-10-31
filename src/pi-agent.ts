@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import * as path from 'path'
 import * as os from 'os'
 import { randomBytes } from 'crypto'
@@ -16,26 +16,57 @@ import { apiPath } from './agent-types'
 import { redactMemory } from './task-memory'
 import { journaledToolCall } from './host-tool-bridge'
 
-async function inspectPiNode (profile: ApiProfile, cwd: string, signal: AbortSignal): Promise<{ executable: string; version: string }> {
-  let executable: string
-  try { executable = resolveClaudeExecutable(profile.piNodeExecutable || 'node', { cwd }) }
-  catch { throw new Error('找不到 Pi 所需的外部 Node；请安装 Node >=22.19 并设置可执行文件路径') }
-  const version = (await runClaudeProcess({ executable, args: ['-p', 'process.versions.node'], cwd, signal, timeoutMs: 10000 })).trim()
+export interface PiRuntime {
+  executable: string; version: string; source: 'host' | 'external'
+  launch?: () => ChildProcessWithoutNullStreams & { terminate: () => Promise<void> }
+}
+
+function checkPiVersion (version: string): void {
   const [major, minor] = version.split('.').map(Number)
-  if (!Number.isInteger(major) || major < 22 || major === 22 && minor < 19) throw new Error('Pi 需要外部 Node >=22.19.0；当前为 ' + version)
-  return { executable, version }
+  if (!Number.isInteger(major) || major < 22 || major === 22 && minor < 19) throw new Error('Pi 需要 Node >=22.19.0；当前运行时为 ' + version + '。请更新 Tabby，或配置可选的兼容 Node 路径。')
+}
+
+export async function inspectPiRuntime (profile: ApiProfile, cwd: string, signal: AbortSignal): Promise<PiRuntime> {
+  if (signal.aborted) throw new Error('请求已停止')
+  if (!profile.piNodeExecutable?.trim()) {
+    if (!process.versions.electron) {
+      checkPiVersion(process.versions.node)
+      return { executable: process.execPath, version: process.versions.node, source: 'host' }
+    }
+    try {
+      const remote = require('@electron/remote')
+      // Tabby's bundled main module may not implement remote.require. Node's
+      // supported createRequire loads only our fixed, packaged bridge path.
+      const entry = path.join(__dirname, '..', 'dist', 'pi', 'electron-host.cjs')
+      const mainRequire = remote.getGlobal('process').getBuiltinModule('node:module').createRequire(entry)
+      const host = mainRequire(entry)
+      const versions = host.inspect()
+      checkPiVersion(versions.node)
+      const ownerId = remote.getCurrentWebContents().id
+      return { executable: process.execPath, version: versions.node, source: 'host', launch: () => host.fork(ownerId) }
+    } catch {
+      throw new Error('Tabby 内置 Pi 运行时不可用；请更新 Tabby，或在兼容选项中配置 Node >=22.19 的路径。')
+    }
+  }
+  let executable: string
+  try { executable = resolveClaudeExecutable(profile.piNodeExecutable, { cwd }) }
+  catch { throw new Error('找不到配置的兼容 Node；可清空路径以使用 Tabby 内置运行时') }
+  const version = (await runClaudeProcess({ executable, args: ['-p', 'process.versions.node'], cwd, signal, timeoutMs: 10000 })).trim()
+  checkPiVersion(version)
+  return { executable, version, source: 'external' }
 }
 
 /** No shell, HTTP transport retries, automatic process restart, or prompt replay. */
-export async function runPiProcess (executable: string, input: any, signal: AbortSignal, onMessage: (message: any, send: (message: any) => void, signal: AbortSignal) => Promise<void>, sidecar = path.join(__dirname, '..', 'dist', 'pi', 'sidecar.mjs')): Promise<any> {
+export async function runPiProcess (runtime: string | PiRuntime, input: any, signal: AbortSignal, onMessage: (message: any, send: (message: any) => void, signal: AbortSignal) => Promise<void>, sidecar = path.join(__dirname, '..', 'dist', 'pi', 'sidecar.mjs')): Promise<any> {
   if (signal.aborted) throw new Error('请求已停止')
-  const child = spawn(executable, [sidecar], { stdio: 'pipe', shell: false, windowsHide: true, detached: process.platform !== 'win32',
+  const utility = typeof runtime !== 'string' && !!runtime.launch
+  const child = utility ? runtime.launch!() : spawn(typeof runtime === 'string' ? runtime : runtime.executable, [sidecar], { stdio: 'pipe', shell: false, windowsHide: true, detached: process.platform !== 'win32',
     // Prevent Node loader options from injecting code into the isolated runtime.
-    env: { ...process.env, NODE_OPTIONS: '', ELECTRON_RUN_AS_NODE: '' } })
+    env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '', ELECTRON_RUN_AS_NODE: '' } })
   let closed = false, done: any, fatal: Error | undefined, buffer = '', bytes = 0
   let queue = Promise.resolve(), stopping: Promise<void> | undefined
   const bridge = new AbortController()
-  const stop = () => stopping ||= terminateCodexProcess(child, { closed })
+  const stop = (): Promise<void> => stopping ||= utility ? Promise.resolve((child as ChildProcessWithoutNullStreams & { terminate: () => Promise<void> }).terminate()) : terminateCodexProcess(child, { closed })
   const send = (message: any) => { if (!closed && !child.stdin.destroyed) child.stdin.write(JSON.stringify(message) + '\n') }
   const abort = () => { bridge.abort(); send({ type: 'cancel' }); void stop().catch(error => { fatal ||= error }) }
   const fail = (error: Error) => { bridge.abort(); fatal ||= error; void stop().catch(() => undefined) }
@@ -85,7 +116,7 @@ export async function runPiProcess (executable: string, input: any, signal: Abor
 }
 
 export class PiAdapter extends ApiProviderAdapter {
-  constructor (profile: ApiProfile, private executable: string, private session: ApiSession, private store: AgentStore,
+  constructor (profile: ApiProfile, private runtime: PiRuntime, private session: ApiSession, private store: AgentStore,
     private getKey: () => Promise<string>, private call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>, private lifecycle: (event: any) => void) { super(profile, '') }
 
   async generate (messages: any[], system: string, tools: ToolDefinition[], signal: AbortSignal, onText: (text: string) => void, onProgress?: (progress: StreamProgress) => void, onUsage?: (tokens: number) => void): Promise<ModelResult> {
@@ -116,7 +147,7 @@ export class PiAdapter extends ApiProviderAdapter {
     const safe = (value: string) => redactMemory(key ? value.split(key).join('[redacted]') : value, 2000)
     let text = '', total = 0, inputTokens = 0
     const recorded: any[] = []
-    const result = await runPiProcess(this.executable, { profile: { ...this.profile, apiKey: undefined, threads: undefined }, key, directory,
+    const result = await runPiProcess(this.runtime, { profile: { ...this.profile, apiKey: undefined, threads: undefined }, key, directory,
       file: prior?.file, system, tools, sourceMessages, sourceOffset: start, compact, activeGoal: this.session.goal?.status === 'active',
       budget: this.session.goal?.tokenBudget ? Math.max(1, this.session.goal.tokenBudget - this.session.goal.usedTokens) : 0 }, signal, async (message, send, bridgeSignal) => {
       if (message.type === 'ready') {
@@ -159,22 +190,22 @@ export class PiAdapter extends ApiProviderAdapter {
 
 export class PiBackend extends ApiAgent {
   runtimeInfo = ''
-  private executable = ''
+  private runtime?: PiRuntime
   private discovery?: AbortController
   constructor (profile: ApiProfile, private piStore: AgentStore, private key: () => Promise<string>) { super(profile, piStore, key) }
   async connect (settings: AgentSettings): Promise<void> {
     this.discovery?.abort()
     const controller = new AbortController(); this.discovery = controller
     try {
-      const { executable, version } = await inspectPiNode(this.profile, settings.cwd || process.cwd(), controller.signal)
-      this.executable = executable
+      const runtime = await inspectPiRuntime(this.profile, settings.cwd || process.cwd(), controller.signal)
+      this.runtime = runtime
       await super.connect(settings)
-      this.runtimeInfo = `Pi SDK · external Node ${version} · Tabby Node ${process.versions.node} · Electron ${process.versions.electron || 'unavailable'}`
+      this.runtimeInfo = `Pi SDK · ${runtime.source === 'host' ? 'Tabby built-in Node' : 'compatibility Node'} ${runtime.version} · Electron ${process.versions.electron || 'unavailable'}`
     } finally { if (this.discovery === controller) this.discovery = undefined }
   }
   protected async createAdapter (session: ApiSession, _settings: AgentSettings, call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>): Promise<ApiProviderAdapter> {
-    if (!this.executable) throw new Error('Pi 尚未连接')
-    return new PiAdapter(this.profile, this.executable, session, this.piStore, this.key, call, event => this.emit('event', {
+    if (!this.runtime) throw new Error('Pi 尚未连接')
+    return new PiAdapter(this.profile, this.runtime, session, this.piStore, this.key, call, event => this.emit('event', {
       method: 'agent/lifecycle', params: { threadId: session.id, turnId: session.turns[session.turns.length - 1]?.id, ...event },
     }))
   }
@@ -185,13 +216,13 @@ export class PiBackend extends ApiAgent {
 export async function probePiModel (profile: ApiProfile, getKey: () => Promise<string>, signal: AbortSignal, reportUsage: (tokens: number) => void): Promise<number> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-pi-probe-'))
   try {
-    const { executable } = await inspectPiNode(profile, root, signal)
+    const runtime = await inspectPiRuntime(profile, root, signal)
     const store = new AgentStore(root)
     const session: ApiSession = { version: 1, id: agentId(), cwd: root, profileId: profile.id, fingerprint: profileFingerprint(profile), model: profile.model,
       updatedAt: Date.now(), messages: [], turns: [], totalTokens: 0 }
     const nonce = randomBytes(8).toString('hex')
     let confirmed = false
-    const adapter = new PiAdapter(profile, executable, session, store, getKey, async call => {
+    const adapter = new PiAdapter(profile, runtime, session, store, getKey, async call => {
       if (confirmed || call.name !== 'confirm' || JSON.parse(call.arguments).nonce !== nonce) throw new Error('模型未通过工具调用测试')
       confirmed = true
       return { id: call.id, result: 'OK' }

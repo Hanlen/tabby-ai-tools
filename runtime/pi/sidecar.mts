@@ -8,28 +8,40 @@ import { providerCompat, providerPayload } from './provider.mjs'
 process.umask(0o077)
 
 // stdout is a private bounded protocol. No user/project extensions or native tools are loaded.
-const send = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n')
+const parentPort = (process as any).parentPort
+const send = (value: unknown) => parentPort ? parentPort.postMessage(JSON.stringify(value)) : process.stdout.write(JSON.stringify(value) + '\n')
 const pending = new Map<string, (value: any) => void>()
 let session: AgentSession | undefined
 let cancelled = false
 let initialized = false
-const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
-lines.on('close', () => { cancelled = true; void session?.abort(); for (const resolve of pending.values()) resolve({ error: true, result: 'Host disconnected' }); pending.clear() })
-lines.on('line', line => {
-  if (Buffer.byteLength(line) > 12 * 1024 * 1024) { process.exitCode = 1; lines.close(); return }
+let finishing = false
+const lines = parentPort ? undefined : createInterface({ input: process.stdin, crlfDelay: Infinity })
+const disconnect = () => { cancelled = true; void session?.abort(); for (const resolve of pending.values()) resolve({ error: true, result: 'Host disconnected' }); pending.clear() }
+const receive = (line: unknown) => {
+  if (typeof line !== 'string' || Buffer.byteLength(line) > 12 * 1024 * 1024) { process.exitCode = 1; send({ type: 'fatal', message: 'Invalid Pi protocol' }); disconnect(); finish(); return }
   let message: any
-  try { message = JSON.parse(line) } catch { process.exitCode = 1; lines.close(); return }
+  try { message = JSON.parse(line) } catch { process.exitCode = 1; send({ type: 'fatal', message: 'Invalid Pi protocol' }); disconnect(); finish(); return }
+  // The main bridge acknowledges receipt of done/fatal before the utility exits,
+  // so neither buffered IPC results nor the native process can be left behind.
+  if (parentPort && finishing && message.type === 'shutdown') { process.exit(process.exitCode || 0) }
   if (message.type === 'cancel') { cancelled = true; void session?.abort(); for (const resolve of pending.values()) resolve({ error: true, result: 'Cancelled' }); pending.clear() }
   else if (message.type === 'tool_result') { pending.get(message.id)?.(message); pending.delete(message.id) }
   else if (message.type === 'start') { pending.get('start')?.(message); pending.delete('start') }
   else if (message.type === 'accepted') { pending.get('accepted')?.(message); pending.delete('accepted') }
   else if (message.type === 'init' && !initialized) { initialized = true; void run(message).catch(error => { send({ type: 'fatal', message: String(error.message || error) }); finish() }) }
-})
-function finish () { session?.dispose(); lines.close(); process.stdin.destroy() }
+}
+const portMessage = (event: { data: unknown }) => receive(event.data)
+if (parentPort) parentPort.on('message', portMessage)
+else { lines!.on('close', disconnect); lines!.on('line', receive) }
+function finish () {
+  session?.dispose()
+  if (parentPort) finishing = true
+  else { lines!.close(); process.stdin.destroy() }
+}
 
 async function run (input: any) {
   const [major, minor] = process.versions.node.split('.').map(Number)
-  if (major < 22 || major === 22 && minor < 19) throw new Error('Pi requires external Node >=22.19.0')
+  if (major < 22 || major === 22 && minor < 19) throw new Error('Pi requires Node >=22.19.0 in the selected runtime')
   const { profile, directory } = input
   await mkdir(directory, { recursive: true, mode: 0o700 })
   await chmod(directory, 0o700)

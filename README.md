@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.5.1 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, on-demand terminal reads, scheduled tasks, Pi Node and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.5.1 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -30,9 +30,9 @@ Terminal takeover is automatic: unavailable foreground-process detection (includ
 
 Terminal output is read on demand with `read_tab`; it is no longer automatically forwarded into an active turn. During backend retries, the sidebar keeps a visible waiting state with elapsed time, and shows the next retry time plus a countdown only if the backend supplies it. Stop cancels the AI turn; check the terminal and workflow checkpoint before continuing, since commands may already have completed. See [workflow recovery](docs/task-workflows.md#限流中断与恢复).
 
-**New in v0.5.0:** optional Pi SDK runtime (external Node 22.19+), `/compact`, workflow archive status and conversational aliases. Select **Agent runtime → Pi SDK** in an API connection; automatic compaction is opt-in. See [setup, recovery and validation boundaries](docs/pi.md).
+**New in v0.5.0:** optional Pi SDK runtime, `/compact`, workflow archive status and conversational aliases. Select **Agent runtime → Pi SDK** in an API connection; automatic compaction is opt-in. See [setup, recovery and validation boundaries](docs/pi.md).
 
-**v0.5.1 installation fix:** Pi's SDK is now bundled with the plugin. Installing or updating through Tabby no longer installs Pi's dependency tree or requires a system `node` command. External Node 22.19+ is required only when you choose to run Pi.
+**v0.5.1 installation fix:** Pi's SDK is now bundled with the plugin. Installing or updating through Tabby no longer installs Pi's dependency tree or requires a system `node` command. Pi now defaults to Tabby’s built-in Node in an isolated Electron utility process. No separate Node installation is needed on a compatible Tabby; an optional Node 22.19+ path is retained for compatibility.
 
 ## Multiple model providers, including your ChatGPT subscription
 

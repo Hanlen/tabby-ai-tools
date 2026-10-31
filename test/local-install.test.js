@@ -17,7 +17,7 @@ test('local install copies the built Pi bundle without npm or node on PATH', t =
   fs.copyFileSync(path.resolve(__dirname, '../scripts/install-local.mjs'), path.join(source, 'scripts/install-local.mjs'))
   fs.copyFileSync(path.resolve(__dirname, '../package.json'), path.join(source, 'package.json'))
   fs.writeFileSync(path.join(source, 'dist/index.js'), '// installer copy fixture')
-  for (const name of ['sidecar.mjs', 'THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.resolve(__dirname, '../dist/pi', name), path.join(source, 'dist/pi', name))
+  for (const name of ['sidecar.mjs', 'electron-host.cjs', 'THIRD_PARTY_NOTICES.txt']) fs.copyFileSync(path.resolve(__dirname, '../dist/pi', name), path.join(source, 'dist/pi', name))
   fs.writeFileSync(path.join(source, 'docs/provider-roadmap.md'), 'Local planning fixture; never install.')
   const env = { ...process.env, PATH: missingNode, npm_execpath: '', NODE_OPTIONS: '' }
   for (const name of Object.keys(env)) if (name !== 'PATH' && name.toUpperCase() === 'PATH') delete env[name]

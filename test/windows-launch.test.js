@@ -28,7 +28,7 @@ for (const extension of ['exe', 'cmd', 'bat']) {
       const closed = child ? once(child, 'close') : Promise.resolve()
       client.close()
       await closed
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     })
     const script = path.join(dir, 'server.js')
     fs.writeFileSync(script, `
@@ -94,7 +94,7 @@ test('Windows actual npm.cmd prefix query discovers and starts a global codex.cm
     await closed
     for (const key of Object.keys(process.env)) delete process.env[key]
     Object.assign(process.env, env)
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   const managers = path.join(dir, 'manager')
   const prefix = path.join(dir, 'global prefix')
@@ -123,7 +123,7 @@ test('Windows actual no-PATH auto discovery selects real native executable and r
     await closed
     for (const key of Object.keys(process.env)) if (!(key in env)) delete process.env[key]
     Object.assign(process.env, env)
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   const pathKey = Object.keys(process.env).find(k => k.toLowerCase() === 'path') || 'PATH'
   process.env[pathKey] = ''

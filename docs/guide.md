@@ -10,7 +10,7 @@
 
 ### 准备环境
 
-v0.5.1 起，Pi SDK 及其所需 JavaScript 已打包。通过 Tabby 安装／升级插件不需要系统中存在 `node` 命令，也不会执行 `protobufjs` 等 Pi 依赖的安装脚本；只有启用 Pi 运行时才需要外部 Node 22.19+。v0.5.0 的安装兼容性问题请通过升级 v0.5.1 修复，无需全局关闭安装脚本。
+v0.5.1 起，Pi SDK 及其所需 JavaScript 已打包。通过 Tabby 安装／升级插件不需要系统中存在 `node` 命令，也不会执行 `protobufjs` 等 Pi 依赖的安装脚本；Pi 默认通过 Electron 独立进程复用 Tabby 自带 Node；兼容版本的 Tabby 无需额外安装 Node。旧版宿主应优先升级 Tabby，也可显式选择可选的 Node 22.19+ 兼容路径。v0.5.0 的安装兼容性问题请通过升级 v0.5.1 修复，无需全局关闭安装脚本。
 
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
 - **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的 ChatGPT 账号登录，再执行 `codex login status` 确认认证状态，无需在插件中填写 API Key。插件默认连接选 **Codex（本机登录）**；可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
@@ -318,7 +318,7 @@ NVM 优先 current，其余按 Node 版本降序。IDE 同时支持 `.vscode-ins
 
 ## Pi 与上下文压缩（v0.5.0）
 
-在 API 连接的“Agent 运行时”中选择 Pi SDK，填写外部 Node 22.19+ 的可执行文件路径，然后从侧栏重新连接。供应商、模型、Base URL 和密钥来源沿用连接设置；Pi 不提供订阅认证。仅开放 Tabby 宿主工具，审批、只读、终端所有权、sudo 与流程 checkpoint 继续生效。
+在 API 连接的“Agent 运行时”中选择 Pi SDK，将兼容 Node 路径留空，然后从侧栏重新连接。默认复用 Tabby 内置 Node 的 Electron 独立进程；外部 Node 22.19+ 路径仅作为显式兼容选项。供应商、模型、Base URL 和密钥来源沿用连接设置；Pi 不提供订阅认证。仅开放 Tabby 宿主工具，审批、只读、终端所有权、sudo 与流程 checkpoint 继续生效。
 
 空闲时输入 `/compact` 手动压缩。内置 API 保留原始历史，按完整工具批次投影请求；Pi 保留自己的 JSONL 原始条目和压缩边界。自动压缩默认关闭，摘要本身消耗额度并计入 Goal 预算。Pi 的重试倒计时使用 SDK 结构化事件，取消会结束独立进程，不重放整段任务。中断后先读取真实终端再继续，未知动作不会自动重放。
 
