@@ -28,8 +28,24 @@ test('lease refreshes across commands and stops after task cleanup', { skip: pro
   fs.writeFileSync(path.join(root, 'sudo'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_SUDO_LOG"\n', { mode: 0o700 })
   fs.writeFileSync(path.join(root, 'sleep'), '#!/bin/sh\n/bin/sleep 0.02\n', { mode: 0o700 })
   const lease = new SudoWorkflowLease()
-  const result = spawnSync('sh', ['-c', lease.wrap('echo FIRST') + '\n/bin/sleep .12\n' + lease.wrap('echo SECOND') + '\n' + lease.cleanup() + '\n/bin/sleep .08'], {
-    env: { ...process.env, PATH: root + path.delimiter + process.env.PATH, TMPDIR: root, TEST_SUDO_LOG: path.join(root, 'log') }, encoding: 'utf8', timeout: 5000,
+  // Wait for observable refreshes and worker shutdown, rather than assuming a
+  // loaded CI runner can schedule the detached process within 120 milliseconds.
+  const waitForRefreshes = `attempt=0
+while [ "$(wc -l < "$TEST_SUDO_LOG")" -lt 3 ]; do
+  attempt=$((attempt+1))
+  [ "$attempt" -lt 200 ] || { echo 'sudo refresher did not run' >&2; exit 1; }
+  /bin/sleep .02
+done`
+  const waitForCleanup = `lease_directory="$${lease.variable}"
+${lease.cleanup()}
+attempt=0
+while [ -d "$lease_directory" ]; do
+  attempt=$((attempt+1))
+  [ "$attempt" -lt 200 ] || { echo 'sudo refresher did not stop' >&2; exit 1; }
+  /bin/sleep .02
+done`
+  const result = spawnSync('sh', ['-c', [lease.wrap('echo FIRST'), waitForRefreshes, lease.wrap('echo SECOND'), waitForCleanup].join('\n')], {
+    env: { ...process.env, PATH: root + path.delimiter + process.env.PATH, TMPDIR: root, TEST_SUDO_LOG: path.join(root, 'log') }, encoding: 'utf8', timeout: 15000,
   })
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /FIRST\nSECOND/)
