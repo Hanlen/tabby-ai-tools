@@ -1,11 +1,11 @@
 # Pi runtime
 
-The development checkout offers **Pi SDK** as an optional runtime for API connections. It uses pinned `@earendil-works/pi-coding-agent` / `pi-ai` 1.4.0 in a separate ESM Node process. Codex and Claude Code remain independent CLI connections. This feature is not in the published 0.4.1 package.
+Version 0.5.0 offers **Pi SDK** as an optional runtime for API connections. It uses pinned `@earendil-works/pi-coding-agent` / `pi-ai` 1.4.0 in a separate ESM Node process. Codex and Claude Code remain independent CLI connections.
 
 ## Setup
 
 1. Install an external **Node 22.19.0 or newer**. Updating your shell's Node does not update Electron's embedded Node.
-2. Build this checkout using Node 22.19+ (`nvm use`, `npm ci`, `npm run build`). Install it with `npm run install:tabby -- "<Plugins Directory>"`; this also installs runtime dependencies. Restart Tabby.
+2. Install or update `tabby-ai-tools` to version 0.5.0 or newer in **Settings → Plugins**, then restart Tabby. For source installations, use Node 22.19+ to run `npm ci`, `npm run build` and `npm run install:tabby -- "<Plugins Directory>"`; the installer also installs runtime dependencies.
 3. In **Settings → AI Tools**, select an API connection, choose **Agent runtime → Pi SDK**, and enter its external Node executable if `node` is absent from Tabby's PATH. Use a real Node executable, not Tabby's executable or a shell command with flags.
 4. Keep the existing provider, Base URL, model ID and key source. OpenAI uses Responses, Claude API uses Anthropic Messages, and the other presets use Chat Completions; custom connections keep their selected protocol. Kimi Coding explicitly uses `system` messages and `max_tokens`, including international and proxy endpoints, rather than relying on SDK URL detection. API billing applies; choosing Pi does not provide a ChatGPT or Claude subscription login.
 5. Connect from the sidebar. The sidebar’s **Details** panel reports external Node and host Node/Electron versions. The explicit connection test uses the real Pi process and a harmless nonce tool; it consumes model quota when requested.

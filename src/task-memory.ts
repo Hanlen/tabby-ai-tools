@@ -21,10 +21,12 @@ export interface MemorySuggestion { workflow?: TaskWorkflow; preferences: TaskPr
 interface TaskRun {
   token: string; cwd: string; objective: string; steps: TaskStep[]; reads: number; verifiedSteps: number
   targets: Record<string, { title: string; server?: WorkflowTarget; bound?: boolean }>; stepTabs: string[]; observations: Record<string, { serial: number; running: boolean }>
-  serial: number; lastCommand: number; inFlight: boolean; capture: boolean; expected?: TaskStep[]; truncated: boolean; finishing: boolean
+  serial: number; lastCommand: number; inFlight: boolean; capture: boolean; expected?: TaskStep[]; truncated: boolean; archiveIssue?: string; finishing: boolean
 }
+interface CompletedRecording { run: TaskRun; outcome: string; workflowId?: string; error?: string; saving?: Promise<TaskWorkflow> }
 
 export const WORKFLOW_HINT = `任务流程执行协议：
+checkpoint 成功仅表示目标绑定或步骤验收，不代表流程已归档。先用 workflow_status 查询录制模式、归档资格和失败原因；用户要求设置别名时，核对最近录制的 objective，再用 workflow_set_alias 保存，并以 saved=true 和回读别名确认。未录制的普通任务不能事后归档；明确说明限制和 /remember 后续路径，不反复检查设置或重跑已完成操作。
 流程中的步骤数组和 dependsOn 是执行顺序，不得跨服务器并行抢跑。开始前用 list_tabs/read_tab/get_profile 重新绑定实际终端；profileId/serverId 是持久身份，临时 tab ID 不能存为服务器 ID。核对服务器 host/IP、SSH 端口、账户与操作路径，主机名不能冒充已知 IP；拿不到的字段要通过当前终端的可信检查确认，禁止猜测。profile 信息不能证明嵌套 SSH、容器或跳板后的实际目标。
 步骤之间的身份/路径探测命令使用 send_input(verificationFor=0)，再 read_tab，随后 workflow_checkpoint(action=bind_target,tabId,target,evidence) 绑定已观测身份。target.cwd 是该操作实际路径；cd、容器或嵌套 SSH 改变环境后重新核对绑定。
 所有流程 Shell 操作使用 tabby_tabs.send_input，不改用本机 commandExecution。每个操作先确定验收条件，只提交一个逻辑步骤；跨服务器依赖必须拆开，不把依赖步骤塞进同一批并行工具或 Shell 脚本。提交操作后 read_tab 读取同一终端的新结果；需要检查命令时 send_input(verificationFor=当前步骤号)，检查命令仅验证该步骤且在同一服务器执行，再 read_tab。读到输出、工具返回 sent、没有子进程、超时或旧成功文本都不等于完成。
@@ -147,13 +149,20 @@ export class TaskMemoryStore {
 
 export class TaskMemory {
   private runs = new Map<string, TaskRun>()
+  private completed = new Map<string, CompletedRecording>()
   constructor (readonly store: TaskMemoryStore) {}
   token (owner: string): string | undefined { return this.runs.get(owner)?.token }
-  clearRuns (): void { this.runs.clear() }
-  forgetRun (owner: string): void { this.runs.delete(owner) }
+  clearRuns (): void { this.runs.clear(); this.completed.clear() }
+  forgetRun (owner: string, preserveCompleted = false): void {
+    this.runs.delete(owner)
+    if (!preserveCompleted) this.completed.delete(owner)
+  }
   async prepare (owner: string, objective: string, cwd: string, newGoal = false): Promise<MemorySuggestion> {
     // Only sanitized task text is kept in the capture buffer, too.
-    if (newGoal) this.runs.set(owner, { token: id(), objective: redactMemory(objective, 1000), cwd, steps: [], reads: 0, verifiedSteps: 0, targets: {}, stepTabs: [], observations: {}, serial: 0, lastCommand: 0, inFlight: false, capture: true, truncated: false, finishing: false })
+    if (newGoal) {
+      this.completed.delete(owner)
+      this.runs.set(owner, { token: id(), objective: redactMemory(objective, 1000), cwd, steps: [], reads: 0, verifiedSteps: 0, targets: {}, stepTabs: [], observations: {}, serial: 0, lastCommand: 0, inFlight: false, capture: true, truncated: false, finishing: false })
+    }
     const data = await this.store.read()
     const preferences = [...data.preferences.filter(p => !p.cwd), ...data.preferences.filter(p => p.cwd === cwd)].slice(-8)
     const workflow = matchWorkflow(data.workflows, objective, cwd)
@@ -166,6 +175,7 @@ export class TaskMemory {
       '\n优先参考匹配流程，减少重复探索；以本次用户要求为准。先用 list_tabs/read_tab 核对当前终端、主机、目录和运行状态，重新获取 tab ID。此前命令仅为步骤示例，参数、路径、分支和目标必须按当前任务核对；含隐藏内容时重新取得真实值，不得直接执行占位符。任务完成记录不证明每条命令成功。不得重放整段历史、盲目重试或跳过现有审批；遇到不匹配的步骤应调整。' }
   }
   beginExecution (owner: string, workflow: TaskWorkflow): void {
+    this.completed.delete(owner)
     this.runs.set(owner, { token: id(), objective: workflow.objective, cwd: workflow.cwd, steps: [], reads: 0, verifiedSteps: 0,
       targets: {}, stepTabs: [], observations: {}, serial: 0, lastCommand: 0, inFlight: false, capture: false, expected: workflow.steps,
       truncated: false, finishing: false })
@@ -175,6 +185,7 @@ export class TaskMemory {
     if (!run) return ''
     const pending = run.steps[run.steps.length - 1]
     return WORKFLOW_HINT + '\n当前流程数据（上次证据不能代替本次验收）：' + JSON.stringify({
+      mode: run.capture ? 'recording' : 'executing_alias', archiveEligible: run.capture && !this.archiveIssue(run), archiveIssue: this.archiveIssue(run),
       objective: run.objective, orderedSteps: run.expected || [],
       confirmedSteps: run.steps.map((s, i) => s.verification ? i + 1 : 0).filter(Boolean),
       pendingStep: pending && !pending.verification ? { number: run.steps.length, runtimeTabId: run.stepTabs[run.steps.length - 1], ...pending } : undefined,
@@ -223,7 +234,7 @@ export class TaskMemory {
       if (error) throw new Error(error)
       if (server!.serverId === args.tabId || server!.profileId === args.tabId) throw new Error('不能将临时 tab ID 保存为服务器或连接的持久 ID')
       run.targets[args.tabId] = { title: previous?.title || '', server, bound: true }
-      return { bound: true, server, nextStep: run.steps.length + 1 }
+      return { bound: true, server, nextStep: run.steps.length + 1, recording: run.capture, archiveEligible: run.capture && !this.archiveIssue(run), archiveIssue: this.archiveIssue(run) }
     }
     if (args.action && args.action !== 'confirm_step') throw new Error('未知流程确认操作')
     const index = run.steps.length - 1
@@ -243,7 +254,7 @@ export class TaskMemory {
     step.server = server
     step.verification = { criteria, evidence, confirmedAt: Date.now() }
     run.verifiedSteps = run.steps.filter(s => s.verification).length
-    return { confirmed: true, step: index + 1, nextStep: index + 2, server }
+    return { confirmed: true, step: index + 1, nextStep: index + 2, server, recording: run.capture, archiveEligible: run.capture && !this.archiveIssue(run), archiveIssue: this.archiveIssue(run) }
   }
   record (owner: string, token: string | undefined, name: string, args: any, result: any): void {
     const run = this.runs.get(owner)
@@ -259,24 +270,25 @@ export class TaskMemory {
     }
     if (name === 'send_input') run.inFlight = false
     if (name !== 'send_input' || !result?.sent) return
-    if (args?.mode === 'stdin') { run.truncated = true; return }
+    const cannotArchive = (reason: string) => { run.truncated = true; run.archiveIssue = run.archiveIssue || reason }
+    if (args?.mode === 'stdin') { cannotArchive('录制包含交互式 stdin，不能保存为完整可复用流程'); return }
     if (args?.submit !== true || result?.submitted !== true || typeof args.text !== 'string') return
     run.lastCommand = run.serial
     if (args.verificationFor === 0) return
-    if (args.text.length > 1200) { run.truncated = true; return }
+    if (args.text.length > 1200) { cannotArchive('录制命令超过 1200 字符，不能保存为完整可复用流程'); return }
     const command = redactMemory(args.text, 1200)
-    if (command.includes('[已隐藏') || /(?:^|[\s/])(?:passwd|sshpass)\b|(?:^|\s)(?:read\s+-s|export\s+.*(?:KEY|TOKEN|SECRET))/i.test(command)) { run.truncated = true; return }
+    if (command.includes('[已隐藏') || /(?:^|[\s/])(?:passwd|sshpass)\b|(?:^|\s)(?:read\s+-s|export\s+.*(?:KEY|TOKEN|SECRET))/i.test(command)) { cannotArchive('录制包含敏感命令或隐藏凭据，不能保存为完整可复用流程'); return }
     if (args.verificationFor !== undefined) {
       const step = run.steps[run.steps.length - 1]
-      if (!step || args.verificationFor !== run.steps.length || run.stepTabs[run.steps.length - 1] !== args.tabId) { run.truncated = true; return }
+      if (!step || args.verificationFor !== run.steps.length || run.stepTabs[run.steps.length - 1] !== args.tabId) { cannotArchive('验证命令未对应当前步骤及其终端，录制不完整'); return }
       const checks = step.verificationCommands || (step.verificationCommands = [])
-      if (checks.length >= 12) run.truncated = true
+      if (checks.length >= 12) cannotArchive('单步骤验证命令超过 12 条，录制不完整')
       else checks.push(command)
       return
     }
-    if (run.steps.length >= 24) { run.truncated = true; return }
+    if (run.steps.length >= 24) { cannotArchive('录制步骤超过 24 条，录制不完整'); return }
     const previous = run.steps[run.steps.length - 1]
-    if (previous && !previous.verification) run.truncated = true
+    if (previous && !previous.verification) cannotArchive('录制跳过了未验收步骤，流程不完整')
     const target = run.targets[args.tabId]
     const step: TaskStep = { command, purpose: redactMemory(args.purpose || '执行并检查结果', 180), target: target?.title || '',
       server: target?.server || cleanTarget(result.server), dependsOn: run.steps.length ? [run.steps.length] : [] }
@@ -290,29 +302,88 @@ export class TaskMemory {
     if (run.expected?.length && run.steps.length !== run.expected.length) return '流程还有依赖步骤尚未执行，不能确认任务完成'
     return ''
   }
+  private archiveIssue (run: TaskRun): string {
+    if (!run.capture) return '当前为别名执行，不会录制或归档新流程'
+    if (run.truncated) return run.archiveIssue || '录制不完整，不能保存为可复用流程'
+    if (!run.steps.length) return '尚无可归档的终端操作步骤'
+    if (run.inFlight || !run.reads || run.verifiedSteps !== run.steps.length || run.steps.some(s => !s.verification)) return '流程步骤尚未全部验收'
+    if (run.steps.some(s => targetError(s.server))) return '流程步骤缺少已核对的服务器身份或绝对操作路径'
+    return ''
+  }
+  /** Current run or the most recent explicit recording, scoped to this session and workspace. */
+  async workflowStatus (owner: string, cwd: string): Promise<any> {
+    const active = this.runs.get(owner)
+    const completed = this.completed.get(owner)
+    const run = active || completed?.run
+    if (!run || run.cwd !== cwd) return { state: 'idle', recording: false, canSetAlias: false, archiveEligible: false,
+      reason: '当前会话没有录制记录；普通任务不能事后设置流程别名。用 /remember 任务描述 开始新的录制，不要重跑已完成操作来冒充原流程。' }
+    const archiveIssue = this.archiveIssue(run)
+    const workflow = completed?.workflowId ? (await this.store.read()).workflows.find(w => w.id === completed.workflowId && w.cwd === cwd) : undefined
+    return { state: active && !active.finishing ? (run.capture ? 'recording' : 'executing_alias')
+      : completed?.saving ? 'archiving' : workflow ? 'archived' : archiveIssue ? 'unavailable' : completed?.error ? 'archive_failed' : 'unavailable',
+    recording: !!active && !active.finishing && run.capture, objective: run.objective, cwd: run.cwd,
+    confirmedSteps: run.steps.map((s, i) => s.verification ? i + 1 : 0).filter(Boolean),
+    pendingStep: run.steps.length && !run.steps[run.steps.length - 1].verification ? run.steps.length : undefined,
+    archiveEligible: !archiveIssue, archiveIssue: archiveIssue || undefined,
+    reason: completed?.error || (completed?.workflowId && !workflow ? '流程已被删除，请在设置中检查；不能将其他流程替代本次录制' : undefined),
+    canSetAlias: !active && !!completed && !archiveIssue && (!!workflow || !completed.workflowId),
+    workflow: workflow ? { id: workflow.id, alias: workflow.alias || '', objective: workflow.objective, cwd: workflow.cwd, enabled: workflow.enabled } : undefined }
+  }
+  /** Never synthesize a workflow from chat history or a model-provided procedure. */
+  async assignWorkflowAlias (owner: string, cwd: string, value: string, workflowId?: string): Promise<any> {
+    const alias = normalizeAlias(value)
+    const completed = this.completed.get(owner)
+    if (this.runs.has(owner) || !completed || completed.run.cwd !== cwd) throw new Error('没有已完成的录制可设置别名；先查询 workflow_status，不能将普通任务或执行中的流程事后归档')
+    const issue = this.archiveIssue(completed.run)
+    if (issue) throw new Error(issue)
+    if (workflowId && workflowId !== completed.workflowId) throw new Error('流程 ID 与本会话最近完成的录制不一致；请重新查询 workflow_status')
+    if (!completed.workflowId) await this.persistRecording(completed)
+    if (this.completed.get(owner) !== completed || this.runs.has(owner)) throw new Error('录制状态已改变，请重新查询 workflow_status')
+    await this.setAlias(completed.workflowId!, alias)
+    const status = await this.workflowStatus(owner, cwd)
+    if (status.workflow?.id !== completed.workflowId || status.workflow?.alias !== alias) throw new Error('别名回读不一致，请重新查询 workflow_status')
+    return { saved: true, ...status }
+  }
   async finish (owner: string, token: string | undefined, turnStatus: string, goalStatus: string, outcome: string): Promise<TaskWorkflow | undefined> {
     const run = this.runs.get(owner)
-    if (!run || run.token !== token || run.finishing || turnStatus !== 'completed' || goalStatus !== 'complete') return undefined
+    if (!run || run.token !== token || turnStatus !== 'completed' || goalStatus !== 'complete') return undefined
+    if (run.finishing) return this.completed.get(owner)?.saving
     if (this.completionIssue(owner, token)) return undefined
     if (!run.capture) { this.runs.delete(owner); return undefined }
-    if (!run.steps.length || !run.reads || run.verifiedSteps !== run.steps.length || run.steps.some(s => !s.verification || targetError(s.server)) || run.truncated) { this.runs.delete(owner); return undefined }
+    const completed: CompletedRecording = { run, outcome: redactMemory(outcome, 800) }
+    this.completed.set(owner, completed)
+    if (this.archiveIssue(run)) { this.runs.delete(owner); return undefined }
     run.finishing = true
     try {
-      return await this.store.update(data => {
-        const existing = data.workflows.find(w => w.cwd === run.cwd && w.objective === run.objective)
-        if (existing) {
-          existing.successes++
-          existing.completedAt = Date.now()
-          if (!existing.edited) { existing.steps = run.steps; existing.outcome = redactMemory(outcome, 800) }
-          return existing
-        }
-        if (data.workflows.length >= 200) throw new Error('任务流程库已满（200 条），请先清理不再使用的流程')
-        const workflow: TaskWorkflow = { id: id(), title: run.objective.slice(0, 80), objective: run.objective, cwd: run.cwd, steps: run.steps,
-          instructions: '', outcome: redactMemory(outcome, 800), completedAt: Date.now(), successes: 1, uses: 0, enabled: true, edited: false }
-        data.workflows.unshift(workflow)
-        return workflow
-      })
+      return await this.persistRecording(completed)
     } finally { if (this.runs.get(owner) === run) this.runs.delete(owner) }
+  }
+  private async persistRecording (completed: CompletedRecording): Promise<TaskWorkflow> {
+    if (completed.saving) return completed.saving
+    const { run, outcome } = completed
+    completed.saving = this.store.update(data => {
+      const existing = data.workflows.find(w => w.cwd === run.cwd && w.objective === run.objective)
+      if (existing) {
+        existing.successes++
+        existing.completedAt = Date.now()
+        if (!existing.edited) { existing.steps = run.steps; existing.outcome = redactMemory(outcome, 800) }
+        return existing
+      }
+      if (data.workflows.length >= 200) throw new Error('任务流程库已满（200 条），请先清理不再使用的流程')
+      const workflow: TaskWorkflow = { id: id(), title: run.objective.slice(0, 80), objective: run.objective, cwd: run.cwd, steps: run.steps,
+        instructions: '', outcome: redactMemory(outcome, 800), completedAt: Date.now(), successes: 1, uses: 0, enabled: true, edited: false }
+      data.workflows.unshift(workflow)
+      return workflow
+    })
+    try {
+      const workflow = await completed.saving
+      completed.workflowId = workflow.id
+      completed.error = undefined
+      return workflow
+    } catch (error: any) {
+      completed.error = '流程归档失败：' + redactMemory(error.message, 400) + '；可用 workflow_set_alias 重试归档并保存别名，无需重跑终端操作'
+      throw error
+    } finally { completed.saving = undefined }
   }
   async used (workflowId: string): Promise<void> { await this.store.update(data => { const workflow = data.workflows.find(w => w.id === workflowId); if (workflow) workflow.uses++ }) }
   async setAlias (workflowId: string, value: string): Promise<void> {

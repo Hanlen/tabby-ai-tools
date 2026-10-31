@@ -874,5 +874,17 @@
   "历史较短，无需压缩。": "El historial es demasiado corto para compactarlo.",
   "上下文已压缩；原始历史和工具结果已保留。": "Contexto compactado; historial y resultados conservados.",
   "压缩失败，原始历史已保留": "Falló la compactación; historial conservado",
-  "已排队，将在当前 Pi 执行结束后处理": "En cola; se procesará cuando termine la ejecución actual de Pi"
+  "已排队，将在当前 Pi 执行结束后处理": "En cola; se procesará cuando termine la ejecución actual de Pi",
+  "录制包含交互式 stdin，不能保存为完整可复用流程": "Recording includes interactive stdin and cannot be saved as a complete reusable workflow.",
+  "录制命令超过 1200 字符，不能保存为完整可复用流程": "A recorded command exceeds 1200 characters; the workflow cannot be saved in full.",
+  "录制包含敏感命令或隐藏凭据，不能保存为完整可复用流程": "Recording includes sensitive commands or redacted credentials and cannot be saved as a complete reusable workflow.",
+  "验证命令未对应当前步骤及其终端，录制不完整": "A verification command did not match the current step and terminal; the recording is incomplete.",
+  "单步骤验证命令超过 12 条，录制不完整": "A step exceeds 12 verification commands; the recording is incomplete.",
+  "录制步骤超过 24 条，录制不完整": "Recording exceeds 24 steps and is incomplete.",
+  "录制跳过了未验收步骤，流程不完整": "Recording skipped an unverified step and is incomplete.",
+  "录制不完整，不能保存为可复用流程": "Recording is incomplete and cannot be saved as a reusable workflow.",
+  "尚无可归档的终端操作步骤": "No terminal operation steps are available to archive.",
+  "流程步骤尚未全部验收": "Workflow steps have not all been verified.",
+  "流程步骤缺少已核对的服务器身份或绝对操作路径": "Workflow steps lack verified server identity or an absolute operation path.",
+  "流程归档失败：{0}；可用 workflow_set_alias 重试归档并保存别名，无需重跑终端操作": "Workflow archive failed: {0}; use workflow_set_alias to retry archiving and save the alias without replaying terminal operations."
 }

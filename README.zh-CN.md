@@ -22,7 +22,7 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools 开发版界面示意（含可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示重试等待、按需读屏、定时任务、Pi 的外部 Node 与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/1808f28f55fa9fbd9276020955c85b003a33d1b5/docs/assets/overview.png)
+![Tabby AI Tools v0.5.0 界面示意（含可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、按需读屏、定时任务、Pi 的外部 Node 与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
@@ -30,7 +30,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 终端输出由 AI 使用 `read_tab` 按需读取，不再自动追加到运行中的回合。后台重试期间，侧栏持续显示等待状态和已等待时长；后台提供重试时间时才显示下次重试时间及倒计时。停止取消 AI 回合，终端命令可能已经完成；继续前先核对实际终端和流程验收点，避免重复执行。详见[流程恢复](docs/task-workflows.md#限流中断与恢复)。
 
-**开发版新增：** API 连接可选 Pi SDK 运行时（独立 Node 22.19+），支持 `/compact` 和默认关闭的自动压缩。在连接设置的“Agent 运行时”中选择 Pi SDK；[配置、恢复与验证范围](docs/pi.md)见说明。这些改动尚未发布到 npm。
+**v0.5.0 新增：** API 连接可选 Pi SDK 运行时（独立 Node 22.19+），支持 `/compact`、流程归档状态查询与对话设置别名；自动压缩默认关闭。在连接设置的“Agent 运行时”中选择 Pi SDK；[配置、恢复与验证范围](docs/pi.md)见说明。
 
 ## 多模型适配，支持本机 ChatGPT 订阅登录
 
@@ -93,7 +93,7 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 
 > 在 staging-app 和 staging-db 上检查应用与数据库连接。先确认数据库正常，再检查应用配置；发现问题先说明原因，在我授权后修复，最后验证应用健康检查。
 
-支持按执行结果决定下一步，也可以操作终端中的其他交互式 Agent。用 `/remember 任务描述` 开始录制，任务成功结束后提示设置别名（如 `task1`），下次发送 `/task1` 即执行该流程，并重新核对当前环境。各步骤保存服务器 IP、持久连接／服务器 ID、操作路径及验收条件；多服务器按顺序执行，前一步通过结果验收后才放行下一步。普通任务不再默认固化。含 sudo 的流程会提前提示在各执行终端运行 `sudo -v` 或 `sudo ls`，任务期间保持认证有效。[查看编排与复用方法](docs/guide.md#任务编排与多服务器协作)。
+支持按执行结果决定下一步，也可以操作终端中的其他交互式 Agent。用 `/remember 任务描述` 开始录制，任务成功结束后可在侧栏或直接告诉助手设置别名（如 `task1`），下次发送 `/task1` 即执行该流程，并重新核对当前环境。各步骤保存服务器 IP、持久连接／服务器 ID、操作路径及验收条件；多服务器按顺序执行，前一步通过结果验收后才放行下一步。助手可用 `workflow_status` / `workflow_set_alias` 查询录制、归档状态并保存别名；checkpoint 成功不等于归档成功，无法归档时显示原因。普通任务不录制，也不能事后补存。含 sudo 的流程会提前提示在各执行终端运行 `sudo -v` 或 `sudo ls`，任务期间保持认证有效。[查看编排与复用方法](docs/guide.md#任务编排与多服务器协作)。
 
 ## 定时任务：到点检查、判断、执行与验证
 

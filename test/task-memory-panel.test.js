@@ -47,8 +47,11 @@ async function setup (t, api = false) {
   panel.ensureSource = async () => {}
   panel.readOutput = () => ({ message: 'current terminal data', cursor: 0, length: 0 })
   const tool = async (name, args) => {
+    const before = replies.length
     panel.handleEvent({ id: tools.length + 1, method: 'item/tool/call', params: { threadId: panel.threadId, namespace: 'tabby_tabs', tool: name, arguments: args } })
-    await flush()
+    const deadline = Date.now() + 2000
+    while (replies.length === before && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1))
+    assert.equal(replies.length, before + 1, `${name} must respond`)
   }
   const finish = async () => {
     goalStatus = 'complete'
@@ -57,7 +60,7 @@ async function setup (t, api = false) {
     library.finish = (...args) => { const promise = originalFinish(...args); pending.push(promise); return promise }
     panel.handleEvent({ method: 'turn/completed', params: { threadId: panel.threadId, turn: { id: 'turn-1', status: 'completed' } } })
     await flush()
-    await Promise.all(pending)
+    await Promise.allSettled(pending)
     library.finish = originalFinish
     await flush()
   }
@@ -218,4 +221,125 @@ test('resuming after 429 verifies the completed pending step without replaying s
   await f.tool('send_input', { tabId: 'repo', text: 'next operation', submit: true })
   assert.equal(f.replies.at(-1)[1].success, true)
   assert.deepEqual(f.tools.filter(call => call.name === 'send_input').map(call => call.args.text), ['git stash', 'tar -xf update.tar && git apply --check fix.patch', 'next operation'])
+})
+
+
+for (const api of [false, true]) {
+  test(`${api ? 'API' : 'Codex'} alias follow-up saves pm1 through workflow tools without terminal replay`, async t => {
+    const f = await setup(t, api)
+    f.panel.prompt = '/remember upload, extract and apply verified patch'
+    await f.panel.send()
+    await f.tool('read_tab', { tabId: 'repo' })
+    for (const [i, text] of ['upload', 'extract', 'git apply --check', 'git apply'].entries()) {
+      await f.tool('send_input', { tabId: 'repo', text, submit: true })
+      await f.tool('read_tab', { tabId: 'repo' })
+      await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: i + 1, criteria: 'verified result', evidence: 'fresh output and artifact checks passed' })
+    }
+    await f.finish()
+    const recordedTools = f.tools.length
+    f.panel.prompt = '设置别名为 pm1'
+    await f.panel.send()
+    await f.tool('workflow_status', {})
+    const state = JSON.parse(f.replies.at(-1)[1].contentItems[0].text)
+    assert.equal(state.state, 'archived')
+    assert.equal(state.workflow.objective, 'upload, extract and apply verified patch')
+    assert.equal(state.canSetAlias, true)
+    await f.tool('workflow_set_alias', { workflowId: state.workflow.id, alias: 'pm1' })
+    const saved = JSON.parse(f.replies.at(-1)[1].contentItems[0].text)
+    assert.equal(saved.saved, true)
+    assert.equal(saved.workflow.alias, 'pm1')
+    assert.equal(f.panel.pendingWorkflow, undefined)
+    assert.match(f.panel.memoryNotice, /已保存.*pm1/)
+    assert.equal(f.tools.length, recordedTools)
+    assert.equal((await f.library.prepare('next-thread', '/pm1', '/project')).workflow.id, state.workflow.id)
+  })
+}
+
+test('workflow tools explain unrecorded/disabled state and enforce read-only aliases', async t => {
+  const f = await setup(t)
+  await f.tool('workflow_status', {})
+  assert.match(f.replies.at(-1)[1].contentItems[0].text, /普通任务不能事后/)
+  await f.tool('workflow_set_alias', { alias: 'pm1' })
+  assert.equal(f.replies.at(-1)[1].success, false)
+  f.memory.enabled = false
+  await f.tool('workflow_status', {})
+  assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).state, 'disabled')
+  f.memory.enabled = true
+  f.panel.settings.sandbox = 'read-only'
+  await f.tool('workflow_set_alias', { alias: 'pm1' })
+  assert.equal(f.replies.at(-1)[1].success, false)
+  assert.match(f.replies.at(-1)[1].contentItems[0].text, /只读/)
+  assert.equal(f.tools.length, 0)
+})
+
+test('recording rejection is visible after task completion and remains queryable', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember build frontend'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('send_input', { tabId: 'repo', text: 'x'.repeat(1201), submit: true })
+  await f.tool('send_input', { tabId: 'repo', text: 'build', submit: true })
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'verified', evidence: 'fresh output checked' })
+  const result = JSON.parse(f.replies.at(-1)[1].contentItems[0].text)
+  assert.equal(result.confirmed, true)
+  assert.equal(result.archiveEligible, false)
+  await f.finish()
+  assert.equal(f.panel.goalStatus, 'complete')
+  assert.match(f.panel.memoryNotice, /1200/)
+  assert.equal(f.panel.pendingWorkflow, undefined)
+  await f.tool('workflow_status', {})
+  assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).state, 'unavailable')
+})
+
+test('an archive write failure is visible and alias tool retries the verified recording', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember build frontend'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('send_input', { tabId: 'repo', text: 'build', submit: true })
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'verified', evidence: 'fresh output checked' })
+  const update = f.library.store.update.bind(f.library.store)
+  f.library.store.update = () => Promise.reject(new Error('disk unavailable'))
+  await f.finish()
+  assert.match(f.panel.memoryNotice, /disk unavailable.*workflow_set_alias/)
+  f.library.store.update = update
+  f.panel.prompt = '设置别名为 pm1'
+  await f.panel.send()
+  await f.tool('workflow_set_alias', { alias: 'pm1' })
+  assert.equal(f.replies.at(-1)[1].success, true)
+  assert.equal((await f.library.store.read()).workflows[0].alias, 'pm1')
+  assert.equal(f.tools.filter(call => call.name === 'send_input').length, 1)
+})
+
+
+test('a follow-up waits for the completed recording to finish archiving before starting its goal', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember build frontend'
+  await f.panel.send()
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('send_input', { tabId: 'repo', text: 'build', submit: true })
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'verified', evidence: 'fresh output checked' })
+  const update = f.library.store.update.bind(f.library.store)
+  let release, started
+  const writing = new Promise(resolve => { started = resolve })
+  const gate = new Promise(resolve => { release = resolve })
+  f.library.store.update = (...args) => { started(); return gate.then(() => update(...args)) }
+  const finishing = f.finish()
+  await writing
+  assert.equal((await f.library.workflowStatus('thread', '/project')).state, 'archiving')
+  f.panel.prompt = '设置别名为 pm1'
+  const sending = f.panel.send()
+  await flush()
+  assert.equal(f.sent.length, 1, 'the next goal waits for the archive write')
+  release()
+  await Promise.all([finishing, sending])
+  assert.equal(f.sent.length, 2)
+  const status = await f.library.workflowStatus('thread', '/project')
+  assert.equal(status.state, 'archived')
+  await f.tool('workflow_set_alias', { alias: 'pm1', workflowId: status.workflow.id })
+  assert.equal(f.replies.at(-1)[1].success, true)
+  assert.equal((await f.library.store.read()).workflows[0].successes, 1)
 })

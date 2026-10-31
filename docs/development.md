@@ -17,7 +17,7 @@ npm test
 npm run build
 ```
 
-CI 使用 Node.js 20，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
+CI 使用 Node.js 22.19.0，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
 
 ### 安装后的重启提示
 
@@ -94,7 +94,7 @@ npm run skill:check  # 检查内嵌知识与 skill 文件是否一致
 
 任务流程仅由 `/remember TASK` 开始录制，结束后设置别名，`/task1` 执行。`src/sudo-workflow.ts` 构造终端内非交互预检与保活，`src/tab-tools.ts` 管理其任务生命周期；使用假 sudo 测试预检失败和跨命令保活，不能替代真实桌面／SSH 策略验证。
 
-流程身份和验收采用结构化 `TaskStep.server/dependsOn/verification/verificationCommands`。`read_tab` 仅提取连接字段白名单和会话路径；`workflow_checkpoint` 由面板路由到 `TaskMemory`，使用同终端新观察和串行发送门禁。通用规则在 bundled skill，具体流程和约束由发送时隐藏提示注入。旧库字段可选保持兼容；新录制须有完整身份及逐步验收。不将单纯读取或发送回执作为成功证明，语义验收仍由模型判断。
+流程身份和验收采用结构化 `TaskStep.server/dependsOn/verification/verificationCommands`。`read_tab` 仅提取连接字段白名单和会话路径；`workflow_checkpoint` 由面板路由到 `TaskMemory`，使用同终端新观察和串行发送门禁。通用规则在 bundled skill，具体流程和约束由发送时隐藏提示注入。旧库字段可选保持兼容；新录制须有完整身份及逐步验收。不将单纯读取或发送回执作为成功证明，语义验收仍由模型判断。`workflow_status` 与 `workflow_set_alias` 同样由面板路由：前者区分录制、别名执行、归档中、拒绝归档和写盘失败，后者仅操作本会话／目录最近完成的显式录制，禁止只读模式修改。checkpoint 返回录制模式和归档资格；写盘失败保留已验收记录供别名工具重试，不重放终端命令。发送后续目标前等待完成中的归档，避免清理录制进度。最近录制及失败重试缓冲仅在当前进程保留，重启后已落盘流程仍通过设置管理。
 
 终端接管由 `send_input` 自动处理，不再生成 `local/terminalTakeover` 请求。检测未知（SSH、无枚举接口、枚举异常）时不因检测能力缺失暂停，不盲发 Ctrl+C；已检测的无关进程需要 `foregroundTaskNeeded=false`，发送 Ctrl+C 并验证停止。保留任务所需进程、会话/所有权检查、取消与只读限制。
 
