@@ -31,7 +31,8 @@ try {
   for (const name of Object.keys(env)) if (name !== 'PATH' && name.toUpperCase() === 'PATH') delete env[name]
   // Keep the OS shell available by absolute path while removing node from PATH.
   const shell = process.platform === 'win32' ? process.env.ComSpec || join(process.env.SystemRoot || 'C:/Windows', 'System32', 'cmd.exe') : '/bin/sh'
-  const options = ['--offline', '--ignore-scripts=false', '--foreground-scripts', `--script-shell=${shell}`, '--no-audit', '--no-fund', '--package-lock=false']
+  const options = ['--ignore-scripts=false', '--foreground-scripts', `--script-shell=${shell}`,
+    `--cache=${join(root, 'npm-cache')}`, '--registry=https://registry.npmjs.org/', '--no-audit', '--no-fund', '--package-lock=false']
 
   // Positive control: prove lifecycle scripts really cannot find node in this
   // environment. This prevents an npm PATH change from hiding the regression.

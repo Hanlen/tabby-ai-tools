@@ -8,6 +8,8 @@ Local Linux / Node 22.19.0: skill bundle/check, typecheck, all 762 tests (756 pa
 
 A separate regression copies only the built Pi sidecar to an isolated temporary directory outside the repository, then completes local HTTP streaming and a host-tool round trip without installed SDK packages. The local installer is also exercised with no npm entry point or Node on PATH. Both README renders and the current SVG/PNG overview are reviewed; the robot GIF and static fallback are unchanged. The final release records the verified tarball checksum and both branch/tag CI results. These checks do not establish a full Windows/macOS Tabby desktop upgrade or real provider access. No paid inference or user-task replay was performed.
 
+The first pre-tag branch CI passed type checks, tests and builds on all three operating systems, then exposed an `ENOTCACHED` failure in the package check: `npm ci` caches locked archives but does not guarantee the version metadata needed by an offline fresh installation. The check now uses its own empty cache and the public registry, while preserving the missing-Node environment and enabled lifecycle scripts. Its result no longer depends on development-machine cache history. This changes the verification harness; the runtime bundle is unchanged.
+
 # v0.5.0 release validation (2026-10-31)
 
 Local Linux / Node 22.19.0: `npm run skill:bundle`, `npm run skill:check`, `npm run typecheck`, `npm test` (760 tests: 754 passed, 0 failed, 6 Windows-only skips), `npm run build` and `git diff --check` passed. No paid inference or original upload/apply operations were run. Branch and tag CI results are recorded in the GitHub Release after all three operating systems pass.
