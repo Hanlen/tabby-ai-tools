@@ -1,3 +1,19 @@
+# v0.5.0 release validation (2026-10-31)
+
+Local Linux / Node 22.19.0: `npm run skill:bundle`, `npm run skill:check`, `npm run typecheck`, `npm test` (760 tests: 754 passed, 0 failed, 6 Windows-only skips), `npm run build` and `git diff --check` passed. No paid inference or original upload/apply operations were run. Branch and tag CI results are recorded in the GitHub Release after all three operating systems pass.
+
+The English and Chinese READMEs were rendered and checked for the centered header, badges, model-provider table, absolute image URLs, workflow tool descriptions and reduced-motion fallback. Codex login commands and the distinction between ChatGPT subscription access and API billing were checked against [official authentication documentation](https://learn.chatgpt.com/docs/auth). The current SVG/PNG illustration was regenerated and visually checked at 1800×1440; the existing robot GIF has 12 frames and its static fallback matches the 1024×512 dimensions. The real npm tarball is inspected before publication; its exact checksum is recorded with the GitHub Release. Roadmaps, research, the local issue report and AGENTS.md remain local and are excluded from the package.
+
+Real provider/subscription access and full desktop/SSH workflows are not claimed by these offline release checks. The prior development records below retain their own dates, environments and validation limits.
+
+# Workflow archive and alias development validation (2026-10-28)
+
+Added session/workspace-scoped `workflow_status` and `workflow_set_alias`, explicit archive eligibility/rejection diagnostics, verified-recording retention after archive write failure, read-back confirmation and a guard that waits for archiving before starting a follow-up goal. Ordinary tasks remain unrecorded; these tools cannot recover an old, lost recording or manufacture a workflow from chat history. In-memory status and retry buffers are cleared on session changes, new recordings/alias runs, disablement or restart; already persisted workflows remain in Settings.
+
+Local Linux / Node 22.23.3 validation: 760 tests, 754 passed and 6 Windows-only skips; skill bundle/check, typecheck, production build and `git diff --check` passed. Regression fixtures cover the four-step upload/extract/check/apply sequence followed by “设置别名为 pm1”, unrecorded and disabled states, archive rejection, failed-write retry, session/workspace/ID isolation, read-only writes, deleted/replaced workflows, concurrent retry deduplication and a follow-up arriving during archive persistence. No model inference or original upload/apply operations were performed. An initial full run under the shell's Node 20.20.2 failed two Pi tests because they require Node >=22.19; the complete suite passed after switching to Node 22.
+
+Both READMEs were rendered with the Markdown parser and checked for the centered header, provider table, workflow tool descriptions, absolute public image paths and reduced-motion fallback. The SVG/PNG illustration now shows an explicitly recorded workflow and a saved `/pm1` alias and was previewed at 1800×1440. The robot animation and static fallback are unchanged. Real Tabby desktop/SSH behavior, macOS/Windows execution, CI and publication are not established by these local fixtures; no commit, tag or release was requested.
+
 # v0.4.1 release validation (2026-10-25)
 
 The release includes custom OpenAI-compatible Chat Completions/Responses connections, explicit no-key authentication, protocol-safe history/context transfer, Kimi/Alibaba Coding Plan presets, continuous API/Claude Code goals and model → reasoning selection. Local HTTP/SSE and CLI/MCP fixtures exercise discovery, native request parameters, streaming, continuous tool rounds, approvals, read-only behavior, cancellation, usage/budgets, repeated-loop protection, history recovery and context handoff. Existing provider fingerprints remain unchanged.

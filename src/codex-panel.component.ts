@@ -735,6 +735,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.tabTools.releaseOwner(previous.threadId)
       this.agents?.memory?.activeLibrary?.forgetRun(previous.threadId)
       this.memoryNotice = ''
+      this.pendingWorkflow = undefined
       this.workflowPanelOpen = false
       if (previous.codex.profile) previous.codex.client.close()
     } catch (error: any) {
@@ -986,6 +987,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (oldId && oldId !== restoredId) {
         this.agents?.memory?.activeLibrary?.forgetRun(oldId)
         this.memoryNotice = ''
+        this.pendingWorkflow = undefined
         this.workflowPanelOpen = false
         void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
       }
@@ -1047,9 +1049,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.sendAttempt++
     if (this.busy && !this.turnId) { this.status = '正在启动回合，请稍后追加指令'; return }
     if (!this.threadId) { await this.reconnect(); if (!this.threadId) return }
+    // Finish a completed recording before a follow-up goal can discard its run.
+    if (!this.busy && this.goalStatus !== 'active' && this.latestTurnStatus === 'completed' && this.agents?.memory?.activeLibrary?.token(this.threadId)) await this.refreshGoal()
     if (this.goalStatus !== 'active') {
       this.sudoWorkflow = !!selectedWorkflow && workflowNeedsSudo(selectedWorkflow)
-      if (!remember) this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
+      if (remember || selectedWorkflow) this.pendingWorkflow = undefined
+      if (!remember) this.agents?.memory?.activeLibrary?.forgetRun(this.threadId, true)
     }
     this.resetPromptHistory()
     this.prompt = ''
@@ -1180,6 +1185,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (oldId && oldId !== newId) {
         this.agents?.memory?.activeLibrary?.forgetRun(oldId)
         this.memoryNotice = ''
+        this.pendingWorkflow = undefined
         this.workflowPanelOpen = false
         void this.codex.client.request('thread/unsubscribe', { threadId: oldId }).catch(() => undefined)
       }
@@ -1271,7 +1277,22 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         const operation = (async () => {
           if (p.namespace === 'tabby_tasks') return this.agents?.scheduler?.call(p.tool, p.arguments, this.cwd, this.profileId, this.settings, p.signal) || Promise.reject(new Error('定时任务服务不可用'))
           if (p.namespace !== 'tabby_tabs') throw new Error('Unknown tool namespace')
+          if (p.tool === 'workflow_status') {
+            if (!memory?.enabled) return { state: 'disabled', recording: false, canSetAlias: false, archiveEligible: false, reason: '任务流程已停用；需用户在设置中启用后用 /remember 开始录制' }
+            return memory.library.workflowStatus(owner, this.cwd)
+          }
           const library = memory?.enabled ? memory.activeLibrary : undefined
+          if (p.tool === 'workflow_set_alias') {
+            if (this.settings.sandbox === 'read-only') throw new Error('只读模式禁止修改流程别名')
+            if (!library) throw new Error('当前没有已完成的录制；先查询 workflow_status')
+            const result = await library.assignWorkflowAlias(owner, this.cwd, p.arguments.alias, p.arguments.workflowId)
+            if (this.threadId === owner) this.zone.run(() => {
+              if (this.pendingWorkflow?.id === result.workflow.id) this.pendingWorkflow = undefined
+              this.memoryNotice = `流程别名已保存：/${result.workflow.alias}`
+              void this.openWorkflows(false)
+            })
+            return result
+          }
           if (p.tool === 'workflow_checkpoint') {
             if (!library) throw new Error('任务流程库暂不可用')
             return library.checkpoint(owner, token, p.arguments)
@@ -1459,7 +1480,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
             this.memoryNotice = '任务已完成。是否为此流程设置别名？下次可直接输入 /task1 执行。'
             this.changeDetector?.detectChanges()
           })
-        } catch { this.zone.run(() => { this.memoryNotice = '任务已完成，但流程归档失败；可在设置中检查流程库' }) }
+          else if (this.codex === backend && this.threadId === threadId && !this.busy) {
+            const state = await memory.activeLibrary?.workflowStatus(threadId, this.cwd)
+            if (state?.state === 'unavailable' && state.archiveIssue) this.zone.run(() => { this.memoryNotice = state.archiveIssue })
+          }
+        } catch {
+          const state = await memory?.activeLibrary?.workflowStatus(threadId, this.cwd).catch(() => undefined)
+          this.zone.run(() => { if (this.codex === backend && this.threadId === threadId) this.memoryNotice = state?.reason || '任务已完成，但流程归档失败；可在设置中检查流程库' })
+        }
       }
     } catch (error: any) {
       this.zone.run(() => { if (this.codex === backend && this.threadId === threadId) this.status = `无法确认完成状态：${error.message}` })

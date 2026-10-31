@@ -2,7 +2,7 @@
 export const TABBY_MUTATIONS = new Set([
   'send_input', 'send_keys', 'attach_process', 'interact_tab', 'open_profile', 'manage_profile', 'run_command',
   'open_settings', 'write_config', 'close_tab', 'duplicate_tab', 'rename_tab', 'split_tab', 'layout_tabs',
-  'interact_window',
+  'interact_window', 'workflow_set_alias',
 ])
 
 const string = { type: 'string' }

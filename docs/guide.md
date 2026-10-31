@@ -12,7 +12,7 @@
 
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
 - **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的 ChatGPT 账号登录，再执行 `codex login status` 确认认证状态，无需在插件中填写 API Key。插件默认连接选 **Codex（本机登录）**；可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
-- **Claude 订阅／Claude Code 本机模式（开发版）**：本机安装官方 Claude Code，运行 `claude auth login`，用 `claude auth status` 核对账号与认证方式。在侧栏或默认连接中选择 **Claude Code（本机登录）**；无需在插件里配置订阅凭据。API Key／云平台可能使用独立计费。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
+- **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，运行 `claude auth login`，用 `claude auth status` 核对账号与认证方式。在侧栏或默认连接中选择 **Claude Code（本机登录）**；无需在插件里配置订阅凭据。API Key／云平台可能使用独立计费。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
 - **API 模式**：准备 OpenAI、DeepSeek、GLM、Kimi、百炼 Coding Plan 或 Claude 对应的 Key，无需安装 Codex CLI。订阅登录与 API 连接是两种独立配置方式。
 
 ### 安装插件
@@ -162,7 +162,7 @@ API 工具循环检测始终启用，无需等到轮数上限。近期同一段�
 
 ## 重复任务与操作习惯
 
-用 `/remember 任务描述` 明确开始录制，插件执行任务并记录已核对的终端步骤；完成后提示是否设置别名，例如 `task1`。之后直接发送 `/task1` 执行流程。普通任务不再自动归档，也不再按相似描述自动匹配；输入框中的“不检索记忆”复选框已移除。点击 **任务流程** 或输入 `/workflows` 查看当前目录的流程，设置中可以给已有流程添加别名。
+用 `/remember 任务描述` 明确开始录制，插件执行任务并记录已核对的终端步骤；完成后提示是否设置别名，例如 `task1`。之后直接发送 `/task1` 执行流程。普通任务不再自动归档，也不再按相似描述自动匹配；输入框中的“不检索记忆”复选框已移除。点击 **任务流程** 或输入 `/workflows` 查看当前目录的流程，设置中可以给已有流程添加别名。也可以直接告诉助手“设置别名为 pm1”：助手先用 `workflow_status` 核对本会话最近录制的目标与归档状态，再用 `workflow_set_alias` 保存并回读 `/pm1`。checkpoint 成功仅表示步骤验收；录制不完整或含敏感内容时会说明无法归档的原因。普通任务不能事后保存为流程，不能为了补存而重跑已完成操作。
 
 含 sudo 的流程会提前提示在每个实际执行终端运行 `sudo -v` 或 `sudo ls`，完成认证后继续。其他终端的认证不保证共享。执行时用 `sudo -n -v` 预检，每 30 秒非交互刷新；认证失效时停止该命令并要求重新认证。详情和清理边界见[任务流程说明](task-workflows.md)。各步骤还保存服务器 IP、持久连接／服务器 ID、操作路径、前置依赖和验收证据。跨服务器也逐步执行：读取对应终端的新结果，并通过步骤确认工具验收后，才放行下一步；目标或路径不符时停止。操作偏好继续在设置页管理，`/remember` 专用于开始任务录制。
 
@@ -314,10 +314,10 @@ NVM 优先 current，其余按 Node 版本降序。IDE 同时支持 `.vscode-ins
 本地安装后请在 **已安装插件** 中查看；**可用插件** 列表来自 npm 搜索，未发布到 npm 的本地包不会出现在该列表。
 
 
-## Pi 与上下文压缩（开发版）
+## Pi 与上下文压缩（v0.5.0）
 
 在 API 连接的“Agent 运行时”中选择 Pi SDK，填写外部 Node 22.19+ 的可执行文件路径，然后从侧栏重新连接。供应商、模型、Base URL 和密钥来源沿用连接设置；Pi 不提供订阅认证。仅开放 Tabby 宿主工具，审批、只读、终端所有权、sudo 与流程 checkpoint 继续生效。
 
 空闲时输入 `/compact` 手动压缩。内置 API 保留原始历史，按完整工具批次投影请求；Pi 保留自己的 JSONL 原始条目和压缩边界。自动压缩默认关闭，摘要本身消耗额度并计入 Goal 预算。Pi 的重试倒计时使用 SDK 结构化事件，取消会结束独立进程，不重放整段任务。中断后先读取真实终端再继续，未知动作不会自动重放。
 
-Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与 CI 使用 Node 22.19+；升级系统 Node 不会改变 Electron 内置 Node。当前已验证本地 HTTP 夹具，并在独立配置的 Linux Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）中跑通侧栏、Pi 子进程、宿主 list_tabs 与 Goal 完成；真实模型、SSH/PTY 修改操作和 macOS/Windows 桌面仍待实测。此功能尚未进入 npm 0.4.1。
+Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与 CI 使用 Node 22.19+；升级系统 Node 不会改变 Electron 内置 Node。当前已验证本地 HTTP 夹具，并在独立配置的 Linux Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）中跑通侧栏、Pi 子进程、宿主 list_tabs 与 Goal 完成；真实模型、SSH/PTY 修改操作和 macOS/Windows 桌面仍待实测。此功能从 v0.5.0 开始提供。

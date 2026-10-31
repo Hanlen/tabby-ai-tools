@@ -22,7 +22,7 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools development interface illustration with optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with retry waiting, on-demand terminal reads, scheduled tasks, Pi Node and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/1808f28f55fa9fbd9276020955c85b003a33d1b5/docs/assets/overview.png)
+![Tabby AI Tools v0.5.0 interface illustration with optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, on-demand terminal reads, scheduled tasks, Pi Node and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
@@ -30,7 +30,7 @@ Terminal takeover is automatic: unavailable foreground-process detection (includ
 
 Terminal output is read on demand with `read_tab`; it is no longer automatically forwarded into an active turn. During backend retries, the sidebar keeps a visible waiting state with elapsed time, and shows the next retry time plus a countdown only if the backend supplies it. Stop cancels the AI turn; check the terminal and workflow checkpoint before continuing, since commands may already have completed. See [workflow recovery](docs/task-workflows.md#限流中断与恢复).
 
-**Development checkout:** optional Pi SDK runtime (external Node 22.19+) and `/compact` are now implemented. Select **Agent runtime → Pi SDK** in an API connection; automatic compaction is opt-in. See [setup, recovery and validation boundaries](docs/pi.md). These changes are not yet published to npm.
+**New in v0.5.0:** optional Pi SDK runtime (external Node 22.19+), `/compact`, workflow archive status and conversational aliases. Select **Agent runtime → Pi SDK** in an API connection; automatic compaction is opt-in. See [setup, recovery and validation boundaries](docs/pi.md).
 
 ## Multiple model providers, including your ChatGPT subscription
 
@@ -93,7 +93,7 @@ Describe the targets, order, conditions, and verification criteria. The assistan
 
 > Check application-to-database connectivity on staging-app and staging-db. Verify the database first, then inspect the application configuration. Explain any issue before asking me to authorize a fix, and verify the application health check afterward.
 
-Workflows can branch based on observed results and interact with other terminal Agents. Start a recording with `/remember TASK`. After successful completion, give the workflow an alias such as `task1`; send `/task1` to execute it again with fresh environment checks. Each step retains the server IP, stable connection/server ID, operation path and completion checks. Multi-server steps follow their saved order; a result checkpoint must confirm the preceding step before the next operation. Ordinary tasks are not recorded. Workflows containing sudo ask you to authenticate with `sudo -v` or `sudo ls` in each execution terminal, then keep that terminal’s credentials refreshed during the task. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
+Workflows can branch based on observed results and interact with other terminal Agents. Start a recording with `/remember TASK`. After successful completion, give the workflow an alias such as `task1` (in the sidebar or by asking the assistant to save it); send `/task1` to execute it again with fresh environment checks. Each step retains the server IP, stable connection/server ID, operation path and completion checks. Multi-server steps follow their saved order; a result checkpoint must confirm the preceding step before the next operation. The assistant can query recording/archive status and save aliases with `workflow_status` / `workflow_set_alias`; checkpoint success alone does not guarantee archival, and rejection reasons are shown. Ordinary tasks are not recorded and cannot be saved retroactively. Workflows containing sudo ask you to authenticate with `sudo -v` or `sudo ls` in each execution terminal, then keep that terminal’s credentials refreshed during the task. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
 
 ## Schedule checks, decisions, actions, and verification
 
