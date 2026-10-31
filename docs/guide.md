@@ -10,6 +10,8 @@
 
 ### 准备环境
 
+v0.5.1 起，Pi SDK 及其所需 JavaScript 已打包。通过 Tabby 安装／升级插件不需要系统中存在 `node` 命令，也不会执行 `protobufjs` 等 Pi 依赖的安装脚本；只有启用 Pi 运行时才需要外部 Node 22.19+。v0.5.0 的安装兼容性问题请通过升级 v0.5.1 修复，无需全局关闭安装脚本。
+
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
 - **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的 ChatGPT 账号登录，再执行 `codex login status` 确认认证状态，无需在插件中填写 API Key。插件默认连接选 **Codex（本机登录）**；可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
 - **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，运行 `claude auth login`，用 `claude auth status` 核对账号与认证方式。在侧栏或默认连接中选择 **Claude Code（本机登录）**；无需在插件里配置订阅凭据。API Key／云平台可能使用独立计费。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
