@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { ApiProfile, apiKeySource, apiPath, usesResponsesApi, isKimiProvider, kimiAlwaysThinks } from './agent-types'
 import { apiUrl, streamApi } from './api-transport'
+import { modelReasoningEfforts } from './model-reasoning'
 
 /** Identify this client honestly, including when using Kimi membership endpoints. */
 export function apiHeaders (profile: ApiProfile, key: string): Record<string, string> {
@@ -12,7 +13,7 @@ export function apiHeaders (profile: ApiProfile, key: string): Record<string, st
 export interface ToolDefinition { name: string; description: string; inputSchema: any }
 export interface ModelToolCall { id: string; name: string; arguments: string }
 export interface ToolResult { id: string; result: string; error?: boolean }
-export interface StreamProgress { phase: 'thinking' | 'tools'; receivedChars: number }
+export interface StreamProgress { phase: 'thinking' | 'tools'; receivedChars: number; delta?: string }
 export interface ModelResult {
   text: string
   messages: any[]
@@ -46,6 +47,10 @@ export class ApiProviderAdapter {
       Object.assign(body, { instructions: system, input: messages, store: false, include: ['reasoning.encrypted_content'], max_output_tokens: p.maxOutputTokens,
         ...(tools.length ? { tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false })) } : {}) })
       if (p.reasoningEffort) body.reasoning = { effort: p.reasoningEffort }
+      if (p.provider === 'openai' && p.reasoningEffort !== 'none' &&
+        (p.reasoningEffort || modelReasoningEfforts(p, p.model).length)) {
+        body.reasoning = { ...body.reasoning, summary: 'auto' }
+      }
     } else if (claude) {
       Object.assign(body, { system, messages, max_tokens: p.maxOutputTokens,
         ...(tools.length ? { tools: tools.map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema })) } : {}) })
@@ -82,7 +87,7 @@ export class ApiProviderAdapter {
       if (!delta) return
       if (phase === 'thinking') reasoningChars += delta.length
       else toolChars += delta.length
-      onProgress?.({ phase, receivedChars: phase === 'thinking' ? reasoningChars : toolChars })
+      onProgress?.({ phase, receivedChars: phase === 'thinking' ? reasoningChars : toolChars, ...(phase === 'thinking' ? { delta } : {}) })
     }
     for await (const event of streamApi(apiUrl(p.baseUrl, path), headers, body, signal)) {
       if (openai) {

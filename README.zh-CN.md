@@ -22,9 +22,13 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.5.3 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.6.0 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
+
+对话中实时显示默认折叠的思考过程与工具调用，展开可查看服务返回的思考文本、工具参数和结果，正文回复直接显示。Shell 集成确认命令完成后，读屏会提前返回，无需等满指定时间。收到可读文本后才显示思考记录，Codex 与支持的 OpenAI 推理请求会开启摘要；在侧栏选中文字并复制时，不会向活动终端发送 Ctrl+C。
+
+**v0.6.0 新增：** 可读的思考／工具过程、安全的侧栏复制，以及确认命令完成后的提前读屏。验证范围与限制见[发布说明](docs/releases/0.6.0.md)。
 
 终端接管自动完成：前台进程检测不可用（包括 SSH）时不再要求点击确认。AI 先读取终端输出，保留当前任务需要的进程，并可自动中断已检测到的无关任务。
 

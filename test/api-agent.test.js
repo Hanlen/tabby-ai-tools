@@ -216,6 +216,7 @@ function reply (provider, res, round, tool) {
       { type: 'function_call', call_id: 'call-' + round, name: tool.name, arguments: JSON.stringify(tool.args) }]
       : [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '完成' }] }]
     sse(res, [
+      { type: 'response.reasoning_summary_text.delta', delta: 'native-thought-' + round },
       ...(!tool ? [{ type: 'response.output_text.delta', delta: '完' }, { type: 'response.output_text.delta', delta: '成' }] : []),
       { type: 'response.completed', response: { output, usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
     ], false)
@@ -695,6 +696,14 @@ for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bai
     assert.equal(usage.at(-1).last.totalTokens, 10)
     assert.equal((await f.agent.getGoal(f.id)).status, 'complete', 'verified completion is explicit')
     const saved = await f.store.load(f.id)
+    assert.equal(saved.turns[0].items.filter(item => item.type === 'reasoning').length, 4)
+    const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, f.agent, zone, {}, panelTools)
+    panel.threadId = f.id
+    await panel.loadHistory()
+    assert.equal(panel.entries.find(entry => entry.kind === 'thinking').text, 'native-thought-1')
+    assert.equal(panel.entries.find(entry => entry.kind === 'thinking').expanded, undefined)
+    assert.equal(panel.entries.find(entry => entry.kind === 'tool').title, 'list_tabs {}')
+    assert.equal(panel.entries.some(entry => entry.text.includes('opaque-')), false)
     assert.equal(saved.messages.length > 3, true)
     assert.equal(JSON.stringify(saved).includes('fixture-secret'), false)
     const restored = new ApiAgent(f.profile, f.store, async () => 'fixture-secret')
@@ -1548,11 +1557,116 @@ test('DeepSeek text renders at the first delayed SSE chunk before the request co
   await f.agent.startTurn(f.id, 'Stream output', '/workspace', settings)
   await visible
   assert.equal(done, false)
-  assert.equal(panel.entries.some(entry => entry.text.includes('private reasoning')), false)
+  assert.equal(panel.entries.find(entry => entry.kind === 'thinking').text, 'private reasoning')
+  assert.equal(panel.entries.find(entry => entry.kind === 'thinking').expanded, undefined)
+  assert.equal(panel.entries.find(entry => entry.kind === 'thinking').running, false)
   assert.equal(panel.status, '正在接收回复…')
   release()
   assert.equal((await completed).status, 'completed')
   assert.equal(panel.entries.find(entry => entry.kind === 'agent').text, 'first piece last piece')
+})
+
+test('Codex activity streams before completion and preserves expanded entries through final events', async () => {
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {}, zone, {}, panelTools)
+  panel.threadId = 'codex-thread'
+  panel.turnId = 'turn-1'
+  const emit = (method, params) => panel.onEvent({ method, params: { threadId: panel.threadId, turnId: panel.turnId, ...params } })
+  emit('item/started', { item: { id: 'reason', type: 'reasoning', summary: [], content: [] } })
+  assert.equal(panel.entries.length, 0, 'reasoning without readable text does not create an empty card')
+  assert.equal(panel.status, '模型正在思考…')
+  emit('item/reasoning/summaryTextDelta', { itemId: 'reason', summaryIndex: 0, delta: 'Inspect the terminal first.' })
+  const thinking = panel.entries[0]
+  assert.equal(thinking.kind, 'thinking')
+  assert.equal(thinking.running, true)
+  assert.equal(thinking.expanded, undefined)
+  thinking.expanded = true
+  emit('item/completed', { item: { id: 'reason', type: 'reasoning', summary: [], content: [], encrypted_content: 'never-display-this' } })
+  assert.equal(thinking.text, 'Inspect the terminal first.')
+  assert.equal(thinking.expanded, true)
+  assert.equal(thinking.running, false)
+  const tool = { id: 'read', type: 'dynamicToolCall', tool: 'read_tab', arguments: { tabId: 'tab-1' } }
+  emit('item/started', { item: tool })
+  const reading = panel.entries[1]
+  assert.equal(reading.title, 'read_tab')
+  assert.equal(reading.running, true)
+  reading.expanded = true
+  emit('item/completed', { item: { ...tool, contentItems: [{ type: 'inputText', text: 'command finished' }] } })
+  assert.equal(panel.entries[1], reading)
+  assert.match(reading.text, /command finished/)
+  assert.equal(reading.running, false)
+  assert.equal(reading.expanded, true)
+  emit('item/reasoning/textDelta', { itemId: 'bounded', delta: 'a'.repeat(64000) })
+  assert.ok(panel.entries[2].text.length < 33000)
+  emit('turn/completed', { turn: { id: 'turn-1', status: 'interrupted' } })
+  assert.ok(panel.entries.every(entry => !entry.running))
+  assert.equal(panel.entries.some(entry => entry.text.includes('never-display-this')), false)
+})
+
+test('empty or encrypted-only reasoning stays hidden during streaming, completion and history restore', async () => {
+  const items = [
+    { id: 'empty', type: 'reasoning', summary: [], content: [] },
+    { id: 'encrypted', type: 'reasoning', summary: [], encrypted_content: 'opaque-never-render' },
+    { id: 'whitespace', type: 'reasoning', summary: ['  \n'], content: [] },
+    { id: 'readable', type: 'reasoning', summary: ['Check the terminal.'], content: [] },
+  ]
+  const backend = { client: { request: async method => method === 'thread/read'
+    ? { thread: { id: 'thread', status: { type: 'idle' }, turns: [{ id: 'turn', status: 'completed', items }] } }
+    : { data: [{ id: 'turn', status: 'completed', items }], nextCursor: null } } }
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, backend, zone, {}, panelTools)
+  panel.threadId = 'thread'
+  for (const item of items.slice(0, 3)) {
+    for (const method of ['item/started', 'item/completed']) panel.onEvent({ method, params: { threadId: 'thread', item } })
+  }
+  panel.onEvent({ method: 'item/reasoning/summaryTextDelta', params: { threadId: 'thread', itemId: 'empty', delta: '' } })
+  panel.onEvent({ method: 'item/reasoning/textDelta', params: { threadId: 'thread', itemId: 'empty', delta: ' \n' } })
+  assert.deepEqual(panel.entries, [])
+  await panel.loadHistory()
+  assert.deepEqual(panel.entries.map(entry => entry.text), ['Check the terminal.'])
+})
+
+test('OpenAI reasoning summaries are requested only for known or explicitly configured reasoning models', async t => {
+  const f = await fixture(t, 'openai', (_req, res, round) => reply('openai', res, round, null))
+  for (const [model, effort, provider, summary] of [
+    ['gpt-5', '', 'openai', 'auto'],
+    ['test-model', 'high', 'openai', 'auto'],
+    ['gpt-5', 'none', 'openai', undefined],
+    ['gpt-4.1', '', 'openai', undefined],
+    ['test-model', 'high', 'custom', undefined],
+  ]) {
+    const adapter = new ApiProviderAdapter({ ...f.profile, model, provider, reasoningEffort: effort, apiFormat: 'responses' }, 'fixture-secret')
+    await adapter.generate([], 'Test', [], new AbortController().signal, () => {})
+    assert.equal(f.requests.at(-1).body.reasoning?.summary, summary)
+    assert.equal(f.requests.at(-1).body.reasoning?.effort, effort || undefined)
+  }
+})
+
+test('API tool start is visible while the terminal result is still pending', { timeout: 5000 }, async t => {
+  const f = await fixture(t, 'deepseek', (_req, res, round) => reply('deepseek', res, round,
+    round === 1 ? { name: 'read_tab', args: { tabId: 'tab-1' } } : null))
+  let answer, started
+  const gate = new Promise(resolve => { answer = resolve })
+  const waiting = new Promise(resolve => { started = resolve })
+  t.after(() => answer())
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, f.agent, zone, {}, {
+    ...panelTools, call: async () => { started(); await gate; return { text: 'verified output' } },
+  })
+  panel.threadId = f.id
+  f.agent.on('event', panel.onEvent)
+  const completed = turnFinished(f.agent)
+  await f.agent.startTurn(f.id, 'Read the terminal', '/workspace', settings)
+  await waiting
+  const entry = panel.entries.find(entry => entry.kind === 'tool')
+  assert.match(entry.title, /read_tab/)
+  assert.equal(entry.running, true)
+  assert.equal(entry.expanded, undefined)
+  entry.expanded = true
+  answer()
+  assert.equal((await completed).status, 'completed')
+  assert.equal(entry.running, false)
+  assert.match(entry.text, /verified output/)
+  assert.equal(entry.expanded, true)
+  await panel.loadHistory()
+  assert.equal(panel.entries.find(entry => entry.kind === 'tool').expanded, undefined, 'restored activity defaults to collapsed')
 })
 
 test('DeepSeek Thinking switch and effort are sent on the next turn without reconnecting or losing messages', async t => {

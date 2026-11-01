@@ -134,7 +134,8 @@ async function run (input: any) {
       const delta = event.assistantMessageEvent as { type: string; delta: string }
       if (delta.type === 'thinking_delta') thinkingChars += delta.delta.length
       else toolChars += delta.delta.length
-      send({ type: 'progress', progress: { phase: delta.type === 'thinking_delta' ? 'thinking' : 'tools', receivedChars: delta.type === 'thinking_delta' ? thinkingChars : toolChars } })
+      send({ type: 'progress', progress: { phase: delta.type === 'thinking_delta' ? 'thinking' : 'tools', receivedChars: delta.type === 'thinking_delta' ? thinkingChars : toolChars,
+        ...(delta.type === 'thinking_delta' ? { delta: delta.delta } : {}) } })
     }
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message as AssistantMessage

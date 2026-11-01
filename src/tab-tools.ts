@@ -40,6 +40,8 @@ export class TabbyTabToolsService implements OnDestroy {
   readonly controls$ = new BehaviorSubject<ControlledTab[]>([])
   private sudoLeases = new Map<string, Map<BaseTerminalTabComponent<any>, { lease: SudoWorkflowLease; session: any }>>()
   private controlled = new Map<BaseTerminalTabComponent<any>, ControlState>()
+  private completedCommands = new WeakMap<BaseTerminalTabComponent<any>, any>()
+  private completionWatchers = new Map<BaseTerminalTabComponent<any>, Subscription>()
   private ids = new WeakMap<BaseTabComponent, string>()
   private nextId = 0
   private controlIds = new WeakMap<Element, string>()
@@ -69,10 +71,35 @@ export class TabbyTabToolsService implements OnDestroy {
     for (const terminal of current) if (!this.tracked.has(terminal)) {
       this.output.watch(terminal)
       this.tracked.add(terminal)
+      const watcher = new Subscription()
+      let sessionWatcher: Subscription | undefined
+      const attach = (session = terminal.session) => {
+        sessionWatcher?.unsubscribe()
+        this.completedCommands.delete(terminal)
+        let pending = ''
+        sessionWatcher = new Subscription()
+        const ended = () => { this.completedCommands.delete(terminal); sessionWatcher?.unsubscribe() }
+        sessionWatcher.add(session?.closed$?.subscribe(ended))
+        sessionWatcher.add(session?.destroyed$?.subscribe(ended))
+        sessionWatcher.add(session?.output$?.subscribe(chunk => {
+          pending = (pending + chunk).slice(-1024)
+          if (/\x1b\]133;C(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/.test(pending)) {
+            this.completedCommands.delete(terminal)
+            pending = ''
+          }
+        }))
+      }
+      watcher.add(terminal.sessionChanged$?.subscribe(attach))
+      watcher.add(() => sessionWatcher?.unsubscribe())
+      attach()
+      this.completionWatchers.set(terminal, watcher)
     }
     for (const terminal of this.tracked) if (!current.has(terminal)) {
       this.release(terminal)
       this.output.unwatch(terminal)
+      this.completionWatchers.get(terminal)?.unsubscribe()
+      this.completionWatchers.delete(terminal)
+      this.completedCommands.delete(terminal)
       this.tracked.delete(terminal)
     }
     for (const state of this.controlled.values()) if (state.tab.session !== state.session || !state.tab.session?.open) this.release(state.tab)
@@ -147,11 +174,13 @@ export class TabbyTabToolsService implements OnDestroy {
     state.subscriptions.unsubscribe()
     tab.sendInput = state.originalSendInput
     this.controlled.delete(tab)
+    if (state.completion === 'prompt' && state.automaticCompletion && tab.session === state.session && state.session?.open) this.completedCommands.set(tab, state.session)
     this.publishControls()
   }
 
   private lock (tab: BaseTerminalTabComponent<any>, owner: string, command: string): ControlState {
     this.release(tab)
+    this.completedCommands.delete(tab)
     const state: ControlState = {
       tab, tabId: this.id(tab), title: tab.title, owner, command, startedAt: Date.now(),
       originalSendInput: tab.sendInput, allowInput: false, session: tab.session, emptyChecks: 0, observedProcess: false, automaticCompletion: true, subscriptions: new Subscription(),
@@ -267,6 +296,36 @@ export class TabbyTabToolsService implements OnDestroy {
     return tab
   }
 
+  private async waitForTerminal (tab: BaseTabComponent, waitMs: number, signal?: AbortSignal): Promise<void> {
+    const terminal = tab instanceof BaseTerminalTabComponent ? tab : undefined
+    const session = terminal?.session
+    const completed = () => !!terminal && !!session?.open && terminal.session === session && this.completedCommands.get(terminal) === session && !this.controlled.has(terminal)
+    await new Promise<void>((resolve, reject) => {
+      const subscriptions = new Subscription()
+      let settleTimer: ReturnType<typeof setTimeout> | undefined
+      const finish = (error?: Error) => {
+        clearTimeout(timer)
+        if (settleTimer) clearTimeout(settleTimer)
+        subscriptions.unsubscribe()
+        signal?.removeEventListener('abort', abort)
+        if (error) reject(error)
+        else resolve()
+      }
+      const abort = () => finish(new Error('Agent task was stopped'))
+      const timer = setTimeout(() => finish(), waitMs)
+      const checkCompletion = () => {
+        // Give xterm's asynchronous write queue a short chance to consume the final output.
+        if (completed() && !settleTimer) settleTimer = setTimeout(() => {
+          settleTimer = undefined
+          if (completed()) finish()
+        }, 50)
+      }
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) { abort(); return }
+      subscriptions.add(this.controls$.subscribe(checkCompletion))
+    })
+  }
+
   private controls (tab: BaseTabComponent): Element[] {
     const nodes: Node[] = (tab.hostView as any)?.rootNodes || []
     const selector = 'button,input,textarea,select,a[href],[role="button"]'
@@ -346,13 +405,7 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'read_tab') {
       const current = this.find(args.tabId)
       const waitMs = Math.max(0, Math.min(30000, Number(args.waitMs ?? (current instanceof BaseTerminalTabComponent && this.controlled.has(current) ? 1000 : 0)) || 0))
-      if (waitMs) await new Promise<void>((resolve, reject) => {
-        const signal = context?.signal
-        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('Agent task was stopped')) }
-        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, waitMs)
-        signal?.addEventListener('abort', abort, { once: true })
-        if (signal?.aborted) abort()
-      })
+      if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
       checkStopped()
     }
     const tab = this.find(args.tabId)
@@ -412,7 +465,7 @@ export class TabbyTabToolsService implements OnDestroy {
       const maxLines = Math.max(1, Math.min(300, Number(args.maxLines) || 100))
       if (tab instanceof BaseTerminalTabComponent) {
         const server = await this.serverIdentity(tab)
-        const commandState = this.controlled.get(tab)?.completion || 'unknown'
+        const commandState = this.controlled.get(tab)?.completion || (this.completedCommands.get(tab) === tab.session ? 'prompt' : 'unknown')
         const xterm = (tab.frontend as any)?.xterm
         const buffer = xterm?.buffer?.active
         if (buffer && typeof buffer.getLine === 'function') {
@@ -535,6 +588,8 @@ export class TabbyTabToolsService implements OnDestroy {
   }
 
   ngOnDestroy (): void {
+    for (const watcher of this.completionWatchers.values()) watcher.unsubscribe()
+    this.completionWatchers.clear()
     for (const owner of Array.from(this.sudoLeases.keys())) this.stopSudoLeases(owner)
     this.subscriptions.unsubscribe()
     for (const tab of Array.from(this.controlled.keys())) this.release(tab)
