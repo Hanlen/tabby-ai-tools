@@ -1,4 +1,17 @@
 :host{display:block;height:100%;min-width:0}
+.codex-entry.codex-activity{padding:0;background:transparent}
+.codex-activity-details{min-width:0;width:100%}
+.codex-activity-details summary{display:flex;align-items:center;gap:6px;min-height:32px;padding:4px 8px;cursor:pointer;list-style:none;font-size:12px;border-radius:4px}
+.codex-activity-details summary::-webkit-details-marker{display:none}
+.codex-activity-details summary::before{content:'›';flex:none;font-size:16px}
+.codex-activity-details[open] summary::before{content:'⌄'}
+.codex-activity-details summary:hover{background:rgba(127,127,127,.12)}
+.codex-activity-details summary:focus-visible{outline:2px solid currentColor;outline-offset:-2px}
+.codex-activity-label,.codex-activity-state{flex:none}
+.codex-activity-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.codex-activity-state{margin-inline-start:auto}
+.codex-activity-body{padding:4px 8px 8px;border-inline-start:2px solid rgba(127,127,127,.3);margin-inline-start:12px;min-width:0}
+.codex-activity-body .codex-text{max-height:320px;overflow:auto;font-size:12px;overflow-wrap:anywhere}
 .codex-agent{display:flex;flex-direction:column;height:100%;width:100%;box-sizing:border-box;padding:8px;gap:6px;min-height:0;min-width:0;container-type:inline-size}
 .codex-header{display:flex;gap:6px;align-items:center;min-width:0;flex:none}
 .codex-heading{display:flex;align-items:baseline;gap:6px;flex:1;min-width:0}

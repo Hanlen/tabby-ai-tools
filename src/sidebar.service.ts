@@ -3,6 +3,7 @@ import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { CodexPanelComponent } from './codex-panel.component'
 import { clampSidebarWidth } from './sidebar-sizing'
 import { findSidebarMount } from './sidebar-mount'
+import { isolateSidebarKeyboard } from './sidebar-keyboard'
 import { onLanguageChange, translate } from './i18n'
 
 const WIDTH_KEY = 'tabbyCodexAgentSidebarWidth'
@@ -14,6 +15,7 @@ export class CodexSidebarService implements OnDestroy {
   private host?: HTMLElement
   private grip?: HTMLElement
   private style?: HTMLStyleElement
+  private stopKeyboardIsolation?: () => void
   private panels = new Map<string, ComponentRef<CodexPanelComponent>>()
   private activeCwd = ''
   private width = 420
@@ -75,8 +77,10 @@ export class CodexSidebarService implements OnDestroy {
       this.style.textContent = require('./sidebar.css')
       document.head.appendChild(this.style)
     }
+    this.stopKeyboardIsolation?.()
     this.host = document.createElement('aside')
     this.host.className = 'codex-agent-sidebar'
+    this.stopKeyboardIsolation = isolateSidebarKeyboard(this.host)
     this.grip = document.createElement('div')
     this.grip.className = 'codex-sidebar-grip'
     this.grip.setAttribute('role', 'separator')
@@ -134,6 +138,7 @@ export class CodexSidebarService implements OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.stopKeyboardIsolation?.()
     this.stopLanguageUpdates()
     this.stopResize()
     this.grip?.removeEventListener('pointerdown', this.startResize)

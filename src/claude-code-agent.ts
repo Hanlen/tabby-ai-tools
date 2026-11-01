@@ -79,7 +79,7 @@ export class ClaudeCodeAdapter extends ApiProviderAdapter {
             if (event.event?.type === 'message_delta' && activeMessage) usage(activeMessage, event.event.usage)
             const delta = event.event?.delta
             if (delta?.type === 'text_delta') { text += delta.text || ''; onText(delta.text || '') }
-            if (delta?.type === 'thinking_delta') onProgress?.({ phase: 'thinking', receivedChars: delta.thinking?.length || 0 })
+            if (delta?.type === 'thinking_delta') onProgress?.({ phase: 'thinking', receivedChars: delta.thinking?.length || 0, delta: delta.thinking || '' })
           }
           if (event.type === 'assistant' && event.message?.id) {
             usage(event.message.id, event.message.usage)

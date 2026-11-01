@@ -122,11 +122,19 @@
   .codex-feed-container
     .codex-feed(#chatFeed='', tabindex='0', [attr.aria-label]='t("对话消息")')
       .codex-feed-content(#chatContent='')
-        .codex-entry(*ngFor='let entry of entries', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"')
-          .codex-entry-header
+        .codex-entry(*ngFor='let entry of entries; trackBy: trackEntry', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"', [class.codex-activity]='entry.kind === "tool" || entry.kind === "thinking"')
+          details.codex-activity-details(*ngIf='entry.kind === "tool" || entry.kind === "thinking"', (toggle)='entry.expanded = $any($event.target).open')
+            summary([attr.aria-busy]='entry.running ? "true" : null')
+              span.codex-activity-label {{t(entry.kind === "thinking" ? "思考过程" : "工具调用")}}
+              span.codex-activity-title(dir='auto', *ngIf='entry.title', [attr.title]='entry.title') {{entry.title}}
+              small.codex-activity-state {{t(entry.running ? "进行中" : "已结束")}}
+            .codex-activity-body(*ngIf='entry.expanded')
+              button.btn.btn-link.btn-sm.codex-copy(type='button', (click)='copyEntry(entry)') {{copiedEntryId === entry.id ? t("已复制") : t("复制")}}
+              .codex-text(dir='auto') {{entry.text}}
+          .codex-entry-header(*ngIf='entry.kind !== "tool" && entry.kind !== "thinking"')
             .codex-role {{entry.kind === 'user' ? t("你") : entry.kind === 'tool' ? t("工具输出") : entry.kind === 'system' ? t("系统") : t("助手")}}
             button.btn.btn-link.btn-sm.codex-copy(type='button', (click)='copyEntry(entry)', [attr.aria-label]='t("复制{0}", [entry.kind === \'user\' ? t("你的消息") : t("Codex 消息")])') {{copiedEntryId === entry.id ? t("已复制") : t("复制")}}
-          .codex-text(dir='auto') {{entry.kind === "system" ? t(entry.text) : entry.text}}
+          .codex-text(*ngIf='entry.kind !== "tool" && entry.kind !== "thinking"', dir='auto') {{entry.kind === "system" ? t(entry.text) : entry.text}}
     button.codex-jump-latest(type='button', *ngIf='showJumpToLatest', (click)='jumpToLatest()', [attr.aria-label]='t("回到最新消息并恢复自动滚动")', [attr.title]='t("回到底部并恢复自动滚动")')
       span(aria-hidden='true') ↓
       span {{t("回到最新消息")}}

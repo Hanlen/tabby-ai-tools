@@ -96,6 +96,7 @@ test('selected reasoning effort reaches new threads, resumed threads and subsequ
   assert.equal(calls[1].params.config.model_reasoning_effort, 'ultra')
   assert.equal(calls[2].params.effort, 'ultra')
   assert.equal(calls[2].params.model, 'model-a')
+  assert.equal(calls[2].params.summary, 'auto')
 })
 
 test('full access and user approval are passed to the next turn', async () => {

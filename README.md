@@ -22,9 +22,13 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.5.3 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.6.0 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
+
+Thinking and tool activity stream into collapsed entries in the conversation. Expand an entry to inspect the text returned by the service, tool arguments and results; replies stay visible. Terminal reads return early when shell integration confirms a command has finished, instead of waiting out the requested timeout. Thinking entries appear only after readable text arrives; Codex and supported OpenAI reasoning requests enable summaries. Selecting and copying sidebar text does not send Ctrl+C to the active terminal.
+
+**New in v0.6.0:** readable thinking/tool activity, safe sidebar copying and earlier terminal readback after verified command completion. See the [release notes](docs/releases/0.6.0.md) for validation and limits.
 
 Terminal takeover is automatic: unavailable foreground-process detection (including SSH) does not require a confirmation click. The agent inspects terminal output, preserves needed tasks, and can interrupt detected unrelated tasks.
 

@@ -889,5 +889,10 @@
   "流程归档失败：{0}；可用 workflow_set_alias 重试归档并保存别名，无需重跑终端操作": "Workflow archive failed: {0}; use workflow_set_alias to retry archiving and save the alias without replaying terminal operations.",
   "Pi 默认使用 Tabby 内置运行时；仅开放 Tabby 工具，保留现有审批与终端策略。": "Pi는 기본적으로 Tabby 내장 런타임을 사용하며 Tabby 도구와 기존 승인 및 터미널 정책을 유지합니다.",
   "兼容 Node 可执行文件（可选，22.19 或更新版本）": "호환용 Node 실행 파일 (선택 사항, 22.19 이상)",
-  "留空使用 Tabby 内置运行时": "비워 두면 Tabby 내장 런타임 사용"
+  "留空使用 Tabby 内置运行时": "비워 두면 Tabby 내장 런타임 사용",
+  "思考过程": "사고 과정",
+  "工具调用": "도구 호출",
+  "已结束": "종료됨",
+  "等待可展示的内容…": "표시할 내용을 기다리는 중…",
+  "模型正在思考…": "모델이 생각하는 중…"
 }

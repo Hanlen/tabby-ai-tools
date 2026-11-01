@@ -234,6 +234,7 @@ export class CodexService {
       cwd,
       approvalPolicy: settings.approvalPolicy,
       sandboxPolicy,
+      summary: 'auto',
     }
     if (settings.model.trim()) params.model = settings.model.trim()
     if (settings.reasoningEffort) params.effort = settings.reasoningEffort

@@ -10,6 +10,10 @@ v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions 
 
 ## 本地开发
 
+对话过程展示由 `chat-activity.ts` 统一转换实时条目与历史条目。思考摘要／文本增量与工具开始、完成事件更新同一记录；原生 `details/summary` 默认折叠，正文按需挂载，`trackBy` 保留展开状态。API、Claude Code 和 Pi 仅转发服务提供的可展示文本，不渲染加密载荷；展示记录与模型原生历史分开保存。终端读取以 OSC 133 的 C→D→A 完成序列提前唤醒，保留 50 ms 渲染缓冲和原等待上限；新命令、会话更换或结束会清除旧完成记录。多行批次不因中间提示符提前返回。
+
+2026-11-01 本地 Linux 验证：Node 22.19.0 下完整测试 771 项通过、6 项平台相关跳过；类型检查和生产构建通过。新增夹具覆盖完成前／完成后读屏提前返回、伪提示符与多行批次不提前返回、取消订阅清理、工具结果未到时的过程显示、思考展示上限和历史恢复。当前默认 Node 20 会导致两项 Pi 夹具在运行时版本检查处失败，完整验证使用临时 Node 22.19.0。未调用收费模型，也未验证真实 Tabby 桌面或本次提交的跨平台 CI。
+
 ```bash
 npm ci
 npm run typecheck
@@ -38,6 +42,8 @@ Tabby 在应用内安装、升级插件后，已由[内置插件管理器](https
 标题下的 `robot-multitask.gif` 为 1024 × 512、12 帧的装饰动画，在 README 中按 560 × 280 显示；同尺寸的 `robot-multitask.png` 用于减少动态效果时的静态回退，高清生成提示词和编码参数保存在同目录的 `robot-multitask.prompt.md`。两类图片用途不同，更新功能效果图时保留标题动画。
 
 ## 测试范围与平台说明
+
+`test/sidebar-keyboard.test.js` 覆盖侧栏键盘事件隔离、原生默认行为保留、选中文字时的焦点转移和销毁清理。`test/api-agent.test.js` 覆盖空／加密推理记录过滤、真实摘要流式显示与恢复历史；`test/thread-tools.test.js` 核对 Codex 请求开启摘要。浏览器夹具与本地 HTTP 服务用于回归，不消耗真实模型额度；完整 Tabby 桌面中的终端及剪贴板行为仍需实际验证。
 
 运行 `npm test`、`npm run typecheck` 和 `npm run build`。自动测试覆盖显式路径和命令名兼容、PATH 优先级、PATH 无 codex、大小写环境变量、哈希目录缺文件、按文件时间选择、升级后重新扫描、无效显式路径不降级，以及 JSONL 握手、进程重用、流式通知和 stderr。`test/executable.test.js` 在 Linux 上模拟 Windows 定位规则；`test/windows-launch.test.js` 仅在真实 Windows 上执行含空格 exe/cmd/bat 和无 PATH 自动定位管道测试，其他平台明确跳过。exe 夹具使用真正的 Node PE 可执行文件配合测试用 preload；它验证启动方式，不代替真实 Codex 测试。
 

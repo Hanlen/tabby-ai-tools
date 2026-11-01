@@ -137,6 +137,63 @@ test('read_tab waits for fresh output and can be stopped without reading the ter
   } finally { tools.ngOnDestroy() }
 })
 
+for (const finishBeforeRead of [false, true]) test(`read_tab returns early on reliable completion (already finished: ${finishBeforeRead})`, { timeout: 4000 }, async t => {
+  const terminal = new FakeTerminal('Local', ['working'])
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() },
+    { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) })
+  const controller = new AbortController()
+  t.after(() => { controller.abort(); tools.ngOnDestroy() })
+  const tabId = (await tools.call('list_tabs', {}))[0].id
+  await tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' })
+  terminal.session.output$.next('\x1b]133;C\x07')
+  const finish = () => {
+    terminal.session.output$.next('\x1b]133;D;0\x07\x1b]133;A\x07')
+    // Simulate xterm consuming a queued final write after the completion notification.
+    setTimeout(() => { terminal.frontend.xterm.buffer.active.getLine = () => ({ translateToString: () => '/workspace' }) }, 0)
+  }
+  if (finishBeforeRead) finish()
+  const started = Date.now()
+  const result = tools.call('read_tab', { tabId, waitMs: 30000 }, { signal: controller.signal })
+  if (!finishBeforeRead) setTimeout(finish, 10)
+  const view = await result
+  assert.ok(Date.now() - started < 2000, 'must not wait out the 30-second timeout')
+  assert.equal(view.text, '/workspace')
+  assert.equal(view.commandState, 'prompt')
+  assert.equal(view.controlledByAI, false)
+  assert.equal(tools.controls$.observers.length, 0, 'completion subscription is removed')
+})
+
+test('new commands, unknown output and multiline prompts do not reuse an old completion', async t => {
+  const terminal = new FakeTerminal('Local', ['output'])
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() },
+    { watch: () => 0, unwatch: () => {}, cursor: () => 0, readSince: () => ({ text: '' }) })
+  const controller = new AbortController()
+  t.after(() => { controller.abort(); tools.ngOnDestroy() })
+  const tabId = (await tools.call('list_tabs', {}))[0].id
+  await tools.call('send_input', { tabId, text: 'pwd', submit: true }, { owner: 'task' })
+  terminal.session.output$.next('\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07')
+  // A subsequent manually started command invalidates the earlier completion, including split OSC.
+  terminal.session.output$.next('\x1b]133;')
+  terminal.session.output$.next('C\x07')
+  let resolved = false
+  const reading = tools.call('read_tab', { tabId, waitMs: 30000 }, { signal: controller.signal }).then(() => { resolved = true })
+  terminal.session.output$.next('some output\n$ looks like a prompt')
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal(resolved, false)
+  controller.abort()
+  await assert.rejects(reading, /stopped/)
+  assert.equal(tools.controls$.observers.length, 0)
+
+  await tools.call('send_input', { tabId, text: 'pwd\nsleep 10', submit: true }, { owner: 'task' })
+  terminal.session.output$.next('\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07')
+  const multiline = new AbortController()
+  const waiting = tools.call('read_tab', { tabId, waitMs: 30000 }, { signal: multiline.signal })
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal(tools.controls$.observers.length, 1, 'an intermediate prompt must not complete the batch')
+  multiline.abort()
+  await assert.rejects(waiting, /stopped/)
+})
+
 test('existing foreground process is preserved when needed and unrelated tasks are interrupted automatically', async () => {
   const terminal = new FakeTerminal('Build', ['compiling'])
   terminal.children = [{ pid: 123, command: 'npm run build' }]
@@ -385,6 +442,7 @@ test('SSH placeholder [] allows commands without confirmation and cannot auto-at
 for (const type of ['ssh', 'local']) {
   test(`${type} pager stays owned across repeated empty process lists, accepts q and releases at shell completion`, async () => {
     const f = ownershipFixture(type)
+    const outputWatchers = f.terminal.session.output$.observers.length
     try {
       const tabId = (await f.tools.call('list_tabs', {}))[0].id
       const sent = await f.tools.call('send_input', { tabId, text: 'git log', submit: true }, f.context)
@@ -409,7 +467,7 @@ for (const type of ['ssh', 'local']) {
       assert.equal(f.tools.getControl('task'), undefined)
       f.terminal.sendInput('user input')
       assert.deepEqual(f.terminal.sent, ['git log\r', 'q', 'user input'])
-      assert.equal(f.terminal.session.output$.observers.length, 0)
+      assert.equal(f.terminal.session.output$.observers.length, outputWatchers, 'only the terminal completion monitor remains')
     } finally { f.tools.ngOnDestroy() }
   })
 }
@@ -434,6 +492,8 @@ for (const type of ['ssh', 'local']) {
 for (const lifecycle of ['user-release', 'owner-release', 'closed', 'destroyed', 'replace-session', 'close-tab']) {
   test(`SSH lock restores input and removes listeners on ${lifecycle}`, async () => {
     const f = ownershipFixture()
+    const outputWatchers = f.terminal.session.output$.observers.length
+    const lifecycleWatchers = f.terminal.session.closed$.observers.length
     try {
       const tabId = (await f.tools.call('list_tabs', {}))[0].id
       await f.tools.call('send_input', { tabId, text: 'agent', submit: true }, f.context)
@@ -445,8 +505,9 @@ for (const lifecycle of ['user-release', 'owner-release', 'closed', 'destroyed',
       if (lifecycle === 'replace-session') { f.terminal.session = { open: true }; f.terminal.sessionChanged$.next(f.terminal.session) }
       if (lifecycle === 'close-tab') { f.app.tabs = []; f.app.tabsChanged$.next() }
       assert.equal(f.tools.getControl('task'), undefined)
-      assert.equal(session.output$.observers.length, 0)
-      assert.equal(session.closed$.observers.length, 0)
+      const monitoring = ['user-release', 'owner-release'].includes(lifecycle)
+      assert.equal(session.output$.observers.length, monitoring ? outputWatchers : 0)
+      assert.equal(session.closed$.observers.length, monitoring ? lifecycleWatchers : 0)
       f.terminal.sendInput('user input')
       assert.deepEqual(f.terminal.sent, ['agent\r', 'user input'])
     } finally { f.tools.ngOnDestroy() }
