@@ -1,5 +1,16 @@
 # v0.6.0 release validation (2026-11-01)
 
+## Conditional interactive workflows — 2026-11-01 (local, unreleased)
+
+`/remember` retains stdin/key/attachment intent and structured questions rather than rejecting all interactive recordings. Bounded declarative conditions, independent verification and a local runner handle fixed paths; uncertain nodes use an isolated tool-free helper on the current connection and keep the main model unchanged. Usage is charged to the parent Goal. Unknown-result journals, fresh observation checks and rebind-before-resume prevent automatic command/answer replay. Recovered commands never inherit template success evidence. Existing v1 libraries remain readable; v2 writes and minimal run journals omit raw terminal output, replies and ephemeral tab IDs.
+
+Linux / Node 22.19.0: the full suite passed 803 tests (797 passed, 6 Windows-only skips). Additional targeted workflow/backend tests cover rule-only decisions, false branches, helper isolation/model overrides, stale prompts, duplicate input, unknown-result recovery, secret/manual questions, budget exhaustion, source coverage and cancellation. One intermediate full-suite process ended with SIGTERM (exit 143, no assertion failure); an isolated rerun passed. Skill bundle/check, typecheck, production build and `git diff --check` passed.
+
+An isolated real Tabby 1.0.238 Linux desktop preview checked API/schedule/workflow/Codex settings at 1400×900, 1000×700 and 650×640 with no horizontal overflow. It confirmed per-connection helper model/effort retention and persistence, including Tabby's dynamic-dictionary config default. Synthetic configuration used a local non-serving endpoint; no real model inference was requested. Both READMEs were rendered and previewed with their centered header, provider table, GIF/reduced-motion fallback and local SVG/PNG assets. The 1800×1440 illustration was regenerated and visually reviewed.
+
+Live provider entitlements/latency, general TUI automation, end-to-end SSH operation and Windows/macOS desktop behavior remain outside these local checks. No version bump, commit, tag, CI run or publication was requested. Research and AGENTS.md remain locally ignored.
+
+
 Local Linux / Node 22.19.0 validation passed 783 tests (777 passed, zero failures, six Windows-only skips), skill bundle/check, type checks, production build and whitespace checks. Release packaging also checks the actual reviewed tarball installation with no system node on PATH and lifecycle scripts enabled. The development shell's Node 20 cannot start two existing Pi fixture setups; the release uses the same Node 22.19.0 as CI and does not change plugin runtime requirements.
 
 A local Chromium fixture reproduces the sidebar Ctrl+C leak before isolation, then verifies native text selection, clipboard copy/paste, Ctrl+Enter, Tab navigation out of the sidebar, terminal shortcuts outside the sidebar and listener cleanup with isolation enabled. HTTP/SSE fixtures cover streamed thinking/tool activity, empty/encrypted-only reasoning, retained expansion, history restore and summary request parameters. Terminal fixtures cover early read completion, rendering delay, unknown completion, multiline intermediate prompts, session replacement and cancellation. No real provider inference or original terminal task was replayed.

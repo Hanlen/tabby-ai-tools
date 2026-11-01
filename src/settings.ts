@@ -44,6 +44,12 @@ export class CodexSettingsComponent implements OnDestroy {
   workflowObjective = ''
   workflowInstructions = ''
   workflowEnabled = true
+  workflowPolicies = '{}'
+  helperConnectionId = 'codex'
+  get helperSettings (): { model: string; reasoningEffort: string; timeoutMs?: number; maxCalls?: number } {
+    const helpers = this.settings.workflowHelpers ||= {}
+    return helpers[this.helperConnectionId] ||= { model: '', reasoningEffort: '', timeoutMs: 15000, maxCalls: 2 }
+  }
   preferenceDraft = ''
   preferenceDraftId = ''
   preferenceScope = 'global'
@@ -160,6 +166,7 @@ export class CodexSettingsComponent implements OnDestroy {
     this.workflowObjective = workflow.objective
     this.workflowInstructions = workflowInstructions(workflow)
     this.workflowEnabled = workflow.enabled
+    this.workflowPolicies = JSON.stringify(Object.fromEntries(workflow.steps.flatMap((step, i) => step.policy ? [[String(i + 1), step.policy]] : [])), null, 2)
   }
   private async changeMemory (operation: () => Promise<void>, notice: string): Promise<void> {
     if (this.memorySaving) return
@@ -175,7 +182,7 @@ export class CodexSettingsComponent implements OnDestroy {
   async saveWorkflow (): Promise<void> {
     const workflow = this.memoryWorkflows.find(item => item.id === this.workflowDraftId)
     if (!workflow || !this.memory) return
-    await this.changeMemory(() => this.memory!.library.saveWorkflow(workflow, this.workflowTitle, this.workflowObjective, this.workflowInstructions, this.workflowEnabled, this.workflowAlias), '流程已保存；后续自动归档会保留你的修改')
+    await this.changeMemory(() => this.memory!.library.saveWorkflow(workflow, this.workflowTitle, this.workflowObjective, this.workflowInstructions, this.workflowEnabled, this.workflowAlias, JSON.parse(this.workflowPolicies)), '流程已保存；后续自动归档会保留你的修改')
   }
   async removeWorkflow (workflow: TaskWorkflow): Promise<void> {
     await this.changeMemory(async () => {

@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core'
 import { ConfigService, PlatformService } from 'tabby-core'
 import * as path from 'path'
+import * as os from 'os'
+import { promises as fs } from 'fs'
 import { AgentBackend, ApiProfile, normalizeApiProfile } from './agent-types'
 import { CodexService } from './codex.service'
 import { AgentSecretsService } from './agent-secrets.service'
@@ -42,9 +44,17 @@ export class AgentBackendFactory {
     }, signal)
   }
 
-  create (id = '', isolated = false): AgentBackend {
+  async createDecision (id: string, settings: AgentSettings): Promise<{ backend: AgentBackend; dispose: () => Promise<void> }> {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-workflow-decision-'))
+    try {
+      const backend = this.create(id, true, { model: settings.model, reasoningEffort: settings.reasoningEffort }, new AgentStore(directory))
+      return { backend, dispose: async () => { backend.client.close(); await fs.rm(directory, { recursive: true, force: true }) } }
+    } catch (error) { await fs.rm(directory, { recursive: true, force: true }); throw error }
+  }
+
+  create (id = '', isolated = false, override?: Pick<ApiProfile, 'model' | 'reasoningEffort'>, storeOverride?: AgentStore): AgentBackend {
     const configPath = this.platform.getConfigPath()
-    const store = configPath ? new AgentStore(path.join(path.dirname(configPath), 'tabby-agent-sessions')) : undefined
+    const store = storeOverride || (configPath ? new AgentStore(path.join(path.dirname(configPath), 'tabby-agent-sessions')) : undefined)
     if (!id) {
       const backend = isolated ? new CodexService() : this.codex
       if (store) backend.setContextStore?.(store)
@@ -52,11 +62,11 @@ export class AgentBackendFactory {
     }
     if (id === CLAUDE_CODE_ID) {
       if (!store) throw new Error('无法定位 Tabby 配置目录，Claude Code 会话需要持久化存储')
-      return new ClaudeCodeAgent(claudeCodeProfile(this.config.store.codexAgent), store, this.config.store.codexAgent.claudeExecutable || 'claude')
+      return new ClaudeCodeAgent({ ...claudeCodeProfile(this.config.store.codexAgent), ...override }, store, this.config.store.codexAgent.claudeExecutable || 'claude')
     }
     const configured = (this.config.store.codexAgent.apiProfiles as ApiProfile[] || []).find(profile => profile.id === id)
     if (!configured) throw new Error('找不到所选 API 连接，请重新选择')
-    const profile = normalizeApiProfile(configured)
+    const profile = normalizeApiProfile({ ...configured, ...override })
     if (!store) throw new Error('无法定位 Tabby 配置目录，API 会话需要持久化存储')
     return profile.runtime === 'pi' ? new PiBackend(profile, store, () => this.secrets.read(profile)) : new ApiAgent(profile, store, () => this.secrets.read(profile))
   }

@@ -2,6 +2,9 @@ import { ConfigProvider } from 'tabby-core'
 import type { ApiProfile } from './agent-types'
 
 export interface AgentSettings {
+  /** Internal isolated decision sessions have no native or Tabby write tools. */
+  decisionOnly?: boolean
+  workflowHelpers?: Record<string, { model: string; reasoningEffort: string; timeoutMs?: number; maxCalls?: number }>
   claudeExecutable?: string
   claudeModel?: string
   claudeReasoningEffort?: string
@@ -43,6 +46,8 @@ export class CodexConfigProvider extends ConfigProvider {
       defaultProfileId: '',
       apiProfiles: [],
       taskMemoryEnabled: true,
+      // Tabby must retain mutations to this dynamic per-connection dictionary.
+      workflowHelpers: { __nonStructural: true } as unknown as NonNullable<AgentSettings['workflowHelpers']>,
       openOnStartup: true,
       language: 'auto',
     } as AgentSettings,

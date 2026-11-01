@@ -1,4 +1,7 @@
 :host{display:block;height:100%;min-width:0}
+/* Pointer focus stays quiet; keyboard navigation gets one consistent, thin cue. */
+.codex-agent :focus{outline:none;box-shadow:none}
+.codex-agent :focus-visible{outline:1px solid currentColor;outline-offset:-1px}
 .codex-entry.codex-activity{padding:0;background:transparent}
 .codex-activity-details{min-width:0;width:100%}
 .codex-activity-details summary{display:flex;align-items:center;gap:6px;min-height:32px;padding:4px 8px;cursor:pointer;list-style:none;font-size:12px;border-radius:4px}
@@ -6,7 +9,6 @@
 .codex-activity-details summary::before{content:'›';flex:none;font-size:16px}
 .codex-activity-details[open] summary::before{content:'⌄'}
 .codex-activity-details summary:hover{background:rgba(127,127,127,.12)}
-.codex-activity-details summary:focus-visible{outline:2px solid currentColor;outline-offset:-2px}
 .codex-activity-label,.codex-activity-state{flex:none}
 .codex-activity-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .codex-activity-state{margin-inline-start:auto}
@@ -90,10 +92,11 @@
 .codex-output-note{font-size:.85em;opacity:.7;overflow-wrap:anywhere;flex:none;min-width:0}
 .codex-feed-container{position:relative;flex:1;min-height:0;min-width:0}
 .codex-feed{height:100%;overflow:auto;overflow-anchor:none;scroll-behavior:auto;min-height:0}
+/* Focus isolates terminal hotkeys; the message container needs no visual frame. */
+.codex-agent .codex-feed:focus{outline:none;box-shadow:none}
 .codex-feed-content{display:flex;flex-direction:column;gap:8px;min-width:0}
 .codex-jump-latest{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:calc(100% - 16px);padding:6px 12px;border:1px solid rgba(127,127,127,.45);border-radius:20px;background:var(--theme-bg-more,#30343b);color:var(--theme-fg,#f2f2f2);box-shadow:0 2px 8px rgba(0,0,0,.25);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
 .codex-jump-latest:hover{border-color:rgba(80,150,240,.85)}
-.codex-jump-latest:focus-visible{outline:2px solid #5096f0;outline-offset:2px}
 .codex-entry{border:1px solid rgba(127,127,127,.25);border-radius:8px;padding:8px;max-width:100%;min-width:0;box-sizing:border-box}
 .codex-user{background:rgba(80,130,220,.12)}
 .codex-tool{opacity:.8;font-family:monospace;font-size:.9em}
@@ -156,7 +159,6 @@
 .codex-schedule{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid rgba(127,127,127,.25);overflow-wrap:anywhere}
 .codex-schedules pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit;font:inherit;user-select:text;margin:4px 0}
 .codex-schedules .btn{min-height:28px}
-.codex-schedules button:focus-visible,.codex-schedules summary:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .codex-scheduled-approval{border:1px solid currentColor;border-radius:4px;padding:6px;max-height:160px;overflow:auto;flex-shrink:0}
 .codex-scheduled-records details{padding:6px 0;border-top:1px solid rgba(127,127,127,.25)}
 .codex-scheduled-records summary{cursor:pointer;overflow-wrap:anywhere}

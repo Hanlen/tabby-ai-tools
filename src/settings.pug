@@ -71,9 +71,10 @@
         .editor-heading
           span.provider-mark(aria-hidden='true') T
           .editor-identity
-            .editor-eyebrow {{t("本地计划 · {0} 个任务", [(scheduleData.tasks.length)])}}
             h4 {{t("定时任务")}}
-            .editor-model.settings-muted {{t("无人值守运行 · 重启自动加载")}}
+            .editor-meta
+              span.editor-eyebrow {{t("本地计划 · {0} 个任务", [(scheduleData.tasks.length)])}}
+              span.editor-model.settings-muted {{t("无人值守运行 · 重启自动加载")}}
           button.btn.btn-outline-secondary.editor-default(type='button', (click)='refreshSchedules()', [disabled]='scheduleLoading || scheduleSaving') {{t("刷新")}}
         .editor-body.schedule-manager
           p.settings-muted {{t("通过 AI 对话创建任务。这里显示所有工作目录的计划；Tabby 打开时执行，关闭期间错过的触发在重启后合并执行一次。运行中被退出打断的任务暂停待检查。")}}
@@ -105,15 +106,36 @@
         .editor-heading
           span.provider-mark(aria-hidden='true') M
           .editor-identity
-            .editor-eyebrow {{t("本地记忆")}}
             h4 {{t("任务流程与偏好")}}
-            .editor-model.settings-muted {{t("少些重复探索，多些经验复用")}}
+            .editor-meta
+              span.editor-eyebrow {{t("本地记忆")}}
+              span.editor-model.settings-muted {{t("少些重复探索，多些经验复用")}}
           button.btn.btn-outline-secondary.editor-default(type='button', (click)='refreshMemory()', [disabled]='memoryLoading') {{t("刷新")}}
         .editor-body.memory-manager
           label.memory-enable
             input(type='checkbox', [ngModel]='settings.taskMemoryEnabled !== false', (ngModelChange)='setTaskMemory($event)')
             span {{t("启用任务流程与别名")}}
           p.settings-muted {{t("仅用 /remember 开始录制任务；完成后设置别名，输入 /task1 即可执行。普通任务不会自动归档。")}}
+          section.settings-section(aria-labelledby='workflow-helper-heading')
+            h5#workflow-helper-heading.section-heading {{t("交互辅助模型")}}
+            p.settings-muted {{t("规则无法判断时使用此连接的辅助模型；留空沿用当前模型，主会话模型不变。")}}
+            .settings-fields
+              .settings-field
+                label(for='workflow-helper-connection') {{t("连接")}}
+                select#workflow-helper-connection.form-control([(ngModel)]='helperConnectionId')
+                  option(value='codex') {{t("Codex（本机登录）")}}
+                  option(value='claude-code') {{t("Claude Code（本机登录）")}}
+                  option(*ngFor='let profile of profiles; trackBy: trackProfile', [value]='profile.id') {{profile.name}}
+              .settings-field
+                label(for='workflow-helper-model') {{t("辅助模型 ID")}}
+                input#workflow-helper-model.form-control([(ngModel)]='helperSettings.model', (ngModelChange)='save()', [attr.placeholder]='t("留空沿用当前模型")')
+              .settings-field
+                label(for='workflow-helper-effort') {{t("辅助模型推理强度")}}
+                input#workflow-helper-effort.form-control([(ngModel)]='helperSettings.reasoningEffort', (ngModelChange)='save()', [attr.placeholder]='t("服务商默认")')
+              .settings-field
+                label(for='workflow-helper-timeout') {{t("单次决策超时（毫秒）")}}
+                input#workflow-helper-timeout.form-control(type='number', min='1000', max='60000', step='1000', [(ngModel)]='helperSettings.timeoutMs', (ngModelChange)='save()')
+            p.settings-muted {{t("使用当前连接实际支持的模型 ID。辅助调用计入任务预算；失败后从当前节点交回主模型。")}}
           p.settings-notice(role='status', aria-live='polite', *ngIf='memoryNotice') {{t(memoryNotice)}}
           p.settings-muted(*ngIf='memoryLoading') {{t("正在读取本地流程库…")}}
           section.settings-section(aria-labelledby='memory-workflows-heading')
@@ -145,6 +167,10 @@
                     label(for='memory-workflow-instructions') {{t("流程步骤")}}
                     textarea#memory-workflow-instructions.form-control(dir='auto', rows='8', [(ngModel)]='workflowInstructions')
                     small.settings-muted {{t("可整理操作顺序、检查点和需要替换的参数。手动编辑后，自动归档不会覆盖这些步骤。")}}
+                  .settings-field.settings-field-wide
+                    label(for='memory-workflow-policies') {{t("条件与交互策略（高级）")}}
+                    textarea#memory-workflow-policies.form-control(dir='ltr', rows='8', [(ngModel)]='workflowPolicies', spellcheck='false', aria-describedby='memory-workflow-policies-hint')
+                    small#memory-workflow-policies-hint.settings-muted {{t("按步骤编号编辑规则；未验证分支保留标记，敏感交互使用 manual。格式和示例见任务流程文档。")}}
                 label.memory-enable
                   input(type='checkbox', [(ngModel)]='workflowEnabled')
                   span {{t("启用此流程")}}
@@ -183,9 +209,10 @@
           .editor-heading
             span.provider-mark(aria-hidden='true') {{providerNames[profile.provider].slice(0, 1)}}
             .editor-identity
-              .editor-eyebrow {{t("当前配置 · {0}", [(t(providerNames[profile.provider]))])}}
               h4 {{profile.name || t("未命名连接")}}
-              .editor-model.settings-muted {{profile.model || t("尚未选择模型")}}
+              .editor-meta
+                span.editor-eyebrow {{t(providerNames[profile.provider])}}
+                span.editor-model.settings-muted {{profile.model || t("尚未选择模型")}}
             span.default-badge(*ngIf='settings.defaultProfileId === profile.id') {{t("默认连接")}}
             button.btn.btn-outline-secondary.editor-default(type='button', *ngIf='settings.defaultProfileId !== profile.id', (click)='setDefault(profile.id)') {{t("设为默认")}}
           //- A keyed view resets scroll and field focus when switching connections.
@@ -317,9 +344,10 @@
           .editor-heading
             span.provider-mark(aria-hidden='true') C
             .editor-identity
-              .editor-eyebrow {{t("当前配置 · 本机引擎")}}
               h4 {{claudeCodeSelected ? "Claude Code" : "Codex"}}
-              .editor-model.settings-muted {{claudeCodeSelected ? t("使用本机 Claude Code 登录") : t("使用本机 Codex CLI 登录")}}
+              .editor-meta
+                span.editor-eyebrow {{t("本机引擎")}}
+                span.editor-model.settings-muted {{claudeCodeSelected ? t("使用本机 Claude Code 登录") : t("使用本机 Codex CLI 登录")}}
             span.default-badge(*ngIf='settings.defaultProfileId === (claudeCodeSelected ? "claude-code" : "")') {{t("默认连接")}}
             button.btn.btn-outline-secondary.editor-default(type='button', *ngIf='settings.defaultProfileId !== (claudeCodeSelected ? "claude-code" : "")', (click)='setDefault(claudeCodeSelected ? "claude-code" : "")') {{t("设为默认")}}
           .editor-body

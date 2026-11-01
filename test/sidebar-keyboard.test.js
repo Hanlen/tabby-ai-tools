@@ -78,12 +78,30 @@ test('selecting static sidebar text moves focus out of xterm without cancelling 
 
 test('sidebar focus respects native inputs, nested focusable controls and non-primary clicks', () => {
   const s = setup()
-  s.input.dispatch('pointerdown', { button: 0 })
+  s.terminal.focus()
+  assert.equal(s.input.dispatch('pointerdown', { button: 0 }).defaultPrevented, false)
+  assert.equal(s.document.ownerDocument.activeElement, s.terminal, 'do not preempt native pointer focus with focus()')
+  // The browser focuses the input after dispatching pointerdown.
+  s.input.focus()
   assert.equal(s.document.ownerDocument.activeElement, s.input)
   new Element(s.input).dispatch('pointerdown', { button: 0 })
   assert.equal(s.document.ownerDocument.activeElement, s.input)
   s.text.dispatch('pointerdown', { button: 2 })
   assert.equal(s.document.ownerDocument.activeElement, s.input)
+})
+
+test('clicking buttons and tabindex containers does not inherit programmatic keyboard focus', () => {
+  const s = setup()
+  for (const control of [new Element(s.sidebar, true), new Element(s.sidebar)]) {
+    control.tabIndex = 0
+    s.input.focus()
+    const label = new Element(control)
+    assert.equal(label.dispatch('pointerdown', { button: 0 }).defaultPrevented, false)
+    assert.equal(s.document.ownerDocument.activeElement, s.input, 'leave focus to the native pointer default action')
+    control.focus()
+    control.dispatch('keydown', { key: 'Enter' })
+    assert.deepEqual(s.terminalKeys, [])
+  }
 })
 
 test('destroy releases event listeners when the sidebar is removed or remounted', () => {

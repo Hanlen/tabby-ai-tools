@@ -894,5 +894,14 @@
   "工具调用": "Werkzeugaufruf",
   "已结束": "Beendet",
   "等待可展示的内容…": "Warten auf anzeigbaren Inhalt…",
-  "模型正在思考…": "Das Modell denkt nach…"
+  "模型正在思考…": "Das Modell denkt nach…",
+  "交互辅助模型": "Interaction helper model",
+  "规则无法判断时使用此连接的辅助模型；留空沿用当前模型，主会话模型不变。": "Use this connection’s helper when rules cannot decide. Leave blank to use the current model; the main session model stays unchanged.",
+  "辅助模型 ID": "Helper model ID",
+  "留空沿用当前模型": "Leave blank to use the current model",
+  "辅助模型推理强度": "Helper reasoning effort",
+  "单次决策超时（毫秒）": "Decision timeout (ms)",
+  "使用当前连接实际支持的模型 ID。辅助调用计入任务预算；失败后从当前节点交回主模型。": "Use a model ID supported by this connection. Helper calls count toward the task budget; failures return the current node to the main model.",
+  "条件与交互策略（高级）": "Conditions and interaction policies (advanced)",
+  "按步骤编号编辑规则；未验证分支保留标记，敏感交互使用 manual。格式和示例见任务流程文档。": "Edit rules by step number. Keep unverified branches marked and use manual for sensitive input. See the workflow guide for the format and examples."
 }
