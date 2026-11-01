@@ -170,7 +170,7 @@ test('resuming a pre-capabilities thread preserves context and upgrades tools wi
   assert.equal(saved.get('upgraded').context.messages[0].content, transcript[0].content)
   assert.ok(saved.get('upgraded').context.messages.some(m => m.content === 'Server is running'))
   assert.equal(saved.get('upgraded').goalPending, true)
-  assert.equal(settings.tabToolVersions.upgraded, 5)
+  assert.equal(settings.tabToolVersions.upgraded, 6)
   assert.equal(settings.tabToolThreads['/project'], 'upgraded')
   assert.equal(calls.some(c => c.method === 'turn/start'), false)
   const start = calls.find(c => c.method === 'thread/start')

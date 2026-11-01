@@ -1,0 +1,10 @@
+import { WORKFLOW_POLICY_SCHEMA } from './workflow-policy'
+
+export const WORKFLOW_TOOLS = [
+  { type: 'function', name: 'workflow_configure', description: 'During /remember, attach conditional execution, independent verification and interaction rules to an actually recorded step. Use the user objective and observed decisions, never infer universal yes/Enter rules. Verification commands must already have been run for that step. manual saves a human/secret-input checkpoint without storing its answer. Unobserved branches must have observed=false.',
+    inputSchema: { type: 'object', properties: { step: { type: 'integer', minimum: 1, maximum: 24 }, policy: WORKFLOW_POLICY_SCHEMA }, required: ['step', 'policy'], additionalProperties: false } },
+  { type: 'function', name: 'workflow_run', description: 'Resume an invoked workflow alias using saved conditions, commands, interaction policies and machine verification. First bind the actual server/path with workflow_checkpoint. Already sent commands are never automatically replayed. Handle returned needs_model/awaiting_verification at its pending step; bind_target requires the next server. This tool does not declare the final user goal complete.',
+    inputSchema: { type: 'object', properties: { tabId: { type: 'string' } }, required: ['tabId'], additionalProperties: false } },
+  { type: 'function', name: 'workflow_interact', description: 'Resolve one interaction of the current pending workflow step: saved if/else rule first, otherwise an isolated helper model on the current connection. Re-reads before sending and after the response. Manual/secret nodes return needs_attention. On needs_model continue from this node, do not replay the shell command.',
+    inputSchema: { type: 'object', properties: { tabId: { type: 'string' }, interactionId: { type: 'string' } }, required: ['tabId'], additionalProperties: false } },
+]

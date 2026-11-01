@@ -19,6 +19,7 @@ import { AgentBackend, ApiProfile } from './agent-types'
 import { withModelReasoning } from './model-reasoning'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions, workflowNeedsSudo } from './task-memory'
+import { runWorkflowTool } from './workflow-session'
 import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
 import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 
@@ -61,6 +62,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   pendingWorkflow?: TaskWorkflow
   workflowAlias = ''
   private sudoWorkflow = false
+  private workflowOperations = new Set<AbortController>()
+  private cancelWorkflowOperations (): void {
+    for (const controller of this.workflowOperations) controller.abort()
+    this.workflowOperations.clear()
+  }
   workflowPanelOpen = false
   schedulePanelOpen = false
   scheduleLoading = false
@@ -157,6 +163,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.threadStatus = undefined
     this.statusRateLimits = undefined
     this.ordinaryUsageAllowed = null
+    this.cancelWorkflowOperations()
     this.tabTools.releaseOwner(this.threadId)
     this.connected = false
     this.busy = false
@@ -733,6 +740,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.codex.client.on('connected', this.onConnected)
       this.codex.client.on('disconnected', this.onDisconnect)
       if (await this.reconnect(transferredId || undefined) === false) throw new Error(this.status)
+      this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(previous.threadId)
       this.agents?.memory?.activeLibrary?.forgetRun(previous.threadId)
       this.memoryNotice = ''
@@ -971,6 +979,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         throw error
       }
       this.threadId = restoredId
+      this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === restoredId)
       this.clearTokenUsage()
@@ -1056,7 +1065,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (this.goalStatus !== 'active') {
       this.sudoWorkflow = !!selectedWorkflow && workflowNeedsSudo(selectedWorkflow)
       if (remember || selectedWorkflow) this.pendingWorkflow = undefined
-      if (!remember) this.agents?.memory?.activeLibrary?.forgetRun(this.threadId, true)
+      if (!remember && this.agents?.memory?.activeLibrary) {
+        this.agents.memory.activeLibrary.forgetRun(this.threadId, true)
+        await this.agents.memory.activeLibrary.discardRunJournal(this.threadId)
+      }
     }
     this.resetPromptHistory()
     this.prompt = ''
@@ -1087,6 +1099,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
             memoryContext = suggestion.context
             matchedWorkflow = selectedWorkflow
             if (selectedWorkflow) memory.library.beginExecution(this.threadId, selectedWorkflow)
+            if (remember || selectedWorkflow) await memory.library.persistRun(this.threadId)
             const executionContext = memory.library.executionContext(this.threadId)
             if (executionContext) memoryContext += '\n' + executionContext
             if (selectedWorkflow?.instructions) memoryContext += '\n用户编辑的流程说明（遵守结构化步骤的身份、依赖与验收约束）：' + selectedWorkflow.instructions
@@ -1125,6 +1138,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     try {
       await this.ensureSource()
       this.busy = true
+      if (this.agents?.memory?.enabled) await this.agents.memory.library.restoreRun(this.threadId, this.cwd)
       this.status = '继续检查并完成任务…'
       this.outputNotice = ''
       const output = this.readOutput(INITIAL_OUTPUT_LIMIT)
@@ -1181,6 +1195,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.historyNotice = ''
       this.latestTurnStatus = ''
       this.threadId = newId
+      this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === newId)
       this.clearTokenUsage()
@@ -1205,6 +1220,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async stop (): Promise<void> {
     if (!this.turnId || !this.busy) return
+    this.cancelWorkflowOperations()
     const backend = this.codex
     const threadId = this.threadId
     const turnId = this.turnId
@@ -1250,6 +1266,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   releaseControlledTabs (): void {
+    this.cancelWorkflowOperations()
     this.tabTools.releaseOwner(this.threadId)
     this.status = '已临时释放全部终端，用户可继续操作'
   }
@@ -1275,6 +1292,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         const client = this.codex.client
         const owner = this.threadId
         const memory = this.agents?.memory
+        const toolController = new AbortController()
+        const cancelTool = () => toolController.abort()
+        p.signal?.addEventListener('abort', cancelTool, { once: true })
+        if (p.signal?.aborted) cancelTool()
+        this.workflowOperations.add(toolController)
         const token = memory?.enabled ? memory.activeLibrary?.token(owner) : undefined
         const operation = (async () => {
           if (p.namespace === 'tabby_tasks') return this.agents?.scheduler?.call(p.tool, p.arguments, this.cwd, this.profileId, this.settings, p.signal) || Promise.reject(new Error('定时任务服务不可用'))
@@ -1284,6 +1306,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
             return memory.library.workflowStatus(owner, this.cwd)
           }
           const library = memory?.enabled ? memory.activeLibrary : undefined
+          if (library?.runnerBusy(owner) && ['workflow_checkpoint', 'workflow_configure'].includes(p.tool)) throw new Error('运行器正在处理当前节点，等待返回后再修改流程状态')
           if (p.tool === 'workflow_set_alias') {
             if (this.settings.sandbox === 'read-only') throw new Error('只读模式禁止修改流程别名')
             if (!library) throw new Error('当前没有已完成的录制；先查询 workflow_status')
@@ -1297,15 +1320,52 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           }
           if (p.tool === 'workflow_checkpoint') {
             if (!library) throw new Error('任务流程库暂不可用')
-            return library.checkpoint(owner, token, p.arguments)
+            const result = library.checkpoint(owner, token, p.arguments)
+            await library.persistRun(owner)
+            return result
           }
-          library?.beforeTool(owner, token, p.tool, p.arguments)
-          try {
-            return await this.tabTools.call(p.tool, p.arguments, { owner, signal: p.signal, sudoLease: this.sudoWorkflow, readOnly: this.settings.sandbox === 'read-only' })
-          } catch (error) { library?.toolFailed(owner, token, p.tool); throw error }
+          if (p.tool === 'workflow_configure') {
+            if (!library || this.settings.sandbox === 'read-only') throw new Error('当前不能修改流程策略')
+            const result = library.configure(owner, token, p.arguments.step, p.arguments.policy)
+            await library.persistRun(owner)
+            return result
+          }
+          const backend = this.codex
+          const profileId = this.profileId
+          const settings = { ...this.settings, model: this.settings.model, reasoningEffort: this.settings.reasoningEffort, cwd: this.cwd }
+          const call = async (name: string, args: any, fromRunner = false, signal = toolController.signal): Promise<any> => {
+            if (this.threadId !== owner || backend !== this.codex || signal?.aborted) throw new Error('流程已停止或会话已切换')
+            if (library && ['send_input', 'send_keys', 'attach_process'].includes(name) && library.token(owner) === token && library.runtime(owner, token, args.tabId).helperTokens > 0) {
+              const goal = await backend.getGoal(owner)
+              if (goal?.tokenBudget > 0 && Number(goal.tokensUsed ?? goal.usedTokens ?? 0) >= goal.tokenBudget) throw new Error('已达到目标 token 预算；保留当前节点，未发送后续操作')
+            }
+            library?.beforeTool(owner, token, name, args, fromRunner)
+            const write = ['send_input', 'send_keys', 'attach_process'].includes(name)
+            if (library && write) { library.markAction(owner, token, name, args); await library.persistRun(owner) }
+            try {
+              if (signal?.aborted || this.threadId !== owner || this.codex !== backend) throw new Error('流程已停止或切换')
+              const result = await this.tabTools.call(name, args, { owner, signal, sudoLease: this.sudoWorkflow, readOnly: settings.sandbox === 'read-only' })
+              if (memory?.enabled) library?.record(owner, token, name, args, result)
+              if (library && write) { library.clearAction(owner, token); await library.persistRun(owner) }
+              return result
+            } catch (error) { library?.toolFailed(owner, token, name); throw error }
+          }
+          if (['workflow_run', 'workflow_interact'].includes(p.tool)) {
+            if (!library || !this.agents || settings.sandbox === 'read-only') throw new Error('当前不能执行流程')
+            const controller = new AbortController()
+            const cancel = () => controller.abort()
+            p.signal?.addEventListener('abort', cancel, { once: true })
+            if (p.signal?.aborted) cancel()
+            this.workflowOperations.add(controller)
+            try {
+              return await runWorkflowTool({ name: p.tool, args: p.arguments, owner, token, profileId, settings, backend, factory: this.agents,
+                memory: library, signal: controller.signal, call: (name, args) => call(name, args, true, controller.signal),
+                notice: text => this.zone.run(() => { if (this.threadId === owner) this.memoryNotice = text }) })
+            } finally { p.signal?.removeEventListener('abort', cancel); this.workflowOperations.delete(controller) }
+          }
+          return call(p.tool, p.arguments)
         })()
-        void operation.then(result => {
-          if (memory?.enabled) memory.activeLibrary?.record(owner, token, p.tool, p.arguments, result)
+        void operation.finally(() => { p.signal?.removeEventListener('abort', cancelTool); this.workflowOperations.delete(toolController) }).then(result => {
           client.respond(event.id!, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] })
         }, error => {
           client.respond(event.id!, { success: false, contentItems: [{ type: 'inputText', text: String(error?.message || error) }] })
@@ -1315,6 +1375,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       } else if (isUserInputMethod(event.method)) {
         this.request = { id: event.id, method: event.method!, title: 'Codex 需要你的回答', translateTitle: true, questions: p.questions || [], answers: {}, otherAnswers: {} }
         this.status = '等待你选择答案…'
+        void this.resolveWorkflowQuestions(this.request)
       } else if (event.method === 'item/permissions/requestApproval') {
         this.request = { id: event.id, method: event.method, title: p.reason || 'Codex 请求权限', translateTitle: !p.reason, permissions: p.permissions, answers: {}, otherAnswers: {} }
       } else if (event.method === 'mcpServer/elicitation/request') {
@@ -1412,6 +1473,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         if (this.turnId && p.turn.id && p.turn.id !== this.turnId) break
         this.clearRetryState()
         this.finishActivities()
+        this.cancelWorkflowOperations()
         this.tabTools.releaseOwner(this.threadId)
         this.busy = false
         this.turnId = ''
@@ -1472,6 +1534,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.replace(`send-error-${this.threadId}-${turnId || `start-${this.sendAttempt}`}`, 'system', this.sendNotice)
     if (!willRetry && endTurn) {
       this.finishActivities()
+      this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(this.threadId)
       this.busy = false
       this.turnId = ''
@@ -1595,6 +1658,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (decision === 'accept' && !this.canSubmitRequest()) return
       const questions = request.questions || []
       const answers = decision === 'accept' ? formatAnswers(questions, request.answers, request.otherAnswers) : {}
+      if (decision === 'accept' && this.agents?.memory?.enabled) {
+        const library = this.agents.memory.activeLibrary
+        library?.recordQuestions(this.threadId, questions, answers)
+        void library?.persistRun(this.threadId).catch(() => { this.memoryNotice = '交互策略暂未保存，完成后会再次尝试归档' })
+      }
       if (request.local) {
         const reply = decision === 'accept'
           ? `我对你刚才问题的回答：\n${questions.map(question => `${question.question}\n${answers[question.id].answers[0]}`).join('\n\n')}`
@@ -1633,12 +1701,41 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.request = undefined
   }
 
+  private async resolveWorkflowQuestions (request: PendingRequest): Promise<void> {
+    const factory = this.agents
+    const library = factory?.memory?.enabled ? factory.memory.activeLibrary : undefined
+    const questions = request.questions || []
+    if (!factory || !library || !questions.length || questions.some(q => !library.questionPolicy(this.threadId, q))) return
+    const owner = this.threadId, backend = this.codex, token = library.token(owner), profileId = this.profileId
+    const controller = new AbortController()
+    this.workflowOperations.add(controller)
+    try {
+      for (const question of questions) {
+        const result = await runWorkflowTool({ name: 'workflow_question', args: { question, policy: library.questionPolicy(owner, question) }, owner, token, profileId,
+          settings: { ...this.settings, model: this.settings.model, reasoningEffort: this.settings.reasoningEffort, cwd: this.cwd }, backend, factory, memory: library,
+          signal: controller.signal, call: async () => { throw new Error('侧栏问题决策不能操作终端') },
+          notice: text => this.zone.run(() => { if (this.request === request) this.memoryNotice = text }) })
+        if (this.request !== request || this.threadId !== owner || this.codex !== backend || controller.signal.aborted) return
+        if (result.action !== 'respond' || result.response?.kind !== 'answer') return
+        const answer = result.response.text
+        if (question.options?.some(option => option.label === answer)) request.answers[question.id] = answer
+        else if (!question.options?.length) request.answers[question.id] = answer
+        else if (question.isOther) { request.answers[question.id] = '__other__'; request.otherAnswers[question.id] = answer }
+        else return
+      }
+      this.zone.run(() => { if (this.request === request && !controller.signal.aborted) this.decide('accept') })
+    } catch (error: any) {
+      this.zone.run(() => { if (this.request === request && !controller.signal.aborted) this.memoryNotice = `当前提问仍需处理：${error.message}` })
+    } finally { this.workflowOperations.delete(controller) }
+  }
+
   ngOnDestroy (): void {
     this.retryState = undefined
     this.scheduleSubscriptions.unsubscribe()
     this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)
     this.modelListSequence++
     this.chatScroll?.destroy()
+    this.cancelWorkflowOperations()
     this.tabTools.releaseOwner(this.threadId)
     if (this.copyTimer) clearTimeout(this.copyTimer)
     this.controlSubscription?.unsubscribe()

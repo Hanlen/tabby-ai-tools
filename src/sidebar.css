@@ -22,6 +22,7 @@
   border-right: 1px solid rgba(127, 127, 127, .3);
 }
 .codex-agent-sidebar[hidden] { display: none !important; }
+.codex-agent-sidebar:focus { outline: none; box-shadow: none; }
 .codex-agent-sidebar codex-agent-panel {
   flex: 1 1 auto;
   min-width: 0;

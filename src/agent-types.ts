@@ -70,6 +70,7 @@ export interface AgentBackend {
   inheritedTurns?(threadId: string): Promise<AgentContext['turns']>
   setGoal(threadId: string, objective: string, budget: number): Promise<void>
   getGoal(threadId: string): Promise<any>
+  accountUsage?(threadId: string, tokens: number): Promise<void>
   startTurn(threadId: string, text: string, cwd: string, settings: AgentSettings, terminalOutput?: string): Promise<string>
   steer(threadId: string, turnId: string, text: string): Promise<void>
   interrupt(threadId: string, turnId: string): Promise<void>

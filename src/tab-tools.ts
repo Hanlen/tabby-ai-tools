@@ -6,7 +6,7 @@ import { CodexTerminalOutputService } from './terminal-output.service'
 import { TabbyCapabilitiesService } from './tabby-capabilities.service'
 import * as os from 'os'
 import { isIP } from 'net'
-import { WorkflowTarget, redactMemory } from './task-memory'
+import { WorkflowTarget, redactMemory, observationFingerprint } from './task-memory'
 import { SudoWorkflowLease } from './sudo-workflow'
 import { TABBY_MUTATIONS, TABBY_OPERATIONS } from './tabby-operations'
 import { matchesProcess, terminalKeySequence, terminalInteractionState } from './terminal-keys'
@@ -238,6 +238,12 @@ export class TabbyTabToolsService implements OnDestroy {
     checkStopped()
     if (!tab.session?.open || tab.session !== state.session || this.controlled.get(tab) !== state) throw new Error('The terminal session or input owner changed; interactive input was not sent')
     return state
+  }
+  private async verifyObservation (args: any, context?: TabToolContext): Promise<void> {
+    if (args.expectedObservation === undefined) return
+    if (typeof args.expectedObservation !== 'string' || !/^[a-f0-9]{64}$/.test(args.expectedObservation)) throw new Error('Invalid observation fingerprint')
+    const current = await this.call('read_tab', { tabId: args.tabId, maxLines: 100, waitMs: 0 }, context)
+    if (current.commandState === 'prompt' || observationFingerprint(current) !== args.expectedObservation) throw new Error('交互现场或进程已经变化，未发送旧回答')
   }
 
   private async serverIdentity (tab: BaseTerminalTabComponent<any>): Promise<WorkflowTarget> {
@@ -500,6 +506,7 @@ export class TabbyTabToolsService implements OnDestroy {
       const existing = this.controlled.get(tab)
       if (existing && existing.owner !== owner) throw new Error(`Tab ${args.tabId} is controlled by another Codex session`)
       if (args.mode === 'stdin') {
+        await this.verifyObservation(args, context)
         const state = await this.verifyInteraction(tab, owner, checkStopped)
         checkStopped()
         this.sendControlled(state, args.text + (args.submit ? '\r' : ''))
@@ -571,6 +578,7 @@ export class TabbyTabToolsService implements OnDestroy {
     }
     if (name === 'send_keys') {
       if (!(tab instanceof BaseTerminalTabComponent)) throw new Error('This tab is not a terminal')
+      await this.verifyObservation(args, context)
       const state = await this.verifyInteraction(tab, context?.owner || 'legacy', checkStopped)
       checkStopped()
       const sequence = terminalKeySequence(args, !!(tab.frontend as any)?.xterm?.modes?.applicationCursorKeysMode)

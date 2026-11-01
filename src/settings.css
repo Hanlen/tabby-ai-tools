@@ -9,12 +9,12 @@
 }
 .agent-settings { min-width: 0; padding-bottom: 8px; }
 .agent-settings *, .agent-settings *::before, .agent-settings *::after { box-sizing: border-box; }
-.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.settings-heading h3 { margin: 0 0 6px; font-size: 24px; font-weight: 650; }
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.settings-heading h3 { margin: 0 0 2px; font-size: 20px; font-weight: 650; }
 .settings-heading p { margin: 0; }
 .settings-muted { opacity: .75; font-size: 12px; line-height: 1.6; }
 .settings-add { flex: none; }
-.settings-default { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 20px; padding: 12px 16px; margin-bottom: 18px; border: 1px solid var(--settings-border); border-radius: 10px; background: var(--settings-surface); }
+.settings-default { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; margin-bottom: 10px; border: 1px solid var(--settings-border); border-radius: 10px; background: var(--settings-surface); }
 .settings-default-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
 .settings-default-label label { margin: 0; font-weight: 600; }
 .settings-default > select { flex: 0 1 320px; min-width: 160px; width: 100%; }
@@ -32,27 +32,33 @@
 [data-provider='bailian-coding'] { --provider-rgb: 239, 151, 70; }
 [data-provider='claude'] { --provider-rgb: 209, 135, 77; }
 [data-provider='codex'] { --provider-rgb: 109, 139, 164; }
-.connection-item { display: flex; position: relative; align-items: flex-start; gap: 10px; width: 100%; min-width: 0; padding: 12px 10px; border: 1px solid transparent; border-inline-start: 3px solid transparent; border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: start; cursor: pointer; }
+.connection-item { display: flex; position: relative; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid transparent; border-inline-start: 3px solid transparent; border-radius: 8px; color: inherit; background: transparent; font: inherit; text-align: start; cursor: pointer; }
 .connection-item:hover { background: rgba(var(--provider-rgb), .08); border-color: rgba(var(--provider-rgb), .35); }
 .connection-selected, .connection-selected:hover { border-color: rgba(var(--provider-rgb), .5); border-inline-start-color: rgb(var(--provider-rgb)); background: rgba(var(--provider-rgb), .13); }
-.provider-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border: 1px solid rgba(var(--provider-rgb), .5); border-radius: 9px; background: rgba(var(--provider-rgb), .17); color: inherit; font-size: 14px; font-weight: 700; }
-.connection-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
-.connection-name-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 6px; }
-.connection-name { font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.connection-provider { font-size: 11px; opacity: .8; }
-.connection-model { font-size: 11px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.default-badge { display: inline-block; flex: none; width: fit-content; max-width: 100%; padding: 2px 7px; border: 1px solid rgba(var(--provider-rgb), .45); border-radius: 6px; background: rgba(var(--provider-rgb), .12); color: inherit; font-size: 11px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
-.connection-local { margin-top: 8px; }
+.provider-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; border: 1px solid rgba(var(--provider-rgb), .5); border-radius: 7px; background: rgba(var(--provider-rgb), .17); color: inherit; font-size: 12px; font-weight: 700; }
+.connection-info { display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); align-items: baseline; gap: 1px 6px; flex: 1; min-width: 0; }
+.connection-name-row, .connection-info > .connection-name { grid-column: 1 / -1; }
+.connection-name-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; }
+.connection-name { font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.connection-provider { font-size: 11px; line-height: 1.5; opacity: .8; overflow-wrap: anywhere; }
+.connection-provider::after { content: '·'; margin-inline-start: 6px; }
+.connection-model { min-width: 0; font-size: 11px; line-height: 1.5; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.default-badge { display: inline-block; flex: none; width: fit-content; max-width: 100%; padding: 0 5px; border: 1px solid rgba(var(--provider-rgb), .45); border-radius: 5px; background: rgba(var(--provider-rgb), .12); color: inherit; font-size: 11px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.connection-local { margin-top: 0; }
+.connection-local .connection-provider { display: none; }
+.connection-local .connection-model { grid-column: 1 / -1; }
 .connection-nav-hint { flex: none; margin: 10px 8px 4px; font-size: 11px; }
-.settings-editor { display: flex; flex-direction: column; min-width: 0; height: var(--settings-panel-height); overflow: hidden; border: 1px solid var(--settings-border); border-top: 3px solid rgb(var(--provider-rgb)); border-radius: 12px; }
-.editor-heading { display: flex; align-items: center; flex-wrap: wrap; flex: none; gap: 12px; padding: 16px 20px; border-bottom: 1px solid rgba(var(--provider-rgb), .25); background: rgba(var(--provider-rgb), .09); }
-.editor-heading .provider-mark { width: 40px; height: 40px; font-size: 18px; border-radius: 11px; }
+/* Let Tabby's settings page scroll the full form, including workflows and schedules. */
+.settings-editor { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--settings-border); border-top: 3px solid rgb(var(--provider-rgb)); border-radius: 12px; }
+.editor-heading { display: flex; align-items: center; flex-wrap: wrap; flex: none; gap: 8px; padding: 6px 12px; border-bottom: 1px solid rgba(var(--provider-rgb), .25); border-radius: 9px 9px 0 0; background: rgba(var(--provider-rgb), .09); }
 .editor-identity { flex: 1; min-width: 80px; }
-.editor-eyebrow { margin-bottom: 4px; font-size: 11px; opacity: .8; }
-.editor-identity h4 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
-.editor-model { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.editor-default { flex: none; font-size: 12px; }
-.editor-body { flex: 1; min-height: 0; min-width: 0; padding: 20px; overflow-y: auto; scrollbar-gutter: stable; }
+.editor-identity h4 { margin: 0; font-size: 14px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.editor-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; }
+.editor-eyebrow { font-size: 11px; line-height: 1.5; opacity: .8; overflow-wrap: anywhere; }
+.editor-eyebrow::after { content: '·'; margin-inline-start: 8px; }
+.editor-model { min-width: 0; font-size: 11px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-default { flex: none; padding: 4px 8px; font-size: 12px; }
+.editor-body { min-width: 0; padding: 16px; }
 .settings-section + .settings-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--settings-border); }
 .section-heading { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: 13px; font-weight: 650; }
 .section-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: rgb(var(--provider-rgb)); }
@@ -82,26 +88,22 @@
 .settings-footer { margin: 14px 0 0; overflow-wrap: anywhere; }
 .executable-help summary { cursor: pointer; }
 .executable-help p { margin: 8px 0 0; }
-.agent-settings button:focus-visible, .agent-settings summary:focus-visible, .agent-settings .form-control:focus-visible { outline: 2px solid var(--settings-focus); outline-offset: 2px; }
+.agent-settings :focus { outline: none; box-shadow: none; }
+.agent-settings :focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
 @container (max-width: 680px) {
   .settings-workspace { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .connection-nav { padding: 8px; }
+  .connection-nav { padding: 4px; }
   .connection-nav-heading, .connection-nav-hint { display: none; }
   .connection-list { flex-direction: row; overflow-x: auto; padding: 3px; }
   .connection-item { flex: 0 0 176px; width: 176px; }
   .connection-local { margin-top: 0; }
-  .settings-editor { height: clamp(360px, calc(100vh - 370px), 820px); }
-  .editor-heading { padding: 12px 16px; }
-  .editor-body { padding: 16px; }
 }
 @container (max-width: 420px) {
   .settings-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .settings-default { padding: 12px; }
   .settings-default > select { flex-basis: 100%; }
   .settings-fields { grid-template-columns: minmax(0, 1fr); }
   .editor-heading { gap: 8px; }
-  .editor-heading .provider-mark { width: 32px; height: 32px; }
-  .editor-heading > .default-badge, .editor-default { margin-inline-start: 40px; }
+  .editor-heading > .default-badge, .editor-default { margin-inline-start: auto; }
 }
 [data-provider='memory'] { --provider-rgb: 70, 159, 154; }
 [data-provider='schedules'] { --provider-rgb: 109, 139, 164; }
@@ -124,8 +126,10 @@
 .memory-workflow-editor textarea { font-family: inherit; font-size: 12px; line-height: 1.7; resize: vertical; }
 .memory-preference-save { margin-top: 12px; }
 .connection-memory { flex: none; margin-top: 8px; border-top-color: var(--settings-border); }
+.connection-memory .connection-provider::after { content: none; }
+.connection-memory .connection-provider { grid-column: 1 / -1; }
 @container (max-width: 680px) {
-  .connection-memory { width: 100%; flex: none; align-items: center; padding: 8px 10px; }
+  .connection-memory { width: 100%; flex: none; min-height: 34px; margin-top: 4px; }
   .connection-memory .connection-provider { display: none; }
   .connection-memory .provider-mark { width: 26px; height: 26px; font-size: 12px; }
 }

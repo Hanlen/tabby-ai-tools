@@ -281,6 +281,6 @@
             option(value='untrusted') {{apiMode ? t("操作时询问") : t("不可信时")}}
             option(value='never') {{t("不询问")}}
       .codex-compose-actions
-        button.btn.btn-outline-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') {{t("停止")}}
+        button.btn.btn-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') {{t("停止")}}
         button.btn.btn-primary.btn-sm(type='button', (click)='send()', [disabled]='!prompt.trim() || loading || !!request || !!retryState') {{busy ? t("追加指令") : t("发送")}}
     small.codex-permission-notice(*ngIf='permissionNotice') {{t(permissionNotice)}}

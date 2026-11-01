@@ -20,6 +20,41 @@ const { CodexService } = require('../src/codex.service.ts')
 const { ScheduledTasksService } = require('../src/scheduled-tasks.service.ts')
 Module._load = load; require.extensions['.ts'] = extension
 
+test('workflow helper factories preserve connection credentials/runtime and isolate model overrides', async t => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tabby-helper-factory-'))
+  t.after(() => fs.promises.rm(directory, { recursive: true, force: true }))
+  const configured = { id: 'current', name: 'current API', provider: 'custom', baseUrl: 'https://example.invalid/v1', model: 'main-model', reasoningEffort: 'high', keySource: 'none', threads: { '/project': 'main-thread' } }
+  const config = { store: { codexAgent: { apiProfiles: [configured], claudeModel: 'sonnet', claudeReasoningEffort: 'high', claudeExecutable: 'claude' } } }
+  const foreground = new CodexService()
+  const factory = new AgentBackendFactory(config, foreground, {}, { getConfigPath: () => path.join(directory, 'config.yaml') })
+  for (const runtime of [undefined, 'pi']) {
+    configured.runtime = runtime
+    const connection = await factory.createDecision('current', { model: 'fast-model', reasoningEffort: 'low' })
+    assert.equal(connection.backend.profile.model, 'fast-model')
+    assert.equal(connection.backend.profile.runtime, runtime)
+    assert.equal(connection.backend.profile.id, 'current')
+    assert.equal(connection.backend.profile.baseUrl, configured.baseUrl)
+    assert.equal(connection.backend.profile.keySource, 'none')
+    await connection.dispose()
+    assert.equal(configured.model, 'main-model')
+    assert.deepEqual(configured.threads, { '/project': 'main-thread' })
+  }
+  const claude = await factory.createDecision('claude-code', { model: 'haiku', reasoningEffort: 'low' })
+  assert.equal(claude.backend.profile.model, 'haiku')
+  assert.equal(config.store.codexAgent.claudeModel, 'sonnet')
+  await claude.dispose()
+  const codex = await factory.createDecision('', { model: 'helper', reasoningEffort: 'low' })
+  assert.notEqual(codex.backend, foreground)
+  const requests = []
+  codex.backend.client.request = async (method, params) => { requests.push({ method, params }); return { thread: { id: 'helper-thread' }, model: params.model } }
+  await codex.backend.openThread('/project', { model: 'helper', reasoningEffort: 'low', sandbox: 'read-only', approvalPolicy: 'never', decisionOnly: true, tabToolThreads: {} })
+  assert.deepEqual(requests[0].params.dynamicTools, [])
+  assert.equal(requests[0].params.ephemeral, true)
+  assert.equal(requests[0].params.config['features.shell_tool'], false)
+  assert.equal(requests[0].params.config.model_reasoning_effort, 'low')
+  await codex.dispose()
+})
+
 test('scheduler uses real Codex connect on an isolated client, current CLI and saved model without disconnecting foreground', async t => {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tabby-backend-'))
   const previousWindow = global.window
