@@ -22,11 +22,13 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.7.0 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.7.1 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
 Thinking and tool activity stream into collapsed entries in the conversation. Expand an entry to inspect the text returned by the service, tool arguments and results; replies stay visible. Terminal reads return early when shell integration confirms a command has finished, instead of waiting out the requested timeout. Thinking entries appear only after readable text arrives; Codex and supported OpenAI reasoning requests enable summaries. Selecting and copying sidebar text does not send Ctrl+C to the active terminal.
+
+**Fixed in v0.7.1:** Windows default discovery compares installed Codex CLI versions, so an older PATH entry no longer hides a newer desktop installation. Desktop upgrade paths recover automatically. See the [release notes](docs/releases/0.7.1.md).
 
 **New in v0.7.0:** readable thinking/tool activity, safe sidebar copying and earlier terminal readback after verified command completion. See the [release notes](docs/releases/0.7.0.md) for validation and limits.
 
@@ -92,6 +94,8 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
 Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
 
 Automatic discovery covers standalone installations (including `CODEX_INSTALL_DIR` and `CODEX_HOME/packages/standalone/current/bin`), Homebrew and npm global prefixes, and compatible Codex binaries in VS Code extensions as a final fallback. On macOS, it checks `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` and the older `Contents/Resources/codex` entry under `/Applications` and `~/Applications`, including the former `Codex.app` name. For other locations, set the full path in **Settings → AI Tools → Codex CLI executable**. See the [discovery matrix (中文)](docs/guide.md#cli-自动发现与启动排查).
+
+On Windows, leave the Codex CLI executable blank (or `codex`) to compare actual versions across PATH, desktop, standalone and known npm installations and select the newest discovered CLI. Upgrades are rescanned on each new connection. Explicit file paths keep a fixed version; a stable `OpenAI\Codex\bin` directory limits comparison to that installation. See the [discovery guide](docs/guide.md#cli-自动发现与启动排查).
 
 ## Orchestrate tasks in natural language
 

@@ -3,8 +3,9 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { Readable } from 'stream'
-import { codexEnvironment, environmentValue, executableEnvironment, executableFile, ExecutableContext, normalizeExecutable, resolveCodexExecutable } from './codex-executable'
+import { codexExecutableCandidates, codexEnvironment, environmentValue, executableEnvironment, executableFile, ExecutableContext, normalizeExecutable, resolveCodexExecutable } from './codex-executable'
 import { packageManagerDirectories } from './codex-prefix'
+import { newestCodexExecutable } from './codex-version'
 
 export interface CodexLaunch {
   executable: string
@@ -14,6 +15,7 @@ export interface CodexLaunch {
 export interface DiscoveryContext extends ExecutableContext {
   signal?: AbortSignal
   shellTimeoutMs?: number
+  versionTimeoutMs?: number
   prefixTimeoutMs?: number
   arch?: string
   /** Override host-level locations for filesystem-backed discovery tests. */
@@ -237,7 +239,31 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
   checkCancelled(context.signal)
   let executable: string | undefined
   let originalError: Error | undefined
-  try { executable = resolveCodexExecutable(configured, { ...resolution, env }) } catch (error: any) {
+  try {
+    if (windows) {
+      let candidates: string[] = []
+      let discoveryError: any
+      try { candidates = codexExecutableCandidates(configured, { ...resolution, env }) } catch (error) {
+        if (!automatic) throw error
+        discoveryError = error
+      }
+      if (automatic) {
+        // Include known standalone/npm locations even when PATH already worked.
+        const directories = [paths.join(home, '.local', 'bin'), ...await installDirectories(home, env, cwd, resolution, []),
+          ...await packageManagerDirectories(env, resolution, [])]
+        for (const directory of directories) for (const name of ['codex.exe', 'codex.cmd']) {
+          const filename = paths.resolve(cwd, directory, name)
+          try { executableFile(filename, resolution); candidates.push(filename) } catch { /* Not installed here. */ }
+        }
+      }
+      if (!candidates.length) throw discoveryError
+      executable = candidates.length > 1
+        ? await newestCodexExecutable(candidates, env, { ...context, cwd })
+        : candidates[0]
+      checkCancelled(context.signal)
+    } else executable = resolveCodexExecutable(configured, { ...resolution, env })
+  } catch (error: any) {
+    checkCancelled(context.signal)
     if (!automatic || !supported) throw error
     originalError = error
   }

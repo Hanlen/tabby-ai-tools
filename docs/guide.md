@@ -286,11 +286,11 @@ Goal 通过证据检查和持续执行降低过早结束的概率，但无法数
 
 ## CLI 自动发现与启动排查
 
-`codexAgent.executable` 留空或保持默认 `codex` 时，先从 **Tabby 自身进程的 PATH** 查找并验证文件，随后检查 `CODEX_INSTALL_DIR`。Windows 再检查官方独立安装入口 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`，再检查 `CODEX_HOME` 下的 standalone 内部入口，随后扫描桌面安装 `%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`。桌面安装目录名可以是哈希，按有效 **codex.exe 的修改时间降序** 选择，时间相同按完整路径排序；不从目录名推断版本。每次启动后台进程都会重新查找，以适配升级和旧目录清理；已有连接复用当前进程。
+`codexAgent.executable` 留空或保持默认 `codex` 时，**Windows 会收集并比较已发现安装的实际 CLI 版本**：Tabby 进程 PATH 的所有匹配项、`CODEX_INSTALL_DIR`、`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`、`CODEX_HOME` 下的 standalone 入口、`%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`、用户 `.local\bin` 及 npm 常见目录和全局 prefix。不会命中第一个 PATH 旧版就停止。多个候选使用不消耗模型额度的 `--version` 查询，按语义版本选择较新者；稳定版优先于同版本预发布版，版本相同时保留发现顺序。哈希名及文件修改时间不作为版本新旧依据。单项查询限时 1.5 秒、输出最多 16 KiB，最多四项并发；失败或无法解析的候选不压过有有效版本号的候选。所有版本均未知时保留原发现顺序（桌面子目录内部以程序修改时间排序），此时不能保证最新。每次新连接重新扫描，不缓存版本结果；已有连接复用当前进程。Linux/macOS 仍先检查 PATH，再检查 `CODEX_INSTALL_DIR` 和下文的补充来源。
 
 Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境，即使桌面 PATH 已经包含 Codex，也会读取用户 Shell 中的 Codex 配置。未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出。仅导入 PATH、CODEX_HOME / CODEX_SQLITE_HOME / CODEX_INSTALL_DIR、NVM_DIR、HOMEBREW_PREFIX、NPM_CONFIG_PREFIX / npm_config_prefix、代理、证书及 OPENAI_API_KEY / CODEX_API_KEY / CODEX_ACCESS_TOKEN；其中非 PATH 变量以父进程已有值（包括空值）为准，不导入 Shell 的 NODE_OPTIONS 等运行时钩子，也不把环境变量内容写入诊断。
 
-默认 Codex 仍未找到时，按下表补充安装来源。POSIX 先恢复用户 Shell 环境，再检查 standalone、配置的 prefix、NVM 和常见系统目录；Windows 保留上文的独立安装／桌面安装优先级，再查 npm 等目录。尚未找到时才查询包管理器 prefix，随后检查 macOS 桌面包，最后才扫描 IDE 扩展。已通过 PATH 或设置选定的 Codex 不会被另一安装替换。
+默认 Codex 仍未找到时，按下表补充安装来源。POSIX 先恢复用户 Shell 环境，再检查 standalone、配置的 prefix、NVM 和常见系统目录；Windows 已在上面的候选比较中检查独立安装、桌面安装和 npm 等目录。尚未找到时才查询包管理器 prefix，随后检查 macOS 桌面包，最后才扫描 IDE 扩展。Linux/macOS 已通过 PATH 选定的 Codex、各平台明确设置的文件路径或自定义命令不会被另一安装替换。
 
 | 来源 | macOS / Linux | Windows |
 | --- | --- | --- |
@@ -314,7 +314,15 @@ NVM 优先 current，其余按 Node 版本降序。IDE 同时支持 `.vscode-ins
 
 服务关闭和重连会等待旧进程回收。Linux/macOS 为服务创建独立进程组，先发送 SIGTERM，等待最多 1 秒，再向仍存活的进程组发送 SIGKILL，并等待最多 2 秒确认服务管道关闭。Windows 使用由 SystemRoot / WINDIR 定位的绝对路径 `System32\taskkill.exe /t /f`，不依赖 PATH；执行和退出确认均有 2 秒上限。回收失败会给出诊断并阻止启动另一个服务，需要处理该错误并重启 Tabby 后重试。
 
-显式配置的绝对路径、相对路径或 `~/` 路径优先（可带一对外层引号），会验证真实文件存在；无效立即报错，**不会自动降级到另一安装**。自定义命令名（如 `my-codex`、`codex.cmd`）仅按 PATH / Windows PATHEXT 查找，保留命令名配置兼容性；未找到也不会改用桌面安装。Windows 支持原生 exe/com 和 cmd/bat 启动器，含空格、中文路径可用。原生程序使用绝对路径、参数数组和 `shell:false`；cmd/bat 由 cross-spawn 负责 cmd.exe 转义，stdin/stdout JSONL 及 stderr 均保留为管道。只填写文件路径或命令名，不附加参数。
+Windows 桌面版升级可能更换或清理版本目录。要持续使用这套安装，在 **Codex CLI 可执行文件** 中填写稳定的父目录（用实际用户名替换 `用户名`）：
+
+```text
+C:\Users\用户名\AppData\Local\OpenAI\Codex\bin
+```
+
+此目录配置每次新连接都扫描直属子目录，并比较 `codex.exe --version` 选择较新版本；仅限此目录，不比较 PATH 中的其他安装。默认留空同样会比较桌面安装与 PATH 版本，普通用户无需指定目录。无需在每次升级后手动填写哈希。若之前填写的是该桌面目录下的 `<目录>\codex.exe` 且文件已被移除，会在同一 `OpenAI\Codex\bin` 内恢复查找；若文件仍存在，保留显式固定版本。目录内没有可用程序时报错，不切换到另一安装。输入实际完整路径，不使用 `%LOCALAPPDATA%` 占位符。
+
+显式配置的绝对路径、相对路径或 `~/` 路径优先（可带一对外层引号），会验证真实文件存在；除上述已移除的 Windows 桌面版本路径外，无效立即报错，**不会自动降级到另一安装**。自定义命令名（如 `my-codex`、`codex.cmd`）仅按 PATH / Windows PATHEXT 查找，保留命令名配置兼容性；未找到也不会改用桌面安装。Windows 支持原生 exe/com 和 cmd/bat 启动器，含空格、中文路径可用。原生程序使用绝对路径、参数数组和 `shell:false`；cmd/bat 由 cross-spawn 负责 cmd.exe 转义，stdin/stdout JSONL 及 stderr 均保留为管道。只填写文件路径或命令名，不附加参数。
 
 子进程环境会移除所有大小写形式的 `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`，初始化始终使用插件自己的 `clientInfo.name = tabby_codex_agent`，父进程环境不变。定位失败会给出 PATH 检查情况、Windows 安装扫描路径或 LOCALAPPDATA 缺失、Linux/macOS 的 Shell 探测结果及补充安装目录、候选拒绝原因，以及 **Settings → AI Tools → Codex CLI 可执行文件（`codexAgent.executable`）** 设置入口。
 

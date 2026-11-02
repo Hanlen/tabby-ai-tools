@@ -50,6 +50,17 @@ export function executableEnvironment (env: NodeJS.ProcessEnv, searchPath: strin
 
 /** Resolve on each new connection: desktop installs use changing, opaque directory names. */
 export function resolveCodexExecutable (configured: string, context: ExecutableContext = {}): string {
+  return resolveExecutable(configured, context)
+}
+
+/** Collect all default Windows installations instead of stopping at PATH. */
+export function codexExecutableCandidates (configured: string, context: ExecutableContext): string[] {
+  const candidates: string[] = []
+  const selected = resolveExecutable(configured, context, candidates)
+  return [...new Set(candidates.length ? candidates : [selected])]
+}
+
+function resolveExecutable (configured: string, context: ExecutableContext, candidates?: string[]): string {
   const windows = (context.platform || process.platform) === 'win32'
   const paths = context.paths || (windows ? path.win32 : path.posix)
   const env = context.env || process.env
@@ -60,15 +71,62 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
   const reasons: string[] = []
   const validFile = (filename: string): fs.Stats => executableFile(filename, context)
   const fail = (message: string): never => { throw new Error(`${message}\n${reasons.join('\n')}\n${SETTING_HELP}`) }
+  const select = (filename: string): string | undefined => {
+    validFile(filename)
+    if (!candidates) return filename
+    candidates.push(filename)
+    return undefined
+  }
+  const desktopExecutable = (root: string): string | undefined => {
+    const desktopCandidates: { filename: string; mtime: number }[] = []
+    try {
+      for (const directory of fs.readdirSync(root)) {
+        const folder = paths.join(root, directory)
+        const filename = paths.join(folder, 'codex.exe')
+        try {
+          if (!fs.statSync(folder).isDirectory()) continue
+          desktopCandidates.push({ filename, mtime: validFile(filename).mtimeMs })
+        } catch (error: any) { reasons.push(`${filename}: ${error.code || error.message}`) }
+      }
+      // Directory names are opaque hashes, never semantic versions. Stable path
+      // ordering is only a tie breaker when executable modification times match.
+      desktopCandidates.sort((a, b) => b.mtime - a.mtime || (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0))
+      if (desktopCandidates.length) {
+        if (candidates) candidates.push(...desktopCandidates.map(candidate => candidate.filename))
+        return desktopCandidates[0].filename
+      }
+      reasons.push(`${root}: 没有可用的 <目录>/codex.exe`)
+    } catch (error: any) { reasons.push(`${root}: ${error.code || error.message}`) }
+    return undefined
+  }
   if (value && (paths.isAbsolute(value) || /[/\\]/.test(value) || (windows && /^[a-z]:/i.test(value)))) {
     const filename = paths.resolve(cwd, value)
+    // A desktop bin directory is a stable selector across opaque version changes.
+    const desktopRoot = (directory: string): boolean =>
+      paths.basename(directory).toLowerCase() === 'bin' &&
+      paths.basename(paths.dirname(directory)).toLowerCase() === 'codex' &&
+      paths.basename(paths.dirname(paths.dirname(directory))).toLowerCase() === 'openai'
+    if (windows && desktopRoot(filename)) {
+      const selected = desktopExecutable(filename)
+      if (selected) return selected
+      return fail('找不到 Codex CLI。')
+    }
     try { validFile(filename) } catch (error: any) {
       reasons.push(`${filename}: ${error.code || error.message}`)
+      // Recover only a removed desktop entrypoint, within the same installation.
+      // Never redirect arbitrary explicit paths or permission failures to PATH.
+      const root = paths.dirname(paths.dirname(filename))
+      if (windows && ['ENOENT', 'ENOTDIR'].includes(error.code) &&
+          paths.basename(filename).toLowerCase() === 'codex.exe' && desktopRoot(root)) {
+        const selected = desktopExecutable(root)
+        if (selected) return selected
+      }
       return fail('显式配置的 Codex CLI 路径无效；未尝试自动查找。')
     }
     return filename
   }
 
+  if (!automatic) candidates = undefined
   const command = value || 'codex'
   const pathValue = environmentValue(env, 'PATH', windows)
   const extensions = windows && !paths.extname(command)
@@ -80,7 +138,7 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
     const directory = normalizeExecutable(entry)
     for (const extension of extensions) {
       const filename = paths.resolve(cwd, directory, command + extension)
-      try { validFile(filename); return filename } catch (error: any) {
+      try { const selected = select(filename); if (selected) return selected } catch (error: any) {
         if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') reasons.push(`${filename}: ${error.code || error.message}`)
       }
     }
@@ -93,7 +151,7 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
     const directory = normalizeExecutable(installDir)
     const expanded = /^~[/\\]/.test(directory) ? paths.join(context.home || os.homedir(), directory.slice(2)) : directory
     const filename = paths.resolve(cwd, expanded, windows ? 'codex.exe' : 'codex')
-    try { validFile(filename); return filename } catch (error: any) {
+    try { const selected = select(filename); if (selected) return selected } catch (error: any) {
       reasons.push(`CODEX_INSTALL_DIR ${filename}: ${error.code || error.message}`)
     }
   }
@@ -103,7 +161,7 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
     if (!localAppData) reasons.push('LOCALAPPDATA: 未设置，无法扫描 OpenAI/Codex/bin')
     else {
       const standalone = paths.resolve(cwd, localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe')
-      try { validFile(standalone); return standalone } catch (error: any) {
+      try { const selected = select(standalone); if (selected) return selected } catch (error: any) {
         reasons.push(`独立安装 ${standalone}: ${error.code || error.message}`)
       }
     }
@@ -112,27 +170,14 @@ export function resolveCodexExecutable (configured: string, context: ExecutableC
     const expandedHome = /^~[/\\]/.test(codexHome) ? paths.join(home, codexHome.slice(2)) : codexHome
     for (const suffix of [['bin', 'codex.exe'], ['codex.exe']]) {
       const filename = paths.resolve(cwd, expandedHome, 'packages', 'standalone', 'current', ...suffix)
-      try { validFile(filename); return filename } catch (error: any) { reasons.push(`standalone ${filename}: ${error.code || error.message}`) }
+      try { const selected = select(filename); if (selected) return selected } catch (error: any) { reasons.push(`standalone ${filename}: ${error.code || error.message}`) }
     }
     if (localAppData) {
       const root = paths.resolve(cwd, localAppData, 'OpenAI', 'Codex', 'bin')
-      const candidates: { filename: string; mtime: number }[] = []
-      try {
-        for (const directory of fs.readdirSync(root)) {
-          const folder = paths.join(root, directory)
-          const filename = paths.join(folder, 'codex.exe')
-          try {
-            if (!fs.statSync(folder).isDirectory()) continue
-            candidates.push({ filename, mtime: validFile(filename).mtimeMs })
-          } catch (error: any) { reasons.push(`${filename}: ${error.code || error.message}`) }
-        }
-        // Directory names are opaque hashes, never semantic versions. Stable path
-        // ordering is only a tie breaker when executable modification times match.
-        candidates.sort((a, b) => b.mtime - a.mtime || (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0))
-        if (candidates.length) return candidates[0].filename
-        reasons.push(`${root}: 没有可用的 <目录>/codex.exe`)
-      } catch (error: any) { reasons.push(`${root}: ${error.code || error.message}`) }
+      const selected = desktopExecutable(root)
+      if (selected && !candidates) return selected
     }
   }
+  if (candidates?.length) return candidates[0]
   return fail('找不到 Codex CLI。')
 }
