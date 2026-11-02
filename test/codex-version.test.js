@@ -104,3 +104,18 @@ test('cancelling default Windows discovery cannot return a selected PATH fallbac
   setTimeout(() => controller.abort(), 50)
   await assert.rejects(pending, /closed during CLI discovery/)
 })
+
+test('a synchronous Windows spawn failure cannot abandon other version candidates', async t => {
+  const f = fixture(t)
+  const broken = path.join(f.root, 'invalid-native.exe')
+  fs.writeFileSync(broken, 'not a native executable', { mode: 0o755 })
+  const valid = f.cli('valid CLI/codex', 'codex-cli 0.110.0')
+  const cp = require('node:child_process')
+  const original = cp.spawn
+  cp.spawn = (executable, ...args) => {
+    if (executable === broken) throw Object.assign(new Error('spawn EINVAL'), { code: 'EINVAL' })
+    return original(executable, ...args)
+  }
+  t.after(() => { cp.spawn = original })
+  assert.equal(await newestCodexExecutable([broken, valid], process.env), valid)
+})

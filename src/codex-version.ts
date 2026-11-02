@@ -39,10 +39,18 @@ function compareVersions (a: Version, b: Version): number {
 async function version (executable: string, env: NodeJS.ProcessEnv, context: VersionContext): Promise<Version | undefined> {
   return new Promise(resolve => {
     const launch = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable) ? spawnWindowsLauncher : spawn
-    const child = launch(executable, ['--version'], {
-      cwd: context.cwd, env: codexEnvironment(env), shell: false, windowsHide: true,
-      detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
-    }) as ChildProcessWithoutNullStreams
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = launch(executable, ['--version'], {
+        cwd: context.cwd, env: codexEnvironment(env), shell: false, windowsHide: true,
+        detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
+      }) as ChildProcessWithoutNullStreams
+    } catch {
+      // Windows can reject a non-PE .exe synchronously. Reject this candidate,
+      // not the whole comparison and its remaining valid installations.
+      resolve(undefined)
+      return
+    }
     let settled = false
     let output = ''
     let bytes = 0
