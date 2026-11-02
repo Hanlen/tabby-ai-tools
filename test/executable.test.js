@@ -45,6 +45,38 @@ test('Windows discovery simulation: empty PATH scans hashes, skips old empty dir
   assert.equal(resolveCodexExecutable('codex', f.context), [old, newest].sort()[0], 'mtime tie has stable path ordering')
 })
 
+test('Windows stable desktop bin selects each upgrade ahead of an old PATH install', t => {
+  const f = fixture(t)
+  const legacy = f.file('.local/bin/codex.exe')
+  f.context.env.Path = path.dirname(legacy)
+  const old = f.install('22cfb1d302613eae', 2000)
+  assert.equal(resolveCodexExecutable(`"${f.bin}"`, f.context), old)
+  const upgraded = f.install('0000000000000000', 3000)
+  fs.mkdirSync(path.join(f.bin, 'incomplete-update'))
+  assert.equal(resolveCodexExecutable(f.bin + path.sep, f.context), upgraded)
+  fs.unlinkSync(old)
+  assert.equal(resolveCodexExecutable(f.bin, f.context), upgraded)
+  fs.unlinkSync(upgraded)
+  assert.throws(() => resolveCodexExecutable(f.bin, f.context), /没有可用.*codex.exe/s,
+    'an empty selected desktop install must not fall back to the old PATH CLI')
+})
+
+test('Windows removed desktop version recovers within its own installation only', t => {
+  const f = fixture(t)
+  const old = f.install('22cfb1d302613eae', 2000)
+  const upgraded = f.install('next-version', 3000)
+  f.context.env.Path = path.dirname(f.file('.local/bin/codex.exe'))
+  assert.equal(resolveCodexExecutable(old, f.context), old, 'existing explicit files remain pinned')
+  fs.unlinkSync(old)
+  delete f.context.env.LocalAppData
+  assert.equal(resolveCodexExecutable(old, f.context), upgraded, 'recovery uses the configured root, not environment')
+  fs.unlinkSync(upgraded)
+  assert.throws(() => resolveCodexExecutable(old, f.context), /显式.*无效/s)
+  f.install('another-version', 4000)
+  assert.throws(() => resolveCodexExecutable(path.join(f.root, 'unrelated', 'codex.exe'), f.context), /显式.*无效/s)
+  assert.throws(() => resolveCodexExecutable(path.join(f.bin, '22cfb1d302613eae', 'custom.exe'), f.context), /显式.*无效/s)
+})
+
 test('Windows PATH precedes desktop install; custom names use case-insensitive PATH/PATHEXT without desktop fallback', t => {
   const f = fixture(t)
   f.install('hash', 5000)
@@ -102,7 +134,7 @@ test('explicit paths have priority, strip outer quotes, expand home and never fa
     assert.equal(resolveCodexExecutable(`~/Explicit Path/agent.${extension}`, { ...f.context, home: f.root }), explicit)
   }
   assert.throws(() => resolveCodexExecutable(path.join(f.root, 'missing.exe'), f.context), /显式.*无效.*未尝试自动查找.*ENOENT.*codexAgent.executable/s)
-  assert.throws(() => resolveCodexExecutable(f.bin, f.context), /不是普通文件/)
+  assert.throws(() => resolveCodexExecutable(path.dirname(f.file('ordinary-directory/child.exe')), f.context), /不是普通文件/)
   assert.throws(() => resolveCodexExecutable(f.file('bad.txt'), f.context), /仅支持/)
 })
 

@@ -150,7 +150,8 @@ const Module = require('module'), load = Module._load
 Module._load = function (request, parent, isMain) { if (!isMain) return load.call(this, request, parent, isMain) }
 `)
   process.env.NODE_OPTIONS = `--require="${preload.split(path.sep).join('/')}"`
-  await client.connect('')
+  await client.connect(bin)
+  assert.equal(client.process.spawnfile, next)
   const child = client.process
   const closed = once(child, 'close')
   client.close()
@@ -158,6 +159,7 @@ Module._load = function (request, parent, isMain) { if (!isMain) return load.cal
   const upgraded = install('9614f1d9b40d9c4f')
   fs.utimesSync(upgraded, 3000, 3000)
   assert.equal(resolveCodexExecutable('codex'), upgraded)
-  await client.connect('codex')
+  fs.unlinkSync(next)
+  await client.connect(next)
   assert.equal(client.process.spawnfile, upgraded)
 })

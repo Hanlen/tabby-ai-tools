@@ -22,11 +22,13 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.7.0 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.7.1 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
 对话中实时显示默认折叠的思考过程与工具调用，展开可查看服务返回的思考文本、工具参数和结果，正文回复直接显示。Shell 集成确认命令完成后，读屏会提前返回，无需等满指定时间。收到可读文本后才显示思考记录，Codex 与支持的 OpenAI 推理请求会开启摘要；在侧栏选中文字并复制时，不会向活动终端发送 Ctrl+C。
+
+**v0.7.1 修复：** Windows 默认查找会比较已安装 Codex CLI 的真实版本，避免 PATH 中的旧版遮住桌面新版，并支持桌面升级后的路径恢复。详见[发布说明](docs/releases/0.7.1.md)。
 
 **v0.7.0 新增：** 可读的思考／工具过程、安全的侧栏复制，以及确认命令完成后的提前读屏。验证范围与限制见[发布说明](docs/releases/0.7.0.md)。
 
@@ -92,6 +94,8 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 
 自动查找覆盖 standalone 安装（含 `CODEX_INSTALL_DIR` 和 `CODEX_HOME/packages/standalone/current/bin`）、Homebrew/npm 全局 prefix，并以 VS Code 扩展中的兼容 Codex 作为最后兜底。macOS 检查 `/Applications` 和 `~/Applications` 下的 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` 及旧 `Contents/Resources/codex` 入口，也兼容原 `Codex.app` 名称。其他位置可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写完整路径。[查看完整发现矩阵](docs/guide.md#cli-自动发现与启动排查)。
+
+Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalone 和已知 npm 安装的实际版本，选择已发现的最新 CLI，每次新连接重新扫描。明确填写文件路径可固定版本；填写稳定的 `OpenAI\Codex\bin` 目录则只比较这套安装。[查看路径查找说明](docs/guide.md#cli-自动发现与启动排查)。
 
 ## 用自然语言编排任务
 
