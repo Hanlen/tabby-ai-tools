@@ -83,8 +83,9 @@ require('readline').createInterface({input:process.stdin}).on('line',line=>{
       const stat = fs.readFileSync(`/proc/${descendant}/stat`, 'utf8')
       assert.match(stat.slice(stat.lastIndexOf(')') + 1), /^ Z /)
     } catch (error) {
-      // The kernel can reap the zombie after kill(pid, 0) succeeds.
-      if (error.code !== 'ENOENT') throw error
+      // The kernel can reap the zombie after kill(pid, 0), or after opening
+      // /proc but before read(). Both ENOENT and ESRCH prove it is gone.
+      if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error
     }
   } else assert.equal(alive, false)
 })
