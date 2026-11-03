@@ -48,6 +48,28 @@ test('private attachment frames never enter context and wrapped completion hides
   service.unwatch(terminal)
 })
 
+test('an unknown PTY cancellation keeps late payload private until a reliable shell prompt', () => {
+  const terminal = new FakeTerminal('/project'), service = new CodexTerminalOutputService({ tabs: [terminal] })
+  service.watch(terminal)
+  const release = service.suppress(terminal)
+  service.hideAttachmentOutput(terminal, 'TA_cancelled_DONE')
+  service.holdUntilShellPrompt(terminal, release)
+  terminal.session.output$.next('LATE_PRIVATE_BASE64')
+  assert.equal(service.readSince(terminal, 0, 100).text, '')
+  terminal.session.output$.next('\x1b]133;D;130\x07\x1b]133;A\x07')
+  assert.equal(service.isSuppressed(terminal), false)
+  terminal.session.output$.next('fresh safe output')
+  assert.equal(service.sanitizeView(terminal, 'old truncated screen without footer'), 'fresh safe output')
+  terminal.session.closed$ = new Subject()
+  const releaseClosed = service.suppress(terminal)
+  service.holdUntilShellPrompt(terminal, releaseClosed)
+  terminal.session.closed$.next()
+  terminal.session.output$.next('PRIVATE_AFTER_CLOSE')
+  assert.equal(service.isSuppressed(terminal), true)
+  assert.ok(!service.readSince(terminal, 0, 1000).text.includes('PRIVATE_AFTER_CLOSE'))
+  service.unwatch(terminal)
+})
+
 test('only bound terminals are observed and all watchers must release them', () => {
   const selected = new FakeTerminal('/project')
   const other = new FakeTerminal('/other')
