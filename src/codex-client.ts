@@ -32,13 +32,15 @@ export class CodexClient extends EventEmitter {
 
   async connect (executable: string, space?: NativeSessionSpace): Promise<void> {
     executable = normalizeExecutable(executable) || 'codex'
-    if (this.ready && this.executable === executable && this.space?.key === space?.key && this.space?.native === space?.native) return this.ready
+    // The eager runtime has no space metadata; the panel later supplies the
+    // explicit system space. Both use the same CLI home and must share discovery.
+    if (this.ready && this.executable === executable && (this.space?.key || 'system:codex') === (space?.key || 'system:codex') && this.space?.native === space?.native) return this.ready
     this.close()
     this.executable = executable
     this.space = space
     const discovery = new AbortController()
     this.discovery = discovery
-    const ready = this.start(executable, discovery.signal).catch(error => {
+    const ready = this.start(executable, discovery.signal, space).catch(error => {
       if (this.ready === ready) this.ready = undefined
       throw error
     })
@@ -46,9 +48,8 @@ export class CodexClient extends EventEmitter {
     return this.ready
   }
 
-  private async start (executable: string, signal: AbortSignal): Promise<void> {
+  private async start (executable: string, signal: AbortSignal, space?: NativeSessionSpace): Promise<void> {
     const resolved = await resolveCodexLaunch(executable, { signal })
-    const space = this.space
     if (space) await prepareSessionSpace(space)
     if (this.stopping) await this.stopping
     if (signal.aborted) throw new Error('Codex app-server was closed during CLI discovery')

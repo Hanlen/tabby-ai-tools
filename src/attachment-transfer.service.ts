@@ -56,6 +56,12 @@ export class AttachmentTransferService implements OnDestroy {
   }
   stage (owner: string, name: string, mime: string, bytes: Uint8Array): Promise<Attachment> { return this.files.stage(owner, name, mime, bytes) }
   list (owner: string): Attachment[] { return this.files.list(owner) }
+  async preview (owner: string, id: string): Promise<string | undefined> {
+    const item = this.files.get(owner, id)
+    if (!/^image\/(png|jpeg|webp|gif|avif|bmp)$/.test(item.mime) || item.size > 20 * 1024 * 1024) return undefined
+    const bytes = await fs.readFile(this.files.file(id))
+    return `data:${item.mime};base64,${bytes.toString('base64')}`
+  }
   async saveLocal (owner: string, id: string): Promise<void> {
     const item = this.files.get(owner, id)
     const download = await this.platform.startDownload(item.name, 0o600, item.size)

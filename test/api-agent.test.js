@@ -2361,3 +2361,52 @@ test('settings manage all scheduled workspaces and require ended runs and explic
   component.ngOnDestroy()
   assert.equal(scheduler.changes$.observers.length, 0)
 })
+
+
+test('composer pastes files inline, previews images and preserves plain text paste', async t => {
+  const items = []
+  const removed = []
+  const attachments = {
+    list: owner => items.filter(item => item.owner === owner),
+    stage: async (owner, name, mime, bytes) => {
+      const item = { id: String(items.length), owner, name, mime, size: bytes.length }
+      items.push(item)
+      return item
+    },
+    remove: async (owner, id) => { removed.push(id); items.splice(items.findIndex(item => item.id === id), 1) },
+  }
+  const originalImage = global.Image
+  global.Image = class {
+    naturalWidth = 32
+    naturalHeight = 32
+    set src (_) { this.onload() }
+  }
+  t.after(() => { global.Image = originalImage })
+  const panel = new CodexPanelComponent({}, {}, { run: fn => fn() }, {}, {
+    call: () => { throw new Error('Pasting must not open a terminal picker') },
+  }, undefined, { detectChanges () {} }, attachments)
+  panel.threadId = 'paste-session'
+  let prevented = false
+  const event = files => ({ clipboardData: { items: files.map(file => ({ kind: 'file', getAsFile: () => file })) },
+    preventDefault: () => { prevented = true }, stopPropagation () {} })
+  panel.onAttachmentPaste(event([]))
+  assert.equal(prevented, false)
+  const image = Object.assign(new Blob(['webp fixture'], { type: 'image/webp' }), { name: 'clipboard.webp' })
+  panel.onAttachmentPaste(event([image]))
+  await flush()
+  assert.equal(prevented, true)
+  assert.equal(panel.attachmentItems[0].name, 'clipboard.webp')
+  assert.match(panel.attachmentPreviews.get('0'), /^blob:/)
+  const url = panel.attachmentPreviews.get('0')
+  await panel.removeAttachment('0')
+  assert.deepEqual(removed, ['0'])
+  assert.equal(panel.attachmentItems.length, 0)
+  assert.equal(panel.attachmentPreviews.has('0'), false)
+  await assert.rejects(fetch(url))
+
+  const text = Object.assign(new Blob(['log'], { type: 'text/plain' }), { name: 'run.log' })
+  await panel.addAttachmentFiles([text, { size: 101 * 1024 * 1024, type: 'text/plain' }])
+  assert.equal(panel.attachmentItems[0].name, 'run.log')
+  assert.ok(panel.attachmentError)
+  assert.equal(panel.attachmentBusy, false)
+})

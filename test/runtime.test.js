@@ -157,3 +157,21 @@ test('API default never starts or retries Codex until a Codex panel is explicitl
   assert.equal(await env.tick(), 1000)
   assert.deepEqual(env.calls, ['codex'])
 })
+
+
+test('a superseded startup cannot report failure or schedule retries after recovery', async t => {
+  const env = setup(t)
+  let rejectFirst
+  env.codex.connect = () => new Promise((resolve, reject) => { rejectFirst = reject })
+  env.runtime.start(); env.ready()
+  env.config.store.codexAgent.executable = 'replacement'
+  env.codex.connect = async () => { env.client.emit('connected') }
+  env.config.changed$.next()
+  // Returning to the same path must not let the original attempt report a failure.
+  env.config.store.codexAgent.executable = 'codex'
+  env.config.changed$.next()
+  rejectFirst(new Error('Codex app-server was closed during CLI discovery'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(env.notifications.length, 0)
+  assert.equal(env.timers.size, 0)
+})

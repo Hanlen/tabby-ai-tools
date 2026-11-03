@@ -18,6 +18,7 @@ export class CodexRuntimeService implements OnDestroy {
   private retryDelay = 1000
   private errorReported = false
   private codexUsed = false
+  private connectionAttempt = 0
 
   constructor (
     private config: ConfigService,
@@ -54,10 +55,11 @@ export class CodexRuntimeService implements OnDestroy {
     if (this.config.store.codexAgent.defaultProfileId && !this.codexUsed) return
     const executable = this.configuredExecutable
     this.executable = executable
+    const attempt = ++this.connectionAttempt
     try {
       await this.codex.connect(this.config.store.codexAgent as AgentSettings)
     } catch (error: any) {
-      if (this.stopped || executable !== this.configuredExecutable) return
+      if (this.stopped || attempt !== this.connectionAttempt || executable !== this.configuredExecutable) return
       if (!this.errorReported) {
         this.errorReported = true
         this.notifications.error(translate('Codex 后台服务启动失败'), translate(`${error.message}。请检查 Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`))
