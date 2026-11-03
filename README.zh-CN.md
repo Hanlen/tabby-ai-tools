@@ -22,9 +22,9 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.8.1 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.8.2 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
-**v0.8.1 启动修复：** Codex 后台预连接与侧栏共享 CLI 探测，避免启动时误报“app-server was closed during CLI discovery”；Claude Code 并发连接也复用就绪检查。粘贴的文件和图片内联显示，可预览缩略图和移除。[发布说明](docs/releases/0.8.1.md)。
+**v0.8.2 启动修复：** Codex 后台预连接与侧栏共享 CLI 探测，避免启动时误报“app-server was closed during CLI discovery”；Claude Code 并发连接也复用就绪检查。粘贴的文件和图片内联显示，可预览缩略图和移除。[发布说明](docs/releases/0.8.2.md)。
 
 **v0.8.0 新增 SSH 附件传输：** 直接 Ctrl+V（macOS 为 Cmd+V）粘贴截图或文件，附件内联显示，图片带缩略图，无需按钮或弹窗。让助手复用已有 SSH 上传／下载，并在目标 tab 显示原生进度。插件连续处理所有分块及 base64 回退，无需模型逐段接力。取得校验后的远端路径再交给终端 Agent；本版不自动附图到 Codex，也不向侧栏模型发送图片。[操作、限制与兼容范围](docs/attachments.md)。
 
