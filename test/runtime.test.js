@@ -33,7 +33,7 @@ function setup (t) {
   const previousWindow = global.window
   global.window = window
   const timers = new Set()
-  const config = { ready$: new AsyncSubject(), changed$: new Subject(), store: { codexAgent: { executable: 'codex' } } }
+  const config = { ready$: new AsyncSubject(), changed$: new Subject(), store: { codexAgent: { executable: 'codex', cliSessionSpaces: { codex: { mode: 'system' } } } } }
   const calls = []
   const notifications = []
   const client = new EventEmitter()
@@ -57,7 +57,7 @@ function setup (t) {
   return { runtime, window, config, calls, notifications, client, codex, timers, ready, tick }
 }
 
-test('plugin startup waits for configuration and starts once without opening a panel', async t => {
+test('legacy system-space startup waits for configuration and starts once without opening a panel', async t => {
   const env = setup(t)
   env.runtime.start()
   env.runtime.start()
@@ -72,6 +72,16 @@ test('plugin startup waits for configuration and starts once without opening a p
   env.runtime.ngOnDestroy()
   env.config.changed$.next()
   assert.deepEqual(env.calls, ['codex', '/custom/codex', 'close'])
+  assert.equal(env.timers.size, 0)
+})
+
+test('private-space startup never launches the shared server in the system home', t => {
+  const env = setup(t)
+  delete env.config.store.codexAgent.cliSessionSpaces
+  env.runtime.start(); env.ready()
+  assert.deepEqual(env.calls, [])
+  assert.equal(env.notifications.length, 0)
+  env.runtime.ngOnDestroy()
   assert.equal(env.timers.size, 0)
 })
 

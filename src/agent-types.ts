@@ -1,11 +1,21 @@
 import { EventEmitter } from 'events'
 import type { AgentSettings } from './config'
 import type { CodexModel, SavedSession, SessionPage, ThreadConfiguration } from './codex.service'
+import type { AgentInstructions } from './agent-instructions'
+import type { NativeSessionSpace } from './session-space'
 
 export type ApiProvider = 'openai' | 'deepseek' | 'glm' | 'kimi' | 'kimi-coding' | 'bailian-coding' | 'claude' | 'custom'
 export type ApiKeySource = 'direct' | 'environment' | 'vault' | 'none'
 export type ApiFormat = 'chat-completions' | 'responses'
+export type PiProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai'
+export type PiConnection = { version: 1; maxTokens?: number; reasoning?: boolean } & (
+  { mode: 'native'; providerId: string; api?: PiProtocol } |
+  { mode: 'custom'; api: PiProtocol }
+)
 export interface ApiProfile {
+  instructions?: AgentInstructions
+  /** Absent for legacy connections; never migrate their protocol implicitly. */
+  piConnection?: PiConnection
   id: string
   /** Local CLI engine; never send this profile to an HTTP API adapter. */
   runtime?: 'claude-code' | 'pi'
@@ -38,6 +48,7 @@ export function apiKeySource (profile: ApiProfile): ApiKeySource {
 }
 
 export interface AgentContext {
+  sourceSpace?: string
   sourceThreadId: string
   sourceFingerprint: string
   cwd: string
@@ -56,6 +67,8 @@ export interface AgentClient extends EventEmitter {
   close(): void
 }
 export interface AgentBackend {
+  readonly sessionSpace?: NativeSessionSpace
+  readonly sessionThreads?: Record<string, string>
   readonly client: AgentClient
   readonly profile?: ApiProfile
   readonly runtimeInfo?: string
@@ -129,9 +142,10 @@ export function configuredToolRoundLimit (profile: ApiProfile): number {
 
 export function normalizeApiProfile (configured: ApiProfile): ApiProfile {
   if (configured.runtime && !['claude-code', 'pi'].includes(configured.runtime)) throw new Error('不支持的 Agent 运行时')
-  return { ...configured, threads: configured.threads || {}, baseUrl: configured.baseUrl?.trim() || PROVIDER_URLS[configured.provider],
+  return { ...configured, threads: configured.threads || {}, baseUrl: configured.baseUrl?.trim() || (configured.piConnection ? '' : PROVIDER_URLS[configured.provider]),
     model: configured.model?.trim() || '', thinking: configured.thinking || 'default', reasoningEffort: configured.reasoningEffort || '',
-    maxOutputTokens: Math.floor(Math.max(256, Math.min(131072, Number(configured.maxOutputTokens) || 4096))),
+    maxOutputTokens: configured.piConnection ? Math.floor(Number(configured.maxOutputTokens))
+      : Math.floor(Math.max(256, Math.min(131072, Number(configured.maxOutputTokens) || 4096))),
     maxIterations: configuredToolRoundLimit(configured) }
 }
 export type { SavedSession }

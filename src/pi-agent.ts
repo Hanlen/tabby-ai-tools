@@ -13,6 +13,7 @@ import { resolveClaudeExecutable, runClaudeProcess } from './claude-code-client'
 import { terminateCodexProcess } from './codex-process'
 import { apiUrl, withAbort } from './api-transport'
 import { apiPath } from './agent-types'
+import { validatePiProfile, piModels, piModel } from './pi-config'
 import { redactMemory } from './task-memory'
 import { journaledToolCall } from './host-tool-bridge'
 
@@ -120,7 +121,8 @@ export class PiAdapter extends ApiProviderAdapter {
     private getKey: () => Promise<string>, private call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>, private lifecycle: (event: any) => void) { super(profile, '') }
 
   async generate (messages: any[], system: string, tools: ToolDefinition[], signal: AbortSignal, onText: (text: string) => void, onProgress?: (progress: StreamProgress) => void, onUsage?: (tokens: number) => void): Promise<ModelResult> {
-    apiUrl(this.profile.baseUrl, apiPath(this.profile))
+    if (this.profile.piConnection) validatePiProfile(this.profile)
+    else apiUrl(this.profile.baseUrl, apiPath(this.profile))
     const directory = this.store.piDirectory(this.session.id)
     let prior = this.session.piSession
     if (prior && (path.dirname(prior.file) !== directory || !prior.file.endsWith('.jsonl'))) throw new Error('Pi 会话路径无效')
@@ -192,17 +194,19 @@ export class PiBackend extends ApiAgent {
   runtimeInfo = ''
   private runtime?: PiRuntime
   private discovery?: AbortController
-  constructor (profile: ApiProfile, private piStore: AgentStore, private key: () => Promise<string>) { super(profile, piStore, key) }
+  constructor (profile: ApiProfile, private piStore: AgentStore, private key: () => Promise<string>) { super({ ...profile, contextWindow: piModel(profile)?.contextWindow || profile.contextWindow }, piStore, key) }
   async connect (settings: AgentSettings): Promise<void> {
     this.discovery?.abort()
     const controller = new AbortController(); this.discovery = controller
     try {
       const runtime = await inspectPiRuntime(this.profile, settings.cwd || process.cwd(), controller.signal)
+      if (this.profile.piConnection) validatePiProfile(this.profile)
       this.runtime = runtime
       await super.connect(settings)
       this.runtimeInfo = `Pi SDK · ${runtime.source === 'host' ? 'Tabby built-in Node' : 'compatibility Node'} ${runtime.version} · Electron ${process.versions.electron || 'unavailable'}`
     } finally { if (this.discovery === controller) this.discovery = undefined }
   }
+  async listModels () { return this.profile.piConnection ? piModels(this.profile) : super.listModels() }
   protected async createAdapter (session: ApiSession, _settings: AgentSettings, call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>): Promise<ApiProviderAdapter> {
     if (!this.runtime) throw new Error('Pi 尚未连接')
     return new PiAdapter(this.profile, this.runtime, session, this.piStore, this.key, call, event => this.emit('event', {
@@ -231,5 +235,17 @@ export async function probePiModel (profile: ApiProfile, getKey: () => Promise<s
       [{ name: 'confirm', description: 'Harmless readiness confirmation', inputSchema: { type: 'object', properties: { nonce: { type: 'string', enum: [nonce] } }, required: ['nonce'], additionalProperties: false } }], signal, () => {}, undefined, reportUsage)
     if (!confirmed) throw new Error('模型未通过工具调用测试')
     return result.totalTokens
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+}
+
+/** No model request: validates the same resolver and explicitly selected credential. */
+export async function checkPiConfiguration (profile: ApiProfile, getKey: () => Promise<string>, signal: AbortSignal): Promise<string> {
+  validatePiProfile(profile)
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-pi-check-'))
+  try {
+    const runtime = await inspectPiRuntime(profile, root, signal)
+    const key = await withAbort(getKey(), signal)
+    const result = await runPiProcess(runtime, { operation: 'validate', profile: { ...profile, apiKey: undefined, threads: undefined }, key, directory: root }, signal, async () => {})
+    return result.status
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 }

@@ -164,3 +164,13 @@
 .codex-scheduled-records summary{cursor:pointer;overflow-wrap:anywhere}
 .codex-scheduled-records small{display:block}
 .codex-run-entry{border-inline-start:2px solid rgba(127,127,127,.3);padding-inline-start:6px;margin-top:8px}
+.codex-attachments { display: flex; flex-direction: column; align-self: stretch; box-sizing: border-box; width: 100%; min-width: 0; gap: 6px; padding: 10px; margin-bottom: 8px; border: 1px solid var(--theme-fg-more, #777); border-radius: 6px; max-height: 48vh; overflow-y: auto; overflow-wrap: anywhere; }
+.codex-attachments small, .codex-attachments label { margin: 0; }
+.codex-attachment-picker input { width: 100%; max-width: 100%; min-width: 0; }
+.codex-attachment-card { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.codex-attachment-card span { flex: 1; min-width: 80px; overflow-wrap: anywhere; }
+.codex-attachment-card img { width: 48px; height: 48px; object-fit: contain; }
+.codex-attachment-operation { display: flex; flex-direction: column; gap: 3px; padding-top: 6px; border-top: 1px solid var(--theme-fg-more, #777); }
+.codex-attachment-operation progress { width: 100%; }
+.codex-attachment-operation code { white-space: normal; overflow-wrap: anywhere; }
+@container (max-width:360px) { .codex-compose-toolbar { flex-wrap: wrap; } .codex-compose-actions { margin-inline-start: auto; flex-wrap: wrap; } }

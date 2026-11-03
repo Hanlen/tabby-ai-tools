@@ -1,5 +1,6 @@
 // Shared by both model backends and the host-side permission check.
 export const TABBY_MUTATIONS = new Set([
+  'attachment_upload', 'attachment_download', 'attachment_cancel',
   'send_input', 'send_keys', 'attach_process', 'interact_tab', 'open_profile', 'manage_profile', 'run_command',
   'open_settings', 'write_config', 'close_tab', 'duplicate_tab', 'rename_tab', 'split_tab', 'layout_tabs',
   'interact_window', 'workflow_set_alias', 'workflow_configure', 'workflow_run', 'workflow_interact',

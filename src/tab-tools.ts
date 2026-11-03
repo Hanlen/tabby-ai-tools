@@ -10,6 +10,9 @@ import { WorkflowTarget, redactMemory, observationFingerprint } from './task-mem
 import { SudoWorkflowLease } from './sudo-workflow'
 import { TABBY_MUTATIONS, TABBY_OPERATIONS } from './tabby-operations'
 import { matchesProcess, terminalKeySequence, terminalInteractionState } from './terminal-keys'
+import { AttachmentTransferService } from './attachment-transfer.service'
+import { TransferTarget } from './attachment-transport'
+import { runAttachmentPty } from './attachment-pty'
 
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
 export interface TabToolContext {
@@ -50,7 +53,7 @@ export class TabbyTabToolsService implements OnDestroy {
   private tracked = new Set<BaseTerminalTabComponent<any>>()
   private subscriptions = new Subscription()
 
-  constructor (private app: AppService, private output: CodexTerminalOutputService, private capabilities?: TabbyCapabilitiesService) {
+  constructor (private app: AppService, private output: CodexTerminalOutputService, private capabilities?: TabbyCapabilitiesService, private attachments?: AttachmentTransferService) {
     this.refresh()
     this.subscriptions.add(this.app.tabsChanged$.subscribe(() => this.refresh()))
     this.subscriptions.add(this.app.activeTabChange$.subscribe(() => this.refresh()))
@@ -302,6 +305,28 @@ export class TabbyTabToolsService implements OnDestroy {
     return tab
   }
 
+  attachmentTabId (tab: BaseTerminalTabComponent<any>): string { return this.id(tab) }
+
+  attachmentTarget (tabId: string, owner: string): TransferTarget {
+    const tab = this.find(tabId) as BaseTerminalTabComponent<any> & { sshSession?: any }
+    if (!(tab instanceof BaseTerminalTabComponent) || tab.profile?.type !== 'ssh' || !tab.session?.open || !tab.sshSession?.open) throw new Error('Select a connected native Tabby SSH terminal for file transfer')
+    const ssh = tab.sshSession, session = tab.session
+    const options = (tab.profile as any)?.options || {}
+    const target: TransferTarget = { tabId, tab, ssh, session, title: `${tab.title} (${options.user || ''}@${options.host || ''}:${options.port || 22})`, valid: () => this.allTabs().includes(tab) && tab.session === session && tab.sshSession === ssh && !!session.open && !!ssh.open }
+    target.hideOutput = marker => this.output.hideAttachmentOutput?.(tab, marker)
+    // A remote process list is not available. Only a fresh reliable Shell completion
+    // permits the PTY fallback; SFTP/exec never require claiming terminal input.
+    if (this.completedCommands.get(tab) === session && !this.controlled.has(tab) && !this.alternateScreen(tab)) target.pty = async (script, signal, sink, input) => {
+      if (!target.valid() || this.completedCommands.get(tab) !== session || this.controlled.has(tab) || this.alternateScreen(tab)) throw new Error('PTY fallback requires the same verified idle shell')
+      const suppress = this.output.suppress?.(tab)
+      const state = this.lock(tab, owner, '[attachment transfer]'); state.automaticCompletion = false
+      let completed = false
+      try { await runAttachmentPty(target, script, signal, text => this.sendControlled(state, text), sink, input); completed = true }
+      finally { suppress?.(); if (completed) this.release(tab) }
+    }
+    return target
+  }
+
   private async waitForTerminal (tab: BaseTabComponent, waitMs: number, signal?: AbortSignal): Promise<void> {
     const terminal = tab instanceof BaseTerminalTabComponent ? tab : undefined
     const session = terminal?.session
@@ -377,10 +402,25 @@ export class TabbyTabToolsService implements OnDestroy {
     checkStopped()
     if (context?.readOnly && TABBY_MUTATIONS.has(name)) throw new Error('只读模式禁止 Tabby 修改操作')
     this.refresh()
+    if (name.startsWith('attachment_')) {
+      if (!this.attachments || !context?.owner) throw new Error('Attachments require an active session')
+      const owner = context.owner
+      if (name === 'attachment_list') return this.attachments.list(owner)
+      if (name === 'attachment_status') return this.attachments.wait(owner, args.operationId, Math.max(0, Math.min(10000, Number(args.waitMs) || 0)))
+      if (name === 'attachment_cancel') return this.attachments.cancel(owner, args.operationId)
+      if (name === 'attachment_upload' || name === 'attachment_download') {
+        const target = this.attachmentTarget(args.tabId, owner)
+        const operation = this.attachments.start(owner, target, name === 'attachment_upload' ? 'upload' : 'download', args)
+        return this.attachments.wait(owner, operation.operationId)
+      }
+      throw new Error('Unknown attachment operation')
+    }
     if (name === 'list_tabs') return this.allTabs().map(tab => ({
       id: this.id(tab), title: tab.title, type: tab instanceof BaseTerminalTabComponent ? 'terminal' : 'other',
       active: tab === this.app.activeTab || (tab.topmostParent === this.app.activeTab && this.app.activeTab instanceof SplitTabComponent && this.app.activeTab.getFocusedTab() === tab),
       terminalOpen: tab instanceof BaseTerminalTabComponent ? !!tab.session?.open : undefined,
+      profileType: tab instanceof BaseTerminalTabComponent ? tab.profile?.type : undefined,
+      sshTarget: tab instanceof BaseTerminalTabComponent && tab.profile?.type === 'ssh' ? `${(tab.profile as any)?.options?.user || ''}@${(tab.profile as any)?.options?.host || ''}:${(tab.profile as any)?.options?.port || 22}` : undefined,
       controlledByAI: tab instanceof BaseTerminalTabComponent ? this.controlled.has(tab) : undefined,
     }))
     if (name === 'read_window') {
@@ -470,6 +510,7 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'read_tab') {
       const maxLines = Math.max(1, Math.min(300, Number(args.maxLines) || 100))
       if (tab instanceof BaseTerminalTabComponent) {
+        if (this.output.isSuppressed?.(tab)) return { tabId: args.tabId, text: '[Attachment transfer in progress; payload omitted. Use attachment_status.]', commandState: 'running', controlledByAI: true }
         const server = await this.serverIdentity(tab)
         const commandState = this.controlled.get(tab)?.completion || (this.completedCommands.get(tab) === tab.session ? 'prompt' : 'unknown')
         const xterm = (tab.frontend as any)?.xterm
@@ -478,8 +519,8 @@ export class TabbyTabToolsService implements OnDestroy {
           const start = Math.max(0, buffer.length - maxLines)
           const lines: string[] = []
           for (let i = start; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) || '')
-          const text = lines.join('\n')
-          return { tabId: args.tabId, title: tab.title, server, commandState, text: text.slice(-20000), truncated: start > 0 || text.length > 20000, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), interaction: terminalInteractionState(xterm, start) }
+          const text = lines.join('\n'), safeText = this.output.sanitizeView?.(tab, text) ?? text
+          return { tabId: args.tabId, title: tab.title, server, commandState, text: safeText.slice(-20000), truncated: start > 0 || text.length > 20000, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), interaction: safeText === text ? terminalInteractionState(xterm, start) : undefined }
         }
         const end = this.output.cursor(tab)
         const slice = this.output.readSince(tab, Math.max(0, end - 20000), 20000)

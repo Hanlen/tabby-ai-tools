@@ -103,9 +103,9 @@ export async function runClaudeProcess (options: ClaudeProcessOptions): Promise<
   }
 }
 
-export async function inspectClaudeCode (configured: string, cwd: string, signal: AbortSignal): Promise<string> {
+export async function inspectClaudeCode (configured: string, cwd: string, signal: AbortSignal, env?: NodeJS.ProcessEnv): Promise<string> {
   const executable = resolveClaudeExecutable(configured)
-  const run = (args: string[]) => runClaudeProcess({ executable, args, cwd, signal, timeoutMs: 15000 })
+  const run = (args: string[]) => runClaudeProcess({ executable, args, cwd, env, signal, timeoutMs: 15000 })
   const help = await run(['--help'])
   for (const flag of ['--tools', '--strict-mcp-config', '--setting-sources', '--disable-slash-commands', '--append-system-prompt-file', '--include-partial-messages', '--system-prompt-snapshot']) {
     if (!help.includes(flag)) throw new Error(`Claude Code CLI 缺少 ${flag}；请更新官方 CLI 后重试。`)
@@ -115,6 +115,6 @@ export async function inspectClaudeCode (configured: string, cwd: string, signal
     if (signal.aborted) throw error
     throw new Error('无法确认 Claude Code 登录状态；请在本机终端运行 claude auth login，再用 claude auth status 检查。')
   }
-  if (auth.loggedIn !== true) throw new Error('Claude Code 尚未登录；请在本机终端运行 claude auth login 完成官方登录。')
+  if (auth.loggedIn !== true) throw new Error(env?.CLAUDE_CONFIG_DIR ? 'Selected Claude Code space is not logged in. Generate its login command in Settings → AI Tools → Instructions and sessions.' : 'Claude Code 尚未登录；请在本机终端运行 claude auth login 完成官方登录。')
   return executable
 }

@@ -22,13 +22,19 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.7.1 界面示意（含已打包的可选 Pi 运行时与上下文压缩）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.8.0 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**v0.8.0 新增 SSH 附件传输：** 粘贴截图或添加文件，复用已有 SSH 上传／下载，并在目标 tab 显示原生进度。插件连续处理所有分块及 base64 回退，无需模型逐段接力。取得校验后的远端路径再交给终端 Agent；本版不自动附图到 Codex，也不向侧栏模型发送图片。[操作、限制与兼容范围](docs/attachments.md)。
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
 对话中实时显示默认折叠的思考过程与工具调用，展开可查看服务返回的思考文本、工具参数和结果，正文回复直接显示。Shell 集成确认命令完成后，读屏会提前返回，无需等满指定时间。收到可读文本后才显示思考记录，Codex 与支持的 OpenAI 推理请求会开启摘要；在侧栏选中文字并复制时，不会向活动终端发送 Ctrl+C。
 
 **v0.7.1 修复：** Windows 默认查找会比较已安装 Codex CLI 的真实版本，避免 PATH 中的旧版遮住桌面新版，并支持桌面升级后的路径恢复。详见[发布说明](docs/releases/0.7.1.md)。
+
+**Pi API 配置（v0.8.0）：** 新建 API 连接推荐 Pi SDK，可搜索原生供应商（含 Gemini、OpenRouter）、浏览 SDK 1.4.0 离线模型目录，按模型能力选择推理与输出预算，并配置四类自定义协议。连接采用保存／放弃／复制草稿；旧连接保留运行时和产品预设。无推理检查与付费用量的模型／工具测试分开。OAuth／云身份与高级导入导出仍待后续阶段。[配置与验证边界](docs/pi.md#unreleased-native-providers-and-connection-drafts-p0--p1)。
+
+**自定义指令与独立 CLI 历史：** 支持全局默认／连接级指令正文或本地 AGENTS.md，提供预览和会话快照。未使用过的 Codex／Claude Code 默认采用 Tabby 独立空间，已有 CLI 引用保留明确的兼容模式。可生成目标空间登录命令、检查认证，空闲时切换并交接当前对话。[指令、认证与迁移说明](docs/instructions-sessions.md)。
 
 **v0.7.0 新增：** 可读的思考／工具过程、安全的侧栏复制，以及确认命令完成后的提前读屏。验证范围与限制见[发布说明](docs/releases/0.7.0.md)。
 
@@ -46,8 +52,8 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 | 连接方式 | 如何使用 |
 | --- | --- |
-| **ChatGPT 订阅 → 本机 Codex** | 本机安装 Codex CLI，执行 `codex login`，在插件中选择 **Codex（本机登录）**。 |
-| **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI，执行 `claude auth login`，确认 `claude auth status`，在侧栏选择 **Claude Code（本机登录）**。 |
+| **ChatGPT 订阅 → 本机 Codex** | 安装 Codex CLI 并选择 **Codex（本机登录）**，在设置的“指令与会话”生成选定空间的登录命令。 |
+| **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI 并选择 **Claude Code（本机登录）**，生成目标空间登录命令，完成后在设置里检查该空间登录。 |
 | **OpenAI API** | 添加 OpenAI 连接，配置 API Key、Base URL 和模型 ID。 |
 | **DeepSeek** | 添加 DeepSeek API 连接，选择模型与 Thinking 设置。 |
 | **GLM／智谱** | 添加 GLM API 连接，使用账号对应套餐的端点和模型。 |
@@ -82,14 +88,14 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 ## ChatGPT 订阅用户如何开始
 
 1. 在运行 Tabby 的本机安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)。
-2. 执行以下命令，在浏览器登录 ChatGPT 账号，并确认 CLI 已登录：
+2. 打开 **Settings → AI Tools → Codex → 指令与会话**，生成选定空间的登录命令，在本地终端执行并完成 ChatGPT 官方登录，再检查该空间认证。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
 
    ```bash
    codex login
    codex login status
    ```
 
-3. 启动 Tabby 后 AI Tools 会自动打开，默认使用 **Codex（本机登录）**，无需先进入设置。直接在侧栏选择账号可用的模型，或沿用 Codex 默认模型。
+3. 启动 Tabby 后 AI Tools 会自动打开，默认使用 **Codex（本机登录）**。在选定空间登录后点击侧栏重连，再选择账号可用模型，或沿用 Codex 默认模型。
 
 只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 

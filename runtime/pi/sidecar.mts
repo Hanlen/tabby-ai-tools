@@ -1,9 +1,10 @@
 import { createInterface } from 'node:readline'
 import { mkdir, chmod } from 'node:fs/promises'
 import path from 'node:path'
-import { InMemoryCredentialStore, createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai'
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent'
-import { providerCompat, providerPayload } from './provider.mjs'
+import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai'
+import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent'
+import { providerPayload } from './provider.mjs'
+import { resolveConnection, createRuntime, catalogDTO } from './resolver.mjs'
 
 process.umask(0o077)
 
@@ -45,20 +46,13 @@ async function run (input: any) {
   const { profile, directory } = input
   await mkdir(directory, { recursive: true, mode: 0o700 })
   await chmod(directory, 0o700)
-  const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null,
-    modelsStorePath: path.join(directory, 'models-cache.json'), refreshOnCreate: false, allowModelNetwork: false })
-  const api = profile.provider === 'claude' ? 'anthropic-messages' : profile.provider === 'openai' || profile.provider === 'custom' && profile.apiFormat === 'responses' ? 'openai-responses' : 'openai-completions'
-  // Anthropic's SDK appends /v1 itself; Tabby API presets include it already.
-  const baseUrl = profile.provider === 'claude' ? profile.baseUrl.replace(/\/v1\/?$/, '') : profile.baseUrl
-  runtime.registerProvider('tabby', { baseUrl, api, apiKey: 'tabby-runtime-key', authHeader: !!input.key,
-    models: [{ id: profile.model, name: profile.model, api, input: ['text'], reasoning: profile.thinking === 'enabled' || profile.thinking !== 'disabled' && !!profile.reasoningEffort,
-      compat: providerCompat(profile),
-      thinkingLevelMap: { minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
-      contextWindow: profile.contextWindow || 128000, maxTokens: profile.maxOutputTokens,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] })
-  await runtime.setRuntimeApiKey('tabby', input.key || 'tabby-no-key')
-  const model = runtime.getModel('tabby', profile.model)
-  if (!model) throw new Error('Pi model registration failed')
+  if (input.operation === 'catalog') {
+    send({ type: 'done', catalog: catalogDTO(await createRuntime()) }); finish(); return
+  }
+  const { runtime, model, thinkingLevel } = await resolveConnection(profile, input.key || '')
+  if (input.operation === 'validate') {
+    send({ type: 'done', status: 'Local configuration and credential selection checked; account access unverified', model: { id: model.id, api: model.api } }); finish(); return
+  }
   const settings = SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: !!profile.autoCompact, reserveTokens: profile.maxOutputTokens, keepRecentTokens: Math.min(20000, Math.floor(model.contextWindow / 4)) },
     retry: { enabled: true, maxRetries: 2, baseDelayMs: 2000, maxAgentDelayMs: 60000, provider: { maxRetries: 0, timeoutMs: 120000 } } })
   const loader = new DefaultResourceLoader({ cwd: directory, agentDir: directory, settingsManager: settings,
@@ -86,7 +80,7 @@ async function run (input: any) {
     } }))
   ;({ session } = await createAgentSession({ cwd: directory, agentDir: directory, modelRuntime: runtime, model, noTools: 'builtin', customTools,
     resourceLoader: loader, settingsManager: settings, sessionManager: manager,
-    thinkingLevel: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(profile.reasoningEffort) ? profile.reasoningEffort : profile.thinking === 'enabled' ? 'medium' : 'off' }))
+    thinkingLevel: thinkingLevel as any }))
   session.agent.toolExecution = 'sequential'
   // This gate covers normal inference, session retries and every summary request.
   const stream = session.agent.streamFunction
@@ -108,7 +102,7 @@ async function run (input: any) {
         if (++requests > 100) throw new Error('Pi request safety limit reached (100, including retries and summaries)')
         const source = await stream(selected, context, { ...options, maxRetries: 0, maxTokens: profile.maxOutputTokens,
           identity: { userAgent: { custom: 'tabby-ai-tools (Pi SDK)' }, attribution: null },
-          onPayload: payload => providerPayload(profile, payload),
+          ...(!profile.piConnection ? { onPayload: (payload: unknown) => providerPayload(profile, payload) } : {}),
           ...(!input.key ? { headers: { ...options?.headers, Authorization: null } } : {}) })
         for await (const event of source) {
           if (event.type === 'done' || event.type === 'error') {

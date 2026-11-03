@@ -45,3 +45,70 @@ Upstream API reference: [Pi SDK](https://github.com/earendil-works/pi/blob/f9dac
 ## Built-in runtime verification
 
 In official Linux Tabby 1.0.238 (Electron 43.7.0, built-in Node 24.21.0), the packaged main-process bridge and actual SDK completed streaming and a host-tool round trip with no system Node on PATH. Separate runs verified cancellation while a host-tool result was pending and termination when the owner window was destroyed. All model traffic used a local HTTP fixture; no real model or terminal mutation was performed. Electron renderer Node worker threads are unsupported in that app, and `ELECTRON_RUN_AS_NODE` did not provide the required startup path, so the implementation uses the supported utility-process API. The main bridge owns window/crash cleanup and acknowledges final IPC before the utility exits. macOS/Windows desktop behavior remains unverified; CI covers bridge ownership, cancellation, protocol handling and package installation on those systems.
+
+<a id="unreleased-native-providers-and-connection-drafts-p0--p1"></a>
+
+## Native providers and connection drafts (v0.8.0)
+
+New API connections recommend Pi SDK. Choose **SDK built-in provider**, search by name or ID (for example Gemini / `google` or OpenRouter), select a model from the offline SDK 1.4.0 catalog, and supply a direct key or an explicitly named environment variable. A blank native Base URL uses the SDK endpoint; an override preserves the provider identity, protocol and model metadata. The model's protocol is authoritative, including providers with mixed protocols. Catalog entries describe SDK capabilities, not your account's access or a successful tool test. Tabby currently sends text input only. Catalog prices are upstream estimates, not subscription balances; custom prices are unknown.
+
+**Custom compatible endpoint** supports OpenAI Chat Completions, OpenAI Responses, Anthropic Messages and Google Generative AI. Enter the protocol base URL, model ID, explicit context window and model maximum output capability. The separate per-request output budget cannot exceed the model maximum. Custom local services can select no key; native providers require an explicit credential source. Keep HTTPS except for local loopback fixtures. For a native model absent from the catalog, specify its protocol and capabilities manually.
+
+Connection edits are independent drafts. **Save connection** validates and persists locally without sending inference. **Discard draft** restores the saved connection or cancels a new connection; **Copy as new connection** allocates a new ID with empty thread references. Switching connections retains drafts for the lifetime of the settings component, and switching providers retains earlier provider inputs. Unsaved connections cannot become the default. A failed save retains the draft. Reconnect from the sidebar while idle to apply a saved configuration; active backends keep their original configuration. There is no automatic endpoint hot switch or paid test on save.
+
+**Check configuration / runtime (no inference)** uses the packaged resolver and selected credential, proving local configuration/runtime compatibility and credential presence only. It does not prove account permission, billing/quota or remote tool support. **Test connection** uses the actual Pi stream and a harmless nonce tool and consumes model usage. Editing endpoint, authentication, model, protocol or parameters invalidates the displayed check. Offline model selection and sidebar `/models` do not call a generic `/models` endpoint or require a key. Network catalog refresh and account-specific catalog queries are deferred to P2.
+
+Existing Pi connections remain in **Legacy product presets (compatibility)** with their existing model, endpoint, credentials, thread fingerprint and request patches. Kimi Coding keeps its Chat Completions compatibility, including international/proxy endpoints. Ordinary GLM, ZAI Coding and Alibaba Cloud Coding Plan remain distinct products; copy a connection before choosing native mode and verify the product/region and required key. Codex and Claude Code continue as independent local CLI engines.
+
+The full 42-provider catalog is visible, with explicit adapter-pending reasons. Bedrock (AWS identity and opaque dynamic dependency), Vertex, Azure deployment, Cloudflare account/gateway, Copilot, OAuth-only providers and additional protocols are not enabled by this API-key stage. Adding a key to an unavailable entry does not bypass that boundary. P2 (headers, schema JSON/import/export, network refresh) and P3 (OAuth and cloud identity) remain pending.
+
+Pi now accepts the shared/per-connection custom instruction snapshot through the host system prompt while keeping automatic context-file/extension discovery disabled. The separate [instructions and CLI spaces](instructions-sessions.md) implementation adds AGENTS.md configuration and private Codex/Claude history without moving Pi's existing session files or enabling new model authentication modes.
+
+### Pinned SDK capability inventory
+
+Generated from SDK 1.4.0; 32 providers have the API-key configuration path, 10 are explicitly unavailable. Protocol fixtures prove Gemini/OpenRouter and the four custom protocol families; other enabled providers still require real-account validation. No credentials or provider accounts were used.
+
+| Provider ID | Configuration status | Offline chat models |
+| --- | --- | --- |
+| `amazon-bedrock` | AWS identity and dependency adapter pending | 193 |
+| `ant-ling` | API-key path; account unverified | 3 |
+| `anthropic` | API-key path; account unverified | 17 |
+| `azure` | Azure deployment adapter pending | 43 |
+| `baseten` | API-key path; account unverified | 14 |
+| `cerebras` | API-key path; account unverified | 2 |
+| `cloudflare-ai-gateway` | Cloudflare account/gateway adapter pending | 58 |
+| `cloudflare-workers-ai` | Cloudflare account adapter pending | 19 |
+| `deepseek` | API-key path; account unverified | 2 |
+| `fireworks` | API-key path; account unverified | 24 |
+| `github-copilot` | Copilot authentication adapter pending | 26 |
+| `google` | API-key path; account unverified | 24 |
+| `google-vertex` | Google Cloud identity adapter pending | 14 |
+| `groq` | API-key path; account unverified | 7 |
+| `huggingface` | API-key path; account unverified | 80 |
+| `kimi-coding` | API-key path; account unverified | 4 |
+| `meta` | API-key path; account unverified | 6 |
+| `minimax` | API-key path; account unverified | 4 |
+| `minimax-cn` | API-key path; account unverified | 4 |
+| `mistral` | Mistral Conversations protocol adapter pending | 37 |
+| `moonshotai` | API-key path; account unverified | 4 |
+| `moonshotai-cn` | API-key path; account unverified | 4 |
+| `nvidia` | API-key path; account unverified | 21 |
+| `openai` | API-key path; account unverified | 42 |
+| `openai-codex` | Use the independent Codex CLI connection | 7 |
+| `opencode` | API-key path; account unverified | 83 |
+| `opencode-go` | API-key path; account unverified | 29 |
+| `openrouter` | API-key path; account unverified | 401 |
+| `qwen-token-plan` | API-key path; account unverified | 21 |
+| `qwen-token-plan-cn` | API-key path; account unverified | 21 |
+| `qwen-token-plan-individual` | API-key path; account unverified | 9 |
+| `radius` | Radius protocol adapter pending | 32 |
+| `together` | API-key path; account unverified | 15 |
+| `typesafe` | No offline chat catalog available | 0 |
+| `vercel-ai-gateway` | API-key path; account unverified | 305 |
+| `xai` | API-key path; account unverified | 4 |
+| `xiaomi` | API-key path; account unverified | 3 |
+| `xiaomi-token-plan-ams` | API-key path; account unverified | 2 |
+| `xiaomi-token-plan-cn` | API-key path; account unverified | 2 |
+| `xiaomi-token-plan-sgp` | API-key path; account unverified | 2 |
+| `zai` | API-key path; account unverified | 7 |
+| `zai-coding-cn` | API-key path; account unverified | 4 |

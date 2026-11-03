@@ -25,6 +25,30 @@ interface WatchedTerminal {
 export class CodexTerminalOutputService {
   readonly updates$ = new Subject<BaseTerminalTabComponent<any>>()
   private watched = new Map<BaseTerminalTabComponent<any>, WatchedTerminal>()
+  private suppressed = new Map<BaseTerminalTabComponent<any>, number>()
+  private privateViews = new WeakMap<BaseTerminalTabComponent<any>, { session: any; marker: string; seen: boolean }>()
+
+  hideAttachmentOutput (terminal: BaseTerminalTabComponent<any>, marker: string): void {
+    this.privateViews.set(terminal, { session: terminal.session, marker, seen: false })
+  }
+  sanitizeView (terminal: BaseTerminalTabComponent<any>, text: string): string {
+    const view = this.privateViews.get(terminal)
+    if (!view || view.session !== terminal.session) return text
+    // xterm may wrap the fixed ASCII marker at narrow terminal widths.
+    const pattern = view.marker.split('').map(char => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*') + '\\s*:\\s*\\d+'
+    const match = new RegExp(pattern).exec(text)
+    if (match) { view.seen = true; return '[Attachment payload omitted]\n' + text.slice(match.index + match[0].length) }
+    return view.seen ? text : '[Attachment transfer output omitted; use attachment_status for its result.]'
+  }
+
+  isSuppressed (terminal: BaseTerminalTabComponent<any>): boolean { return !!this.suppressed.get(terminal) }
+  suppress (terminal: BaseTerminalTabComponent<any>): () => void {
+    this.suppressed.set(terminal, (this.suppressed.get(terminal) || 0) + 1)
+    return () => {
+      const remaining = (this.suppressed.get(terminal) || 1) - 1
+      if (remaining) this.suppressed.set(terminal, remaining); else this.suppressed.delete(terminal)
+    }
+  }
 
   constructor (private app: AppService) {}
 
@@ -42,6 +66,7 @@ export class CodexTerminalOutputService {
     const attachSession = (session: BaseSession | null) => {
       state.sessionSubscription?.unsubscribe()
       state.sessionSubscription = session?.output$.subscribe(chunk => {
+        if (this.isSuppressed(terminal)) return
         const text = cleanOutput(chunk)
         if (text) {
           state.buffer.append(text)

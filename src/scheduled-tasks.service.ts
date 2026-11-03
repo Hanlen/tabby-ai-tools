@@ -215,7 +215,8 @@ export class ScheduledTasksService implements OnDestroy {
       const heartbeat = setInterval(() => { void this.store.mutateRun(claim.run.id, this.owner, () => {}).catch(() => controller.abort()) }, 10000)
       try {
         // CLI location is runtime infrastructure; retain the task's model and permissions.
-        let task = { ...claim.task, settings: { ...claim.task.settings, executable: this.config.store.codexAgent.executable ?? claim.task.settings.executable } }
+        let task = { ...claim.task, settings: { ...claim.task.settings, executable: this.config.store.codexAgent.executable ?? claim.task.settings.executable,
+          defaultInstructions: this.config.store.codexAgent.defaultInstructions, codexInstructions: this.config.store.codexAgent.codexInstructions, claudeInstructions: this.config.store.codexAgent.claudeInstructions } }
         const previousFallback = task.modelCheck?.fallbackUsed ? task.modelCheck : undefined
         const preferred: ModelChoice = previousFallback
           ? { profileId: previousFallback.requestedProfileId, model: previousFallback.requestedModel, reasoningEffort: previousFallback.requestedReasoningEffort, reason: `重新验证任务首选模型。此前选模说明：${task.modelSelectionReason || ''}` }

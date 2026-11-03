@@ -4,6 +4,7 @@ import { Subscription } from 'rxjs'
 import { AgentSettings } from './config'
 import { CodexService } from './codex.service'
 import { translate } from './i18n'
+import { sessionSpaceConfig } from './session-space'
 
 /** Owns the shared app-server for the entire plugin lifetime, including hidden panels. */
 @Injectable()
@@ -46,6 +47,9 @@ export class CodexRuntimeService implements OnDestroy {
   private async connect (): Promise<void> {
     if (this.stopped) return
     this.clearRetry()
+    // Private connections own their app-server; never eagerly start a second
+    // server in the user's default home while the selected connection is private.
+    if (sessionSpaceConfig(this.config.store.codexAgent, 'codex').mode === 'tabby') return
     // API users do not need Codex installed. A manually opened Codex panel opts in.
     if (this.config.store.codexAgent.defaultProfileId && !this.codexUsed) return
     const executable = this.configuredExecutable

@@ -13,8 +13,8 @@
 v0.5.1 起，Pi SDK 及其所需 JavaScript 已打包。通过 Tabby 安装／升级插件不需要系统中存在 `node` 命令，也不会执行 `protobufjs` 等 Pi 依赖的安装脚本；Pi 默认通过 Electron 独立进程复用 Tabby 自带 Node；兼容版本的 Tabby 无需额外安装 Node。旧版宿主应优先升级 Tabby，也可显式选择可选的 Node 22.19+ 兼容路径。v0.5.0 的安装兼容性问题请通过升级 v0.5.1 修复，无需全局关闭安装脚本。
 
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
-- **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，在本地终端执行 `codex login`，使用具备 Codex 权限的 ChatGPT 账号登录，再执行 `codex login status` 确认认证状态，无需在插件中填写 API Key。插件默认连接选 **Codex（本机登录）**；可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
-- **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，运行 `claude auth login`，用 `claude auth status` 核对账号与认证方式。在侧栏或默认连接中选择 **Claude Code（本机登录）**；无需在插件里配置订阅凭据。API Key／云平台可能使用独立计费。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
+- **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，选择 **Codex（本机登录）**，在“指令与会话”生成选定空间的登录命令。使用具备 Codex 权限的 ChatGPT 账号完成官方登录，再检查该空间认证，无需填写 API Key。普通 `codex login`／`codex login status` 针对终端当前配置的空间；未使用过的插件连接默认使用 Tabby 独立空间。可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
+- **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，选择 **Claude Code（本机登录）**，在“指令与会话”生成并执行选定空间的 `auth login` 命令，再检查该空间认证。普通 `claude auth login`／`auth status` 可能针对另一份系统配置。插件不复制凭据；账号权益及系统兼容模式的 API／云计费以官方 CLI 状态为准。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
 - **API 模式**：准备 OpenAI、DeepSeek、GLM、Kimi、百炼 Coding Plan 或 Claude 对应的 Key，无需安装 Codex CLI。订阅登录与 API 连接是两种独立配置方式。
 
 ### 安装插件
@@ -338,3 +338,25 @@ C:\Users\用户名\AppData\Local\OpenAI\Codex\bin
 空闲时输入 `/compact` 手动压缩。内置 API 保留原始历史，按完整工具批次投影请求；Pi 保留自己的 JSONL 原始条目和压缩边界。自动压缩默认关闭，摘要本身消耗额度并计入 Goal 预算。Pi 的重试倒计时使用 SDK 结构化事件，取消会结束独立进程，不重放整段任务。中断后先读取真实终端再继续，未知动作不会自动重放。
 
 Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与 CI 使用 Node 22.19+；升级系统 Node 不会改变 Electron 内置 Node。当前已验证本地 HTTP 夹具，并在独立配置的 Linux Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）中跑通侧栏、Pi 子进程、宿主 list_tabs 与 Goal 完成；真实模型、SSH/PTY 修改操作和 macOS/Windows 桌面仍待实测。此功能从 v0.5.0 开始提供。
+
+## Pi 原生 API 连接与草稿（v0.8.0）
+
+新增 API 连接默认推荐 Pi SDK。选择 SDK 内置供应商并搜索 Gemini／OpenRouter 等 ID，离线浏览随 SDK 1.4.0 打包的模型目录，配置当前连接的 Key 或环境变量引用，再保存。目录存在不代表账号授权。自定义接口支持 Chat Completions、Responses、Anthropic Messages、Google Generative AI，需明确模型协议、上下文与最大输出能力；单次输出预算与模型能力分开。
+
+连接编辑使用独立草稿，切换连接或供应商保留输入；保存、放弃、复制不会调用模型。无推理检查只验证本地配置、运行时与凭据存在，实际连接测试会调用模型并产生用量。保存不会热切换任务，空闲时在侧栏重新连接。旧 Pi 产品预设继续兼容。OAuth／云身份与高级导入导出仍待实现，见 [Pi 说明](pi.md#unreleased-native-providers-and-connection-drafts-p0--p1)。
+
+### 自定义 AGENTS.md 与独立 CLI 会话
+
+每个连接下方的 **Instructions and sessions／指令与会话** 支持 AI Tools 全局默认与连接级覆盖。可编辑正文、绑定本地 AGENTS.md 文件、继承默认或关闭自定义层；保存和放弃均显式操作。文件要求绝对路径、UTF-8、最多 32 KiB，可预览内容、来源、摘要和修改时间，不会覆盖源文件。新会话保存指令快照；原文件修改或丢失不影响已有会话恢复。使用 `/new` 应用新指令，文件不可读则阻止依赖它的新会话。内置工具说明与宿主权限检查仍生效，Pi 不因此启用自动发现；Codex／Claude 的原生项目规则另由引擎管理。
+
+未使用过的 Codex／Claude Code 默认采用 **Tabby 独立空间**，已有 CLI 会话引用保留 **系统空间（旧版兼容）**。独立空间隔离磁盘历史及索引，而不仅过滤列表；任务 cwd 保持不变。选择目标空间后生成登录命令，在本地终端完成官方登录，再检查该空间认证并保存。系统 CLI 已登录不代表目标空间已登录，插件不会复制凭据。Windows 命令使用 PowerShell，Linux/macOS 使用 POSIX shell。
+
+空闲时点击侧栏重连以切换空间并交接当前对话，或用 `/new` 开始新对话。旧记录保留原处，失败时仍保留原侧栏会话；不会搬走全部系统历史。定时任务后续运行使用连接当前选定空间和新指令快照，活动任务保留启动时的配置。详细路径、认证边界与验证范围见 [指令与会话说明](instructions-sessions.md)。
+
+## 文件、剪贴板图片与 SSH 传输（v0.8.0）
+
+点击输入框下方“附件”，粘贴截图、拖入或选择文件，明确选择已连接的 SSH 终端，填写现有的绝对上传父目录后上传。也可输入远端文件绝对路径，下载到本地附件缓存。目标 tab 显示原生进度；侧栏可查看详情、取消及复制校验后的远端路径。收起侧栏不停止传输。
+
+传输复用 SSH，优先 SFTP，再使用独立 exec 的二进制／base64，最后才在已确认空闲的 Shell 中使用 PTY base64。插件连续处理分块，不让 AI 逐段读写 base64。只读模式禁止传输。目标是外层 SSH 的机器与账户；容器、嵌套 SSH、切换用户及 Codex 沙箱需另行确认可见性。上传图片不代表 Codex 已附图或读取；本版仅提供复制远端路径，不自动按回车或向侧栏模型发送图片。
+
+图片最多 20 MiB／4000 万像素，普通文件最多 100 MiB；每会话 8 个附件／200 MiB。下载、缓存清理、取消、未知结果及 POSIX 回退限制见 [附件传输说明](attachments.md)。

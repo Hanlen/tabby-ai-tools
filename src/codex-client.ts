@@ -5,6 +5,7 @@ import * as readline from 'readline'
 import { normalizeExecutable } from './codex-executable'
 import { resolveCodexLaunch } from './codex-discovery'
 import { terminateCodexProcess } from './codex-process'
+import { NativeSessionSpace, prepareSessionSpace, sessionEnvironment, codexSpaceArgs } from './session-space'
 
 export interface RpcMessage {
   id?: number
@@ -22,17 +23,19 @@ export class CodexClient extends EventEmitter {
   private nextId = 0
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private executable = ''
+  private space?: NativeSessionSpace
   private connected = false
   private discovery?: AbortController
   private stopping?: Promise<void>
 
   get isConnected (): boolean { return this.connected }
 
-  async connect (executable: string): Promise<void> {
+  async connect (executable: string, space?: NativeSessionSpace): Promise<void> {
     executable = normalizeExecutable(executable) || 'codex'
-    if (this.ready && this.executable === executable) return this.ready
+    if (this.ready && this.executable === executable && this.space?.key === space?.key && this.space?.native === space?.native) return this.ready
     this.close()
     this.executable = executable
+    this.space = space
     const discovery = new AbortController()
     this.discovery = discovery
     const ready = this.start(executable, discovery.signal).catch(error => {
@@ -45,6 +48,8 @@ export class CodexClient extends EventEmitter {
 
   private async start (executable: string, signal: AbortSignal): Promise<void> {
     const resolved = await resolveCodexLaunch(executable, { signal })
+    const space = this.space
+    if (space) await prepareSessionSpace(space)
     if (this.stopping) await this.stopping
     if (signal.aborted) throw new Error('Codex app-server was closed during CLI discovery')
     executable = resolved.executable
@@ -52,11 +57,11 @@ export class CodexClient extends EventEmitter {
     // Only Windows batch launchers need cmd.exe; cross-spawn escapes its command
     // line (including paths with spaces) and preserves all three stdio pipes.
     const launch = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable) ? spawnWindowsLauncher : spawn
-    const child = launch(executable, ['app-server', '--listen', 'stdio://'], {
+    const child = launch(executable, [...codexSpaceArgs(space), 'app-server', '--listen', 'stdio://'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       shell: false,
-      env: resolved.env,
+      env: sessionEnvironment(space, resolved.env),
       detached: process.platform !== 'win32',
     }) as ChildProcessWithoutNullStreams
     let stderr = ''
