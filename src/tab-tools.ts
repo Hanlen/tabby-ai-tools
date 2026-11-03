@@ -322,7 +322,11 @@ export class TabbyTabToolsService implements OnDestroy {
       const state = this.lock(tab, owner, '[attachment transfer]'); state.automaticCompletion = false
       let completed = false
       try { await runAttachmentPty(target, script, signal, text => this.sendControlled(state, text), sink, input); completed = true }
-      finally { suppress?.(); if (completed) this.release(tab) }
+      finally {
+        if (completed || state.completion === 'prompt') suppress?.()
+        else if (suppress) this.output.holdUntilShellPrompt?.(tab, suppress)
+        if (completed) this.release(tab)
+      }
     }
     return target
   }
