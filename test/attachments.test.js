@@ -192,13 +192,15 @@ test('PTY fallback refuses an Agent/unknown shell without injecting input', asyn
   await assert.rejects(ptyTransfer(dest, { direction: 'upload', remotePath: '/tmp/file', progress() {}, verifying() {} }, signal()), /verified idle shell/)
 })
 
-test('cancelling a pending SFTP open settles without starting another transport', async t => {
+test('cancelling a pending SFTP open settles without starting another transport', { timeout: 5000 }, async t => {
   const root = await temporary(t), service = new AttachmentTransferService({ getConfigPath: () => path.join(root, 'config.yaml') })
   t.after(() => service.ngOnDestroy())
   const file = await service.stage('owner', 'test', '', Buffer.from('data')), dest = target()
-  dest.ssh.openSFTP = () => new Promise(() => {})
+  let notifyOpen
+  const opened = new Promise(resolve => { notifyOpen = resolve })
+  dest.ssh.openSFTP = () => { notifyOpen(); return new Promise(() => {}) }
   const operation = service.start('owner', dest, 'upload', { attachmentId: file.id, remotePath: '/fixture', requestId: 'cancel-pending' })
-  await new Promise(resolve => setTimeout(resolve, 10))
+  await opened
   service.cancel('owner', operation.operationId)
   const result = await service.wait('owner', operation.operationId, 1000)
   assert.equal(result.status, 'unknown'); assert.equal(result.transport, 'sftp'); assert.equal(dest.refs(), 0)
