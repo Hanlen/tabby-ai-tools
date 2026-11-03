@@ -485,3 +485,49 @@ test('unexpected CLI exit cancels outstanding host approvals instead of leaving 
   assert.equal(mutations, 0)
   assert.equal(f.agent.pending.size, 0)
 })
+
+
+test('concurrent Claude connections share discovery, while replacement and close cancel it', async t => {
+  const f = await fixture(t)
+  const discovery = require('../src/claude-code-client.ts')
+  const probes = []
+  t.mock.method(discovery, 'inspectClaudeCode', (executable, cwd, signal) => new Promise((resolve, reject) => {
+    probes.push({ executable, cwd, signal, resolve, reject })
+    signal.addEventListener('abort', () => reject(new Error('请求已停止')), { once: true })
+  }))
+  let connected = 0
+  f.agent.on('connected', () => { connected++ })
+  const first = f.agent.connect(f.settings)
+  const second = f.agent.connect({ ...f.settings, claudeExecutable: '"' + f.executable + '"' })
+  assert.equal(probes.length, 1)
+  assert.equal(probes[0].signal.aborted, false)
+  probes[0].resolve(f.executable)
+  await Promise.all([first, second])
+  assert.equal(connected, 1)
+
+  const old = f.agent.connect(f.settings)
+  const rejected = assert.rejects(old, /请求已停止/)
+  const replacement = f.agent.connect({ ...f.settings, claudeExecutable: 'another-claude' })
+  assert.equal(probes[1].signal.aborted, true)
+  probes[2].resolve('another-claude')
+  await Promise.all([rejected, replacement])
+  assert.equal(f.agent.executable, 'another-claude')
+
+  const closing = f.agent.connect(f.settings)
+  const closed = assert.rejects(closing, /请求已停止/)
+  f.agent.close()
+  await closed
+  assert.equal(f.agent.isConnected, false)
+  const retry = f.agent.connect(f.settings)
+  probes.at(-1).resolve(f.executable)
+  await retry
+  assert.equal(f.agent.isConnected, true)
+
+  const failing = f.agent.connect(f.settings)
+  const failed = assert.rejects(failing, /CLI missing/)
+  probes.at(-1).reject(new Error('CLI missing'))
+  await failed
+  const recovered = f.agent.connect(f.settings)
+  probes.at(-1).resolve(f.executable)
+  await recovered
+})

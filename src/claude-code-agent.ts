@@ -14,6 +14,7 @@ import type { CodexModel } from './codex.service'
 import { redactMemory } from './task-memory'
 import { modelReasoningEfforts } from './model-reasoning'
 import { NativeSessionSpace, prepareSessionSpace, sessionEnvironment } from './session-space'
+import { normalizeExecutable } from './codex-executable'
 
 export { CLAUDE_CODE_ID, claudeCodeProfile } from './claude-code-profile'
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
@@ -118,17 +119,29 @@ export class ClaudeCodeAdapter extends ApiProviderAdapter {
 export class ClaudeCodeAgent extends ApiAgent {
   private executable = ''
   private discovery?: AbortController
+  private connecting?: { key: string; ready: Promise<void> }
   constructor (profile: ApiProfile, store: AgentStore, private configuredExecutable = 'claude', space?: NativeSessionSpace) { super(profile, store, async () => '', space) }
   async connect (settings: AgentSettings): Promise<void> {
+    const executable = normalizeExecutable(settings.claudeExecutable || this.configuredExecutable) || 'claude'
+    const cwd = settings.cwd || os.homedir()
+    const key = JSON.stringify([executable, cwd, this.sessionSpace?.key, this.sessionSpace?.native])
+    if (this.connecting?.key === key) return this.connecting.ready
     this.discovery?.abort()
     const controller = new AbortController()
     this.discovery = controller
-    try {
-      if (this.sessionSpace) await prepareSessionSpace(this.sessionSpace)
-      this.executable = await inspectClaudeCode(settings.claudeExecutable || this.configuredExecutable, settings.cwd || os.homedir(), controller.signal, sessionEnvironment(this.sessionSpace, process.env))
-      if (controller.signal.aborted) throw new Error('请求已停止')
-      await super.connect(settings)
-    } finally { if (this.discovery === controller) this.discovery = undefined }
+    const ready = (async () => {
+      try {
+        if (this.sessionSpace) await prepareSessionSpace(this.sessionSpace)
+        const resolved = await inspectClaudeCode(executable, cwd, controller.signal, sessionEnvironment(this.sessionSpace, process.env))
+        if (controller.signal.aborted) throw new Error('请求已停止')
+        this.executable = resolved
+        await super.connect(settings)
+      } finally {
+        if (this.discovery === controller) { this.discovery = undefined; this.connecting = undefined }
+      }
+    })()
+    this.connecting = { key, ready }
+    return ready
   }
   async listModels (): Promise<CodexModel[]> {
     // Official aliases, not a claim that an account is entitled to every model.
@@ -141,7 +154,12 @@ export class ClaudeCodeAgent extends ApiAgent {
     if (!this.executable) throw new Error('Claude Code 尚未连接，请重新连接')
     return new ClaudeCodeAdapter({ ...this.profile }, this.executable, session, call, !!_settings.decisionOnly, this.sessionSpace)
   }
-  close (): void { this.discovery?.abort(); super.close() }
+  close (): void {
+    this.discovery?.abort()
+    this.discovery = undefined
+    this.connecting = undefined
+    super.close()
+  }
 }
 
 /** An isolated, explicitly requested readiness check; no terminal tools or saved native transcript. */

@@ -178,6 +178,12 @@ Tests use offline process/MCP fixtures and temporary homes. The system Codex CLI
 
 AttachmentStore owns immutable private snapshots; AttachmentTransferService owns bounded operations, idempotency and UI events. Model tools return receipts rather than base64. attachment-transport.ts streams SFTP and independent exec, with SHA-256 verification before publication; attachment-pty.ts provides the guarded POSIX fallback. Native tab progress uses the actual percentage rendering of TabHeader (0–100), despite the host type comment claiming 0–1. Other progress producers take precedence. Do not infer an Agent attached an image from an upload receipt.
 
+The composer accepts clipboard files and drag-and-drop directly, displays inline thumbnails and removal, and has no attachment button or transfer popup. Cached raster previews enforce conversation ownership and are restored asynchronously; SSH transfers remain available through model tools.
+
 Run test/attachments.test.js for filesystem/SFTP fixtures, actual POSIX subprocess and Linux PTY round trips, changing files and owner/idempotency/progress checks. Tests never call a real model. Native desktop, authenticated SSH, Windows/macOS desktop and simulated cross-platform cases must be reported separately.
 
 The scoped russh event-buffer retention adapter is adapted from [tabby-ai-workspace-manager](https://github.com/SupremeJulyan/tabby-ai-workspace-manager/blob/b77c4dfe1f2de9e89419a23ce89fc938d1ebf309/src/adapters/exec-event-buffers.ts) (MIT, Copyright 2026 Julyan). Its notice is preserved in source and the bundled license notices. Only attachment-owned channel IDs are retained; other channel cleanup remains unchanged.
+
+### CLI 启动并发
+
+`CodexClient` 将缺省空间与 `system:codex` 视为同一连接身份，启动时冻结传给探测的空间，避免后台预连接被侧栏补充空间元数据时取消。后台运行时只报告最新连接尝试的错误。`ClaudeCodeAgent` 对相同 CLI、工作目录与空间的并发连接共享正在进行的就绪检查；替换、关闭和失败后允许重新检查。`test/client.test.js`、`test/runtime.test.js` 与 `test/claude-code.test.js` 覆盖这些竞态及取消／重试，不调用真实模型。

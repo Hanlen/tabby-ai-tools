@@ -23,8 +23,7 @@ import { runWorkflowTool } from './workflow-session'
 import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
 import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 import { AttachmentTransferService } from './attachment-transfer.service'
-import { Attachment, AttachmentOperation } from './attachments'
-import { randomUUID } from 'crypto'
+import { Attachment } from './attachments'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 
@@ -61,36 +60,28 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   showJumpToLatest = false
   private chatScroll?: ChatScroll
   prompt = ''
-  attachmentOpen = false
   attachmentError = ''
   attachmentBusy = false
   attachmentItems: Attachment[] = []
-  attachmentOperations: AttachmentOperation[] = []
-  attachmentTargets: { id: string; title: string }[] = []
-  attachmentTargetId = ''
-  attachmentDownloadPath = ''
-  attachmentParentPath = '/tmp'
   attachmentPreviews = new Map<string, string>()
   private attachmentSubscription?: Subscription
-
-  async openAttachments (): Promise<void> {
-    this.attachmentOpen = !this.attachmentOpen
-    if (!this.attachmentOpen || !this.attachments) return
-    this.attachmentError = ''
-    const tabs = await this.tabTools.call('list_tabs', {})
-    this.attachmentTargets = tabs.filter((tab: any) => tab.type === 'terminal' && tab.profileType === 'ssh' && tab.terminalOpen).map((tab: any) => ({ id: tab.id, title: `${tab.title} · ${tab.sshTarget}` }))
-    if (this.sourceTerminal?.profile?.type === 'ssh') this.attachmentTargetId = this.tabTools.attachmentTabId(this.sourceTerminal)
-    if (!this.attachmentTargets.some(tab => tab.id === this.attachmentTargetId)) this.attachmentTargetId = ''
-    this.refreshAttachments()
-    if (!this.attachmentSubscription) this.attachmentSubscription = this.attachments.operations$.subscribe(items => this.zone.run(() => {
-      this.attachmentOperations = items.filter(item => item.owner === this.threadId)
-      this.refreshAttachments(); this.changeDetector?.detectChanges()
-    }))
-  }
+  private attachmentPreviewPending = new Set<string>()
+  private attachmentsDestroyed = false
 
   private refreshAttachments (): void {
-    if (!this.attachments || !this.threadId) return
-    this.attachmentItems = this.attachments.list(this.threadId)
+    if (!this.attachments || !this.threadId) { this.attachmentItems = []; return }
+    const owner = this.threadId
+    try { this.attachmentItems = this.attachments.list(owner) }
+    catch (error: any) { this.attachmentItems = []; this.attachmentError = error.message; return }
+    for (const item of this.attachmentItems) {
+      if (!item.mime.startsWith('image/') || this.attachmentPreviews.has(item.id) || this.attachmentPreviewPending.has(item.id)) continue
+      this.attachmentPreviewPending.add(item.id)
+      void this.attachments.preview(owner, item.id).then(preview => {
+        if (!preview || this.attachmentsDestroyed || this.threadId !== owner || !this.attachmentItems.some(file => file.id === item.id)) return
+        this.zone.run(() => { this.attachmentPreviews.set(item.id, preview); this.changeDetector?.detectChanges() })
+      }).catch(() => { /* A missing preview must not prevent removing a cached attachment. */ })
+        .finally(() => this.attachmentPreviewPending.delete(item.id))
+    }
   }
 
   onAttachmentPaste (event: ClipboardEvent): void {
@@ -108,7 +99,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async addAttachmentFiles (files: File[]): Promise<void> {
     if (!this.attachments || !this.threadId || this.attachmentBusy) return
-    if (!this.attachmentOpen) await this.openAttachments()
+    const owner = this.threadId
     this.attachmentBusy = true; this.attachmentError = ''
     try {
       for (const file of files) {
@@ -123,12 +114,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
             })
           } finally { URL.revokeObjectURL(url) }
         }
-        const item = await this.attachments.stage(this.threadId, file.name || 'clipboard.png', file.type, new Uint8Array(await file.arrayBuffer()))
-        if (/^image\/(png|jpeg)$/.test(file.type)) this.attachmentPreviews.set(item.id, URL.createObjectURL(file))
+        const item = await this.attachments.stage(owner, file.name || 'clipboard.png', file.type, new Uint8Array(await file.arrayBuffer()))
+        if (file.type.startsWith('image/')) this.attachmentPreviews.set(item.id, URL.createObjectURL(file))
       }
-      this.refreshAttachments()
     } catch (error: any) { this.attachmentError = error.message }
-    finally { this.attachmentBusy = false; this.changeDetector?.detectChanges() }
+    finally { this.refreshAttachments(); this.attachmentBusy = false; this.changeDetector?.detectChanges() }
   }
 
   async removeAttachment (id: string): Promise<void> {
@@ -139,33 +129,6 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     } catch (error: any) { this.attachmentError = error.message }
   }
 
-  async saveAttachment (id: string): Promise<void> {
-    try { await this.attachments?.saveLocal(this.threadId, id) } catch (error: any) { this.attachmentError = error.message }
-  }
-
-  async transferAttachment (attachmentId?: string): Promise<void> {
-    this.attachmentError = ''
-    try {
-      if (!this.attachments || !this.threadId || !this.attachmentTargetId) throw new Error(this.t('请选择 SSH 目标终端'))
-      if (this.settings.sandbox === 'read-only') throw new Error(this.t('只读模式禁止附件传输'))
-      const workflow = await this.agents?.memory?.activeLibrary?.workflowStatus(this.threadId, this.cwd)
-      if (workflow?.recording || workflow?.state === 'executing_alias') throw new Error('Transfer files before recording or invoking a reusable workflow.')
-      const target = this.tabTools.attachmentTarget(this.attachmentTargetId, this.threadId)
-      this.attachments.start(this.threadId, target, attachmentId ? 'upload' : 'download', { attachmentId, remotePath: attachmentId ? this.attachmentParentPath : this.attachmentDownloadPath, requestId: randomUUID() })
-    } catch (error: any) { this.attachmentError = error.message }
-  }
-
-  cancelAttachment (id: string): void {
-    try { this.attachments?.cancel(this.threadId, id) } catch (error: any) { this.attachmentError = error.message }
-  }
-
-  async copyAttachmentPath (operation: AttachmentOperation): Promise<void> {
-    if (!operation.receipt) return
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error(this.t('请从详情复制远端路径'))
-      await navigator.clipboard.writeText(operation.receipt.remotePath)
-    } catch (error: any) { this.attachmentError = error.message }
-  }
   memoryNotice = ''
   pendingWorkflow?: TaskWorkflow
   workflowAlias = ''
@@ -840,6 +803,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.cwd = targetCwd
       if (transferredId) this.settings.threads[this.cwd] = transferredId
       this.threadId = ''
+      this.refreshAttachments()
       this.turnId = ''
       this.entries = []
       this.goalStatus = ''
@@ -876,6 +840,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.codex.client.off('connected', this.onConnected)
         this.codex.client.off('disconnected', this.onDisconnect)
         Object.assign(this, previous)
+        this.refreshAttachments()
         this.codex.client.on('event', this.onEvent)
         this.codex.client.on('connected', this.onConnected)
         this.codex.client.on('disconnected', this.onDisconnect)
@@ -904,6 +869,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async ngOnInit (): Promise<void> {
+    this.attachmentSubscription = this.attachments?.operations$.subscribe(() => this.zone.run(() => {
+      this.refreshAttachments()
+      this.changeDetector?.detectChanges()
+    }))
     const scheduler = this.agents?.scheduler
     if (scheduler) {
       this.scheduleSubscriptions.add(scheduler.changes$.subscribe(() => this.zone.run(() => this.changeDetector?.detectChanges())))
@@ -971,6 +940,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.cwd = this.cwd || this.settings.cwd || os.homedir()
       const savedId = this.settings.threads[this.cwd]
       this.threadId = preparedThreadId || await this.codex.openThread(this.cwd, this.settings, savedId)
+      this.refreshAttachments()
       if (this.threadId !== previousThreadId) this.clearTokenUsage()
       const upgraded = !!savedId && savedId !== this.threadId
       this.settings.threads[this.cwd] = this.threadId
@@ -1093,6 +1063,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         throw error
       }
       this.threadId = restoredId
+      this.refreshAttachments()
       this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === restoredId)
@@ -1309,6 +1280,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.historyNotice = ''
       this.latestTurnStatus = ''
       this.threadId = newId
+      this.refreshAttachments()
       this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(oldId)
       this.controlledTabs = this.tabTools.controls$.value.filter(control => control.owner === newId)
@@ -1844,6 +1816,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.attachmentsDestroyed = true
     this.attachmentSubscription?.unsubscribe()
     for (const url of this.attachmentPreviews.values()) URL.revokeObjectURL(url)
     this.retryState = undefined

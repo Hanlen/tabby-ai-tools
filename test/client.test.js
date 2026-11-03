@@ -125,6 +125,30 @@ rl.on('line', line => {
 })
 `
 
+test('startup and panel share discovery when system space metadata arrives later', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-codex-startup-'))
+  const client = new CodexClient()
+  let connected = 0, disconnected = 0
+  client.on('connected', () => { connected++ })
+  client.on('disconnected', () => { disconnected++ })
+  try {
+    const executable = mockServer(dir, 'server', echoServer)
+    const startup = client.connect(executable)
+    const panel = client.connect(executable, { engine: 'codex', key: 'system:codex' })
+    await Promise.all([startup, panel])
+    const pid = client.process.pid
+    await client.connect(executable)
+    await client.connect(executable, { engine: 'codex', key: 'system:codex' })
+    assert.equal(client.process.pid, pid)
+    assert.equal(connected, 1)
+    assert.equal(disconnected, 0)
+    assert.equal(typeof (await client.request('ping')).pid, 'number')
+  } finally {
+    await client.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('CLI paths with spaces, Unicode and shell characters are passed literally', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby codex 中文 & test-'))
   const client = new CodexClient()

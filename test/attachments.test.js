@@ -239,3 +239,16 @@ test('real Linux PTY base64 upload/download preserves all bytes without model re
   const downloaded = await ptyTransfer(dest, { direction: 'download', remotePath, sink: async chunk => chunks.push(chunk), progress() {}, verifying() {} }, signal())
   assert.equal(downloaded.hash, uploaded.hash); assert.deepEqual(Buffer.concat(chunks), bytes)
 })
+
+
+test('cached image previews survive service restart and enforce conversation ownership', async t => {
+  const root = await temporary(t)
+  const platform = { getConfigPath: () => path.join(root, 'config.yaml') }
+  const service = new AttachmentTransferService(platform)
+  const image = await service.stage('thread', 'shot.webp', 'image/webp', Buffer.from('image fixture'))
+  const restored = new AttachmentTransferService(platform)
+  assert.equal(await restored.preview('thread', image.id), 'data:image/webp;base64,' + Buffer.from('image fixture').toString('base64'))
+  await assert.rejects(restored.preview('another-thread', image.id), /unavailable/)
+  const text = await service.stage('thread', 'log.txt', 'text/plain', Buffer.from('log'))
+  assert.equal(await service.preview('thread', text.id), undefined)
+})

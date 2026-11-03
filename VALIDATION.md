@@ -1,3 +1,11 @@
+# v0.8.1 CLI startup and inline attachment fixes — 2026-11-03
+
+The startup regression tests reproduce a background Codex connection with no space metadata followed by the sidebar’s explicit system-space connection, and verify one process/connected event with no cancellation. Runtime tests suppress superseded attempts after recovery. Claude Code tests cover concurrent discovery reuse, replacement/close cancellation, failure and subsequent retry. Clipboard fixtures cover text preservation, WebP previews/removal/partial failure; cached previews enforce conversation ownership.
+
+Linux / Node 22.23.3 full suite: **860 tests, 854 passed, 0 failed, 6 platform-only skips** (`/tmp/tabby-startup-node22-tests.log`). The shell’s default Node 20 run has two Pi fixture failures requiring Node >=22.19; these do not involve the changed CLI code. Release verification uses Node 22.23.3. Skill bundle/check, both TypeScript boundaries, production build and diff checks pass. Final logs, reviewed tarball and its digest are retained externally under `/tmp/tabby-release-0.8.1/`; the GitHub Release records branch/tag CI and artifact SHA-256.
+
+Both README headers/provider tables and the synchronized v0.8.1 SVG/PNG overview are reviewed for current features; the unchanged robot GIF and static fallback remain. Package validation checks scripts-enabled installation of the exact tarball with no system node on PATH. No paid inference, real Claude login, SSH task, new Tabby desktop startup/clipboard validation, or Windows/macOS desktop validation is claimed. AGENTS.md, roadmap/research and the personal tabby-release skill remain local and outside the plugin package.
+
 # Unreleased instructions and private CLI session spaces — 2026-11-02
 
 Implemented global/per-connection inline or local AGENTS.md instructions, bounded UTF-8 validation, preview and immutable session snapshots across API, Pi, Codex and Claude Code. Codex/Claude private homes, indexes, references, authentication checks and login-command generation are separate from their legacy system mode. Existing source history is retained during portable handoff, repeated handoffs are deduplicated and native session writers are locked. Saving does not start inference or hot-switch an active task.
