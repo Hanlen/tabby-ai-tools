@@ -18,12 +18,14 @@ import { TaskMemoryService } from './task-memory.service'
 import { TabbyCapabilitiesService } from './tabby-capabilities.service'
 import { ScheduledTasksService } from './scheduled-tasks.service'
 import { AgentI18nService } from './i18n.service'
+import { AttachmentTransferService } from './attachment-transfer.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
   declarations: [CodexPanelComponent, CodexSettingsComponent],
   entryComponents: [CodexPanelComponent, CodexSettingsComponent],
   providers: [
+    AttachmentTransferService,
     AgentI18nService,
     CodexService,
     AgentBackendFactory,

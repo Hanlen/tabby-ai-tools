@@ -33,6 +33,21 @@ const { CodexTerminalOutputService } = require('../src/terminal-output.service.t
 Module._load = originalLoad
 require.extensions['.ts'] = originalTsLoader
 
+test('private attachment frames never enter context and wrapped completion hides old payload', () => {
+  const terminal = new FakeTerminal('/project'), service = new CodexTerminalOutputService({ tabs: [terminal] })
+  service.watch(terminal)
+  const release = service.suppress(terminal)
+  service.hideAttachmentOutput(terminal, 'TA_0123456789abcdef_DONE')
+  terminal.session.output$.next('PRIVATE_BASE64_PAYLOAD')
+  assert.equal(service.readSince(terminal, 0, 100).text, '')
+  assert.equal(service.isSuppressed(terminal), true)
+  release()
+  const view = service.sanitizeView(terminal, 'PRIVATE_BASE64_PAYLOAD\nTA_01234567\n89abcdef_DONE:0\n$ ready')
+  assert.ok(!view.includes('PRIVATE_BASE64_PAYLOAD')); assert.match(view, /ready/)
+  assert.equal(service.sanitizeView(terminal, 'new later output'), 'new later output')
+  service.unwatch(terminal)
+})
+
 test('only bound terminals are observed and all watchers must release them', () => {
   const selected = new FakeTerminal('/project')
   const other = new FakeTerminal('/other')

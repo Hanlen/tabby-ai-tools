@@ -265,7 +265,37 @@
         input.form-control.form-control-sm([id]='"api-effort-draft-" + threadId', [(ngModel)]='apiEffortDraft', [attr.placeholder]='t("服务商默认")', [attr.aria-label]='t("Thinking 推理强度")', [disabled]='modelSaving', maxlength='100')
         button.btn.btn-outline-secondary.btn-sm(type='button', (click)='chooseModel(pendingModel.model, apiEffortDraft.trim(), true)', [disabled]='modelSaving || permissionsSaving') {{t("应用")}}
       button.btn.btn-link.btn-sm(type='button', *ngIf='pendingModel', (click)='pendingModel = undefined', [disabled]='modelSaving') {{t("返回模型列表")}}
-    textarea.form-control(dir='auto', rows='3', [ngModel]='prompt', (ngModelChange)='onPromptChanged($event)', [disabled]='!!request', [attr.placeholder]='t("描述任务或输入 / 选择命令")', (keydown)='onPromptKeydown($event)')
+    .codex-attachments(*ngIf='attachmentOpen', [attr.aria-label]='t("文件与图片附件")')
+      strong {{t("文件与图片附件")}}
+      small {{t("复用 SSH 连接；上传到外层主机，不会自动发送给模型或终端 Agent。")}}
+      label {{t("目标终端")}}
+      select.form-control.form-control-sm([(ngModel)]='attachmentTargetId', [attr.aria-label]='t("目标终端")')
+        option(value='') {{t("请选择 SSH 目标终端")}}
+        option(*ngFor='let target of attachmentTargets', [value]='target.id') {{target.title}}
+      label {{t("上传父目录（绝对路径）")}}
+      input.form-control.form-control-sm([(ngModel)]='attachmentParentPath', placeholder='/tmp', [attr.aria-label]='t("上传父目录（绝对路径）")')
+      label.codex-attachment-picker
+        span {{t("添加文件或粘贴截图")}}
+        input(type='file', multiple, [disabled]='attachmentBusy || !threadId', (change)='addAttachmentFiles($any($event.target).files); $any($event.target).value = ""')
+      .codex-attachment-card(*ngFor='let file of attachmentItems')
+        img(*ngIf='attachmentPreviews.get(file.id)', [src]='attachmentPreviews.get(file.id)', [alt]='file.name')
+        span {{file.name}} · {{(file.size / 1024).toFixed(1)}} KiB
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='transferAttachment(file.id)', [disabled]='!attachmentTargetId || attachmentBusy || settings.sandbox === "read-only"') {{t("上传")}}
+        button.btn.btn-link.btn-sm(type='button', (click)='saveAttachment(file.id)', [disabled]='settings.sandbox === "read-only"') {{t("保存到本机")}}
+        button.btn.btn-link.btn-sm(type='button', (click)='removeAttachment(file.id)', [attr.aria-label]='t("移除附件")') ×
+      label {{t("下载远端文件（绝对路径）")}}
+      input.form-control.form-control-sm([(ngModel)]='attachmentDownloadPath', placeholder='/path/to/file', [attr.aria-label]='t("下载远端文件（绝对路径）")')
+      button.btn.btn-outline-secondary.btn-sm(type='button', (click)='transferAttachment()', [disabled]='!attachmentTargetId || !attachmentDownloadPath || settings.sandbox === "read-only"') {{t("下载到附件缓存")}}
+      .codex-attachment-operation(*ngFor='let operation of attachmentOperations', aria-live='polite')
+        small {{operation.target}} · {{operation.transport}} · {{operation.status}} · {{operation.phase}}
+        progress(*ngIf='operation.totalBytes !== undefined', [value]='operation.bytesTransferred', [max]='operation.totalBytes || 1', [attr.aria-label]='t("传输进度")')
+        small {{(operation.bytesTransferred / 1024).toFixed(1)}} KiB
+        button.btn.btn-link.btn-sm(type='button', *ngIf='operation.status === "running"', (click)='cancelAttachment(operation.operationId)') {{t("取消传输")}}
+        small(*ngIf='operation.error') {{operation.error}}
+        code {{operation.remotePath}}
+        button.btn.btn-link.btn-sm(type='button', *ngIf='operation.receipt', (click)='copyAttachmentPath(operation)') {{t("复制远端路径")}}
+      small.codex-model-error(*ngIf='attachmentError', role='alert') {{attachmentError}}
+    textarea.form-control(dir='auto', rows='3', [ngModel]='prompt', (ngModelChange)='onPromptChanged($event)', [disabled]='!!request', [attr.placeholder]='t("描述任务或输入 / 选择命令")', (keydown)='onPromptKeydown($event)', (paste)='onAttachmentPaste($event)', (dragover)='$event.preventDefault()', (drop)='onAttachmentDrop($event)')
     .codex-compose-toolbar
       .codex-permissions([attr.aria-label]='t("执行权限")')
         .codex-permission-field
@@ -281,6 +311,7 @@
             option(value='untrusted') {{apiMode ? t("操作时询问") : t("不可信时")}}
             option(value='never') {{t("不询问")}}
       .codex-compose-actions
+        button.btn.btn-outline-secondary.btn-sm(type='button', (click)='openAttachments()', [disabled]='!threadId', [attr.aria-expanded]='attachmentOpen') {{t("附件")}}
         button.btn.btn-danger.btn-sm(type='button', (click)='stop()', *ngIf='busy', [disabled]='!turnId') {{t("停止")}}
         button.btn.btn-primary.btn-sm(type='button', (click)='send()', [disabled]='!prompt.trim() || loading || !!request || !!retryState') {{busy ? t("追加指令") : t("发送")}}
     small.codex-permission-notice(*ngIf='permissionNotice') {{t(permissionNotice)}}

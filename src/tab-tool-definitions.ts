@@ -1,5 +1,6 @@
 import { TABBY_OPERATIONS } from './tabby-operations'
 import { WORKFLOW_TOOLS } from './workflow-tools'
+import { ATTACHMENT_TOOLS } from './attachment-tools'
 
 export const TAB_TOOLS = [{
   type: 'namespace',
@@ -8,6 +9,7 @@ export const TAB_TOOLS = [{
   tools: [
     ...TABBY_OPERATIONS,
     ...WORKFLOW_TOOLS,
+    ...ATTACHMENT_TOOLS,
     { type: 'function', name: 'workflow_status', description: 'Query recording, step verification, archive eligibility/failure and the most recent completed explicit recording in this session/workspace. Check before promising a workflow alias. Checkpoint success alone does not mean archival succeeded. Ordinary tasks cannot be saved retroactively. No terminal commands are executed.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
     { type: 'function', name: 'workflow_set_alias', description: 'On the user\'s request, save an alias for this session/workspace\'s most recent completed explicit recording. Query workflow_status and check its objective first; pass workflowId if returned. Retries a failed archive from retained verified steps without replaying commands. Refuses unrecorded, incomplete, unsafe or unrelated workflows. Read back saved=true and workflow.alias before reporting success.', inputSchema: { type: 'object', properties: { alias: { type: 'string' }, workflowId: { type: 'string' } }, required: ['alias'], additionalProperties: false } },
     { type: 'function', name: 'list_tabs', description: 'List every open Tabby tab, including terminal panes inside split tabs. IDs are ephemeral; use read_tab.server for stable connection identity and working directory.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },

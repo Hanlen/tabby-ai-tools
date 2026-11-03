@@ -21,6 +21,13 @@ async function begin (memory, text = '构建前端项目并检查结果', cwd = 
   await memory.prepare(owner, text, cwd, true)
   return memory.token(owner)
 }
+
+test('attachment transfer must be an explicit prerequisite rather than an omitted recorded step', async t => {
+  const { memory } = await fixture(t)
+  const token = await begin(memory, '/remember deploy and verify')
+  assert.throws(() => memory.beforeTool('thread', token, 'attachment_upload', { tabId: 'ssh' }), /not reusable workflow steps/)
+  assert.doesNotThrow(() => memory.beforeTool('thread', token, 'attachment_status', { operationId: 'existing' }))
+})
 function command (memory, token, text = 'pnpm build', owner = 'thread') {
   memory.record(owner, token, 'send_input', { tabId: 'ephemeral-tab-12', text, submit: true, purpose: '构建前端' }, { sent: true, submitted: true, server: localServer })
 }

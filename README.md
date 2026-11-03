@@ -22,13 +22,19 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.7.1 interface illustration with bundled optional Pi runtime and context compaction: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.8.0 interface illustration with SSH attachments, native tab progress, native Pi providers, offline model catalog, instruction snapshots, private CLI history and connection drafts: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**New in v0.8.0: SSH attachments.** Paste screenshots or add files, upload/download through your existing SSH connection and follow native tab progress. The plugin handles every chunk and base64 fallback without model relay. Copy the verified remote path for your terminal Agent; automatic Codex image attachment and sidebar visual input are not included. [Files, limits and compatibility](docs/attachments.md).
 
 <sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
 
 Thinking and tool activity stream into collapsed entries in the conversation. Expand an entry to inspect the text returned by the service, tool arguments and results; replies stay visible. Terminal reads return early when shell integration confirms a command has finished, instead of waiting out the requested timeout. Thinking entries appear only after readable text arrives; Codex and supported OpenAI reasoning requests enable summaries. Selecting and copying sidebar text does not send Ctrl+C to the active terminal.
 
 **Fixed in v0.7.1:** Windows default discovery compares installed Codex CLI versions, so an older PATH entry no longer hides a newer desktop installation. Desktop upgrade paths recover automatically. See the [release notes](docs/releases/0.7.1.md).
+
+**Pi API configuration (v0.8.0):** new API connections recommend Pi SDK, with searchable native providers (including Gemini and OpenRouter), an offline SDK 1.4.0 model catalog, capability-based reasoning/output limits and four explicit custom protocols. Connection edits now use Save / Discard / Copy drafts. Existing connections keep their runtime and product presets. Local checks and paid model/tool tests are separate; OAuth/cloud identity and advanced import/export remain pending. See [Pi configuration and boundaries](docs/pi.md#unreleased-native-providers-and-connection-drafts-p0--p1).
+
+**Custom instructions and private CLI history:** configure shared or per-connection instruction text/local AGENTS.md with previews and saved session snapshots. Unused Codex/Claude Code connections default to Tabby private history; existing CLI references retain an explicit compatibility mode. Generate a space-specific login command, check its authentication and switch when idle. See [instructions, authentication and migration](docs/instructions-sessions.md).
 
 **New in v0.7.0:** readable thinking/tool activity, safe sidebar copying and earlier terminal readback after verified command completion. See the [release notes](docs/releases/0.7.0.md) for validation and limits.
 
@@ -46,8 +52,8 @@ Terminal output is read on demand with `read_tab`; it is no longer automatically
 
 | Connection | How to use it |
 | --- | --- |
-| **ChatGPT subscription → local Codex** | Install Codex CLI locally, run `codex login`, and select **Codex (local login)** in AI Tools. |
-| **Claude subscription → local Claude Code** | Install the official CLI, run `claude auth login`, check `claude auth status`, and select **Claude Code (local login)**. |
+| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. Generate the selected-space login command in Settings → AI Tools → Instructions and sessions. |
+| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Generate its selected-space login command, then check that space's login in Settings. |
 | **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
 | **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
 | **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |
@@ -82,14 +88,14 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
 ## Start with your local ChatGPT subscription login
 
 1. Install [Codex CLI](https://learn.chatgpt.com/docs/cli) on the computer running Tabby.
-2. Run the following commands, sign in with your ChatGPT account in the browser, and confirm that the CLI is logged in:
+2. Open **Settings → AI Tools → Codex → Instructions and sessions**. Generate the selected-space login command, run it in a local terminal and complete the official ChatGPT login. Then check the selected-space login. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
 
    ```bash
    codex login
    codex login status
    ```
 
-3. AI Tools opens automatically when Tabby starts, using **Codex (local login)** by default. Choose a model available to your account in the sidebar, or use the Codex default. No settings change is required.
+3. AI Tools opens automatically when Tabby starts, using **Codex (local login)** by default. Reconnect after logging in to the selected space, then choose a model available to your account or use the Codex default.
 
 Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
 

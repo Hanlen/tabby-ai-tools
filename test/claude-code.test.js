@@ -329,7 +329,8 @@ test('factory and settings expose a native Claude connection independently of AP
   assert.equal(config.store.codexAgent.claudeModel, 'opus')
   assert.equal(config.store.codexAgent.model, 'codex-model')
   panel.settings.threads[f.root] = 'native-session'
-  assert.equal(config.store.codexAgent.claudeThreads[f.root], 'native-session')
+  assert.equal(config.store.codexAgent.spaceThreads[native.sessionSpace.key][f.root], 'native-session')
+  assert.equal(config.store.codexAgent.claudeThreads[f.root], undefined, 'private references must not overwrite legacy system references')
   assert.ok(factory.modelConnections().some(item => item.profileId === 'claude-code'))
 })
 
@@ -367,10 +368,11 @@ test('native Claude model picker selects reasoning before applying and passes it
 
 test('scheduled model probe tests native MCP confirmation without touching terminals', async t => {
   const f = await fixture(t, { probe: true })
-  const factory = new AgentBackendFactory({ store: { codexAgent: f.settings } }, {}, {}, {})
+  const factory = new AgentBackendFactory({ store: { codexAgent: f.settings } }, {}, {}, { getConfigPath: () => path.join(f.root, 'config.yaml') })
   const result = await factory.probeModel('claude-code', { ...f.settings, model: 'sonnet' })
   assert.equal(result.ok, true, result.error)
   assert.equal(result.totalTokens, 17)
+  assert.match(f.capture().configDir, /spaces/)
   assert.deepEqual(f.capture().calls.filter(call => call.method === 'tools/call').map(call => call.params.name), ['confirm'])
 })
 

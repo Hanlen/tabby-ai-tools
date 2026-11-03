@@ -86,6 +86,12 @@
 .settings-remove { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--settings-border); }
 .settings-remove button { font-size: 12px; }
 .settings-footer { margin: 14px 0 0; overflow-wrap: anywhere; }
+.instructions-editor { border-top: 1px solid var(--settings-border); }
+.instruction-preview { margin-top: 12px; overflow-wrap: anywhere; }
+.instruction-preview pre { max-height: 280px; overflow: auto; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; font-size: 12px; border: 1px solid var(--settings-border); border-radius: 8px; }
+.instructions-editor textarea { resize: vertical; }
+.instructions-editor .memory-row { margin-top: 12px; }
+#instruction-file-picker { max-width: 100%; }
 .executable-help summary { cursor: pointer; }
 .executable-help p { margin: 8px 0 0; }
 .agent-settings :focus { outline: none; box-shadow: none; }

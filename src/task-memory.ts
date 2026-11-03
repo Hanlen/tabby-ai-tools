@@ -351,6 +351,7 @@ export class TaskMemory {
   beforeTool (owner: string, token: string | undefined, name: string, args: any, fromRunner = false): void {
     const run = this.runs.get(owner)
     if (!run || run.token !== token) return
+    if ((run.capture || run.expected) && ['attachment_upload', 'attachment_download'].includes(name)) throw new Error('Attachment transfers are not reusable workflow steps. Transfer the file before recording or invoking the workflow.')
     if (run.runnerBusy && !fromRunner && name !== 'read_tab') throw new Error('运行器正在处理当前节点；等待返回后再继续')
     if (run.uncertain && ['send_input', 'send_keys', 'attach_process'].includes(name)) throw new Error('上一动作结果未知；先读取现场并用 workflow_checkpoint(action=resolve_action) 核对，不能重发')
     if (['send_keys', 'attach_process'].includes(name) || name === 'send_input' && args?.mode === 'stdin') {

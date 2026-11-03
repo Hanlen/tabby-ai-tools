@@ -1,7 +1,14 @@
 import { ConfigProvider } from 'tabby-core'
 import type { ApiProfile } from './agent-types'
+import type { AgentInstructions } from './agent-instructions'
+import type { SessionSpaceConfig } from './session-space'
 
 export interface AgentSettings {
+  defaultInstructions?: AgentInstructions
+  codexInstructions?: AgentInstructions
+  claudeInstructions?: AgentInstructions
+  cliSessionSpaces?: Record<string, SessionSpaceConfig>
+  spaceThreads?: Record<string, Record<string, string>>
   /** Internal isolated decision sessions have no native or Tabby write tools. */
   decisionOnly?: boolean
   workflowHelpers?: Record<string, { model: string; reasoningEffort: string; timeoutMs?: number; maxCalls?: number }>
@@ -50,6 +57,11 @@ export class CodexConfigProvider extends ConfigProvider {
       workflowHelpers: { __nonStructural: true } as unknown as NonNullable<AgentSettings['workflowHelpers']>,
       openOnStartup: true,
       language: 'auto',
+      defaultInstructions: { mode: 'none', __nonStructural: true },
+      codexInstructions: { mode: 'inherit', __nonStructural: true },
+      claudeInstructions: { mode: 'inherit', __nonStructural: true },
+      cliSessionSpaces: { __nonStructural: true } as unknown as NonNullable<AgentSettings['cliSessionSpaces']>,
+      spaceThreads: { __nonStructural: true } as unknown as NonNullable<AgentSettings['spaceThreads']>,
     } as AgentSettings,
   }
 }

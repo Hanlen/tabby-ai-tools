@@ -11,7 +11,7 @@
     select#agent-default-profile.form-control([(ngModel)]='settings.defaultProfileId', (ngModelChange)='save()')
       option(value='') {{t("Codex（本机登录）")}}
       option(value='claude-code') {{t("Claude Code（本机登录）")}}
-      option(*ngFor='let profile of profiles; trackBy: trackProfile', [value]='profile.id') {{profile.name || t("未命名连接")}} · {{t(providerNames[profile.provider])}}
+      option(*ngFor='let profile of persistedProfiles; trackBy: trackProfile', [value]='profile.id') {{profile.name || t("未命名连接")}} · {{profileName(profile)}}
   .settings-default
     .settings-default-label
       label(for='agent-open-on-startup') {{t("启动 Tabby 时自动打开 AI Tools")}}
@@ -32,12 +32,12 @@
         span.settings-count {{profiles.length + 2}}
       .connection-list
         button.connection-item(type='button', *ngFor='let profile of profiles; trackBy: trackProfile', (click)='selectProfile(profile.id)', [class.connection-selected]='!memoryOpen && !schedulesOpen && selectedProfileId === profile.id', [attr.aria-pressed]='!memoryOpen && !schedulesOpen && selectedProfileId === profile.id', [attr.data-provider]='profile.provider', aria-controls='agent-connection-editor')
-          span.provider-mark(aria-hidden='true') {{providerNames[profile.provider].slice(0, 1)}}
+          span.provider-mark(aria-hidden='true') {{profileName(profile).slice(0, 1)}}
           span.connection-info
             span.connection-name-row
               span.connection-name {{profile.name || t("未命名连接")}}
               span.default-badge(*ngIf='settings.defaultProfileId === profile.id') {{t("默认")}}
-            span.connection-provider {{t(providerNames[profile.provider])}}
+            span.connection-provider {{profileName(profile)}}
             span.connection-model([title]='profile.model') {{profile.model || t("未设置模型")}}
         button.connection-item.connection-local(type='button', (click)='selectProfile("")', [class.connection-selected]='!memoryOpen && !schedulesOpen && !selectedProfile && !claudeCodeSelected', [attr.aria-pressed]='!memoryOpen && !schedulesOpen && !selectedProfile && !claudeCodeSelected', data-provider='codex', aria-controls='agent-connection-editor')
           span.provider-mark(aria-hidden='true') C
@@ -125,7 +125,7 @@
                 select#workflow-helper-connection.form-control([(ngModel)]='helperConnectionId')
                   option(value='codex') {{t("Codex（本机登录）")}}
                   option(value='claude-code') {{t("Claude Code（本机登录）")}}
-                  option(*ngFor='let profile of profiles; trackBy: trackProfile', [value]='profile.id') {{profile.name}}
+                  option(*ngFor='let profile of persistedProfiles; trackBy: trackProfile', [value]='profile.id') {{profile.name}}
               .settings-field
                 label(for='workflow-helper-model') {{t("辅助模型 ID")}}
                 input#workflow-helper-model.form-control([(ngModel)]='helperSettings.model', (ngModelChange)='save()', [attr.placeholder]='t("留空沿用当前模型")')
@@ -207,16 +207,24 @@
       ng-container(*ngIf='!schedulesOpen && !memoryOpen')
         ng-container(*ngIf='selectedProfile as profile; else codexSettings')
           .editor-heading
-            span.provider-mark(aria-hidden='true') {{providerNames[profile.provider].slice(0, 1)}}
+            span.provider-mark(aria-hidden='true') {{profileName(profile).slice(0, 1)}}
             .editor-identity
               h4 {{profile.name || t("未命名连接")}}
               .editor-meta
-                span.editor-eyebrow {{t(providerNames[profile.provider])}}
+                span.editor-eyebrow {{profileName(profile)}}
                 span.editor-model.settings-muted {{profile.model || t("尚未选择模型")}}
             span.default-badge(*ngIf='settings.defaultProfileId === profile.id') {{t("默认连接")}}
-            button.btn.btn-outline-secondary.editor-default(type='button', *ngIf='settings.defaultProfileId !== profile.id', (click)='setDefault(profile.id)') {{t("设为默认")}}
+            button.btn.btn-outline-secondary.editor-default(type='button', *ngIf='isSaved(profile) && settings.defaultProfileId !== profile.id', (click)='setDefault(profile.id)') {{t("设为默认")}}
           //- A keyed view resets scroll and field focus when switching connections.
           .editor-body(*ngFor='let current of [profile]; trackBy: trackProfile')
+            .settings-test-actions
+              button.btn.btn-primary(type='button', (click)='saveDraft(profile)', [disabled]='draftSaving || !dirty') {{t("Save connection")}}
+              button.btn.btn-outline-secondary(type='button', (click)='discardDraft(profile)', [disabled]='draftSaving') {{t("Discard draft")}}
+              button.btn.btn-outline-secondary(type='button', (click)='copyProfile(profile)', [disabled]='draftSaving') {{t("Copy as new connection")}}
+              span.settings-muted {{dirty ? t("Unsaved draft — retained when switching connections") : t("Saved locally — reconnect when idle to apply")}}
+            div#connection-draft-status.field-notice(tabindex='-1', *ngIf='draftNotice', [attr.role]='draftErrors.length ? "alert" : "status"')
+              span {{draftNotice}}
+              a(*ngFor='let error of draftErrors', [attr.href]='"#" + error.field') {{error.message}}
             section.settings-section(aria-labelledby='api-basic-heading')
               h5#api-basic-heading.section-heading
                 span.section-dot(aria-hidden='true')
@@ -229,17 +237,45 @@
                     option(value='pi') Pi SDK
                   small.settings-muted(*ngIf='profile.runtime === "pi"') {{t("Pi 默认使用 Tabby 内置运行时；仅开放 Tabby 工具，保留现有审批与终端策略。")}}
                 .settings-field.settings-field-wide(*ngIf='profile.runtime === "pi"')
+                  label(for='pi-connection-mode') {{t("Pi provider configuration")}}
+                  select#pi-connection-mode.form-control([ngModel]='profile.piConnection?.mode || "legacy"', (ngModelChange)='changePiMode(profile, $event)')
+                    option(value='native') {{t("SDK built-in provider")}}
+                    option(value='custom') {{t("Custom compatible endpoint")}}
+                    option(value='legacy') {{t("Legacy product presets (compatibility)")}}
+                  small.settings-muted {{t("Existing connections keep their protocol. Copy before upgrading; API and Coding Plan credentials are product-specific.")}}
+                .settings-field.settings-field-wide(*ngIf='profile.piConnection?.mode === "native"')
+                  label(for='pi-provider-search') {{t("Search SDK providers")}}
+                  input#pi-provider-search.form-control([(ngModel)]='providerSearch', type='search', placeholder='Gemini / OpenRouter / provider ID')
+                  label(for='pi-provider') {{t("SDK provider ID")}}
+                  select#pi-provider.form-control([ngModel]='profile.piConnection.providerId', (ngModelChange)='changePiProvider(profile, $event)')
+                    option(*ngFor='let provider of piProviders', [value]='provider.id') {{provider.name}} · {{provider.id}}{{provider.unavailableReason ? " · adapter pending" : " · API Key"}}
+                  small.settings-muted(*ngIf='piProvider(profile)?.unavailableReason', role='status') {{piProvider(profile).unavailableReason}}
+                  small.settings-muted {{t("Catalog availability does not prove credentials, account access or tool support. OAuth and cloud identity adapters are pending.")}}
+                .settings-field.settings-field-wide(*ngIf='profile.piConnection && !piModel(profile)')
+                  label(for='pi-protocol') {{t("Manual model protocol")}}
+                  select#pi-protocol.form-control([(ngModel)]='profile.piConnection.api', (ngModelChange)='draftChanged(profile)')
+                    option(value='') {{t("Choose an explicit protocol")}}
+                    option(*ngFor='let protocol of piProtocols', [value]='protocol') {{protocol}}
+                  label(for='pi-model-maximum') {{t("Model maximum output capability (tokens)")}}
+                  input#pi-model-maximum.form-control(type='number', min='256', [(ngModel)]='profile.piConnection.maxTokens', (ngModelChange)='draftChanged(profile)')
+                  label(for='pi-model-context') {{t("Explicit context window (tokens)")}}
+                  input#pi-model-context.form-control(type='number', min='256', [(ngModel)]='profile.contextWindow', (ngModelChange)='draftChanged(profile)')
+                  label.settings-checkbox-label(for='pi-manual-reasoning')
+                    input#pi-manual-reasoning(type='checkbox', [(ngModel)]='profile.piConnection.reasoning', (ngModelChange)='draftChanged(profile)')
+                    span {{t("Manual model supports reasoning")}}
+                .settings-field.settings-field-wide(*ngIf='profile.runtime === "pi"')
                   label([attr.for]='"pi-node-" + profile.id') {{t("兼容 Node 可执行文件（可选，22.19 或更新版本）")}}
                   input.form-control([id]='"pi-node-" + profile.id', [(ngModel)]='profile.piNodeExecutable', (ngModelChange)='modelConnectionChanged(profile)', [attr.placeholder]='t("留空使用 Tabby 内置运行时")', spellcheck='false')
                 .settings-field.settings-field-wide
                   label.settings-checkbox-label([attr.for]='"api-compact-" + profile.id')
-                    input(type='checkbox', [id]='"api-compact-" + profile.id', [(ngModel)]='profile.autoCompact', (ngModelChange)='save()')
+                    input(type='checkbox', [id]='"api-compact-" + profile.id', [(ngModel)]='profile.autoCompact', (ngModelChange)='draftChanged(profile)')
                     span {{t("自动压缩上下文")}}
                   small.settings-muted {{t("默认关闭；可先用 /compact 手动压缩。摘要会消耗模型额度，原始历史保留。")}}
                 .settings-field
                   label([attr.for]='"api-name-" + profile.id') {{t("连接名称")}}
-                  input.form-control([id]='"api-name-" + profile.id', [(ngModel)]='profile.name', (ngModelChange)='save()', [attr.placeholder]='t("为这个连接取个名字")')
-                .settings-field
+                  small.field-notice([id]='"api-name-error-" + profile.id', *ngIf='fieldError("api-name-" + profile.id)') {{fieldError("api-name-" + profile.id)}}
+                  input.form-control([id]='"api-name-" + profile.id', [(ngModel)]='profile.name', (ngModelChange)='draftChanged(profile)', [attr.placeholder]='t("为这个连接取个名字")', [attr.aria-describedby]='"api-name-error-" + profile.id', [attr.aria-invalid]='!!fieldError("api-name-" + profile.id)')
+                .settings-field(*ngIf='!profile.piConnection')
                   label([attr.for]='"api-provider-" + profile.id') {{t("供应商")}}
                   select.form-control([id]='"api-provider-" + profile.id', [ngModel]='profile.provider', (ngModelChange)='changeProvider(profile, $event)')
                     option(value='openai') OpenAI API
@@ -250,7 +286,7 @@
                     option(value='bailian-coding') {{t("阿里云百炼 Coding Plan")}}
                     option(value='claude') Claude（Anthropic）
                     option(value='custom') {{t("自定义（OpenAI 兼容）")}}
-                .settings-field.settings-field-wide(*ngIf='profile.provider === "custom"')
+                .settings-field.settings-field-wide(*ngIf='profile.provider === "custom" && !profile.piConnection')
                   label([attr.for]='"api-format-" + profile.id') {{t("API 协议")}}
                   select.form-control([id]='"api-format-" + profile.id', [ngModel]='profile.apiFormat || "chat-completions"', (ngModelChange)='changeApiFormat(profile, $event)', [attr.aria-describedby]='"api-format-hint-" + profile.id')
                     option(value='chat-completions') Chat Completions · /chat/completions
@@ -265,20 +301,25 @@
                   small.settings-muted([id]='"api-region-hint-" + profile.id') {{t("按购买平台与区域选择端点和 Key。切换区域后请核对密钥；也可手动修改 Base URL。")}}
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-url-" + profile.id') {{t("Base URL")}}
-                  input.form-control([id]='"api-url-" + profile.id', [(ngModel)]='profile.baseUrl', (ngModelChange)='modelConnectionChanged(profile)', [attr.aria-describedby]='"api-url-hint-" + profile.id', spellcheck='false')
-                  small.settings-muted([id]='"api-url-hint-" + profile.id') {{t("填写基础地址，不含 /responses、/messages 或 /chat/completions。支持代理地址；GLM 按套餐选择端点。")}}
-                  small.settings-muted(*ngIf='profile.provider === "custom"') {{t("示例：https://gateway.example/v1 或 http://localhost:1234/v1。保留服务要求的 /v1 等路径；HTTP 仅限本地回环地址。")}}
+                  small.field-notice([id]='"api-url-error-" + profile.id', *ngIf='fieldError("api-url-" + profile.id)') {{fieldError("api-url-" + profile.id)}}
+                  input.form-control([id]='"api-url-" + profile.id', [(ngModel)]='profile.baseUrl', (ngModelChange)='modelConnectionChanged(profile)', [attr.aria-describedby]='"api-url-hint-" + profile.id + " api-url-error-" + profile.id', spellcheck='false')
+                  small.settings-muted(*ngIf='!profile.piConnection', [id]='"api-url-hint-" + profile.id') {{t("填写基础地址，不含 /responses、/messages 或 /chat/completions。支持代理地址；GLM 按套餐选择端点。")}}
+                  small.settings-muted(*ngIf='profile.provider === "custom" && !profile.piConnection') {{t("示例：https://gateway.example/v1 或 http://localhost:1234/v1。保留服务要求的 /v1 等路径；HTTP 仅限本地回环地址。")}}
+                  small.settings-muted(*ngIf='profile.piConnection') {{t("Native: leave empty for the SDK endpoint. Custom: enter the protocol base URL. HTTP is limited to loopback.")}}
                   small.settings-muted(*ngIf='profile.provider === "kimi"') {{t("Kimi API 使用开放平台 Key，按量计费。海外端点：https://api.moonshot.ai/v1")}}
                   small.settings-muted(*ngIf='profile.provider === "kimi-coding"') {{t("使用 Kimi Code 控制台的套餐 Key，与普通 API Key 不通用。海外端点：https://api.kimi.ai/coding/v1。套餐限个人交互使用；定时任务请使用普通 API。")}}
                   small.settings-muted(*ngIf='profile.provider === "bailian-coding"') {{t("使用百炼 Coding Plan 专用 Key（sk-sp-），与按量 API Key 不通用。套餐限交互式编程；定时任务请使用按量 API。")}}
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-model-" + profile.id') {{t("模型 ID")}}
+                  small.field-notice([id]='"api-model-error-" + profile.id', *ngIf='fieldError("api-model-" + profile.id)') {{fieldError("api-model-" + profile.id)}}
                   .settings-input-action
-                    input.form-control([id]='"api-model-" + profile.id', [(ngModel)]='profile.model', (ngModelChange)='save()', (focus)='fetchModels(profile)', [attr.list]='"api-models-" + profile.id', [attr.placeholder]='t("选择或输入模型 ID")', [attr.aria-describedby]='"api-model-hint-" + profile.id')
+                    input.form-control([id]='"api-model-" + profile.id', [(ngModel)]='profile.model', (ngModelChange)='draftChanged(profile)', (focus)='fetchModels(profile)', [attr.list]='"api-models-" + profile.id', [attr.placeholder]='t("选择或输入模型 ID")', [attr.aria-describedby]='"api-model-hint-" + profile.id + " api-model-error-" + profile.id')
                     button.btn.btn-outline-secondary(type='button', (click)='fetchModels(profile, true)', [disabled]='modelLists[profile.id]?.running') {{modelLists[profile.id]?.running ? t("获取中…") : t("获取模型")}}
                   datalist([id]='"api-models-" + profile.id')
                     option(*ngFor='let model of modelLists[profile.id]?.models', [value]='model.model') {{model.displayName}}
-                  small.settings-muted([id]='"api-model-hint-" + profile.id') {{t("聚焦时自动获取模型列表，也可手动输入完整模型 ID。")}}
+                  small.settings-muted(*ngIf='!profile.piConnection', [id]='"api-model-hint-" + profile.id') {{t("聚焦时自动获取模型列表，也可手动输入完整模型 ID。")}}
+                  small.settings-muted(*ngIf='piModel(profile) as model') SDK 1.4.0 · {{model.api}} · context {{model.contextWindow}} · max output {{model.maxTokens}} · {{t("Text input only in Tabby; catalog image capabilities are informational.")}}
+                  small.settings-muted(*ngIf='profile.piConnection') {{t("Offline SDK catalog; no inference or account authorization check. Manual IDs require explicit capabilities.")}}
                   p.field-notice(role='status', aria-live='polite', *ngIf='modelLists[profile.id]') {{modelLists[profile.id].notice}}
             section.settings-section(aria-labelledby='api-auth-heading')
               h5#api-auth-heading.section-heading
@@ -290,7 +331,7 @@
                   select.form-control([id]='"api-source-" + profile.id', [ngModel]='keySource(profile)', (ngModelChange)='changeKeySource(profile, $event)')
                     option(value='direct') {{t("直接输入")}}
                     option(value='environment') {{t("环境变量")}}
-                    option(*ngIf='profile.provider === "custom"', value='none') {{t("无需密钥")}}
+                    option(*ngIf='profile.provider === "custom" && !profile.piConnection', value='none') {{t("无需密钥")}}
                     option(*ngIf='keySource(profile) === "vault"', value='vault', disabled='') {{t("旧 Vault 配置（请选择其他来源）")}}
                 .settings-field.settings-field-wide(*ngIf='keySource(profile) === "direct"')
                   label([attr.for]='"api-key-" + profile.id') {{t("API Key")}}
@@ -311,29 +352,35 @@
               #api-advanced-fields.settings-fields(*ngIf='advancedOpen')
                 .settings-field
                   label([attr.for]='"api-thinking-" + profile.id') {{t("思考模式")}}
-                  select.form-control([id]='"api-thinking-" + profile.id', [(ngModel)]='profile.thinking', (ngModelChange)='save()', [disabled]='profile.provider === "openai" || profile.provider === "custom"')
+                  select.form-control([id]='"api-thinking-" + profile.id', [(ngModel)]='profile.thinking', (ngModelChange)='draftChanged(profile)', [disabled]='!profile.piConnection && (profile.provider === "openai" || profile.provider === "custom")')
                     option(value='default') {{t("服务商默认")}}
                     option(value='enabled') {{t("开启")}}
                     option(value='disabled') {{t("关闭")}}
-                  small.settings-muted {{t("Claude 开启时使用 adaptive thinking；OpenAI 使用推理强度。")}}
-                  small.settings-muted(*ngIf='profile.provider === "custom"') {{t("自定义接口不发送厂商专用 Thinking 参数；推理强度留空时不发送，请按服务文档填写。")}}
+                  small.settings-muted(*ngIf="!profile.piConnection") {{t("Claude 开启时使用 adaptive thinking；OpenAI 使用推理强度。")}}
+                  small.settings-muted(*ngIf='profile.provider === "custom" && !profile.piConnection') {{t("自定义接口不发送厂商专用 Thinking 参数；推理强度留空时不发送，请按服务文档填写。")}}
                 .settings-field
                   label([attr.for]='"api-effort-" + profile.id') {{t("推理强度（可选）")}}
-                  input.form-control([id]='"api-effort-" + profile.id', [(ngModel)]='profile.reasoningEffort', (ngModelChange)='save()', [attr.placeholder]='t("服务商默认")')
+                  small.field-notice([id]='"api-effort-error-" + profile.id', *ngIf='fieldError("api-effort-" + profile.id)') {{fieldError("api-effort-" + profile.id)}}
+                  input.form-control(*ngIf='!profile.piConnection', [id]='"api-effort-" + profile.id', [(ngModel)]='profile.reasoningEffort', (ngModelChange)='draftChanged(profile)', [attr.placeholder]='t("服务商默认")', [attr.aria-describedby]='"api-effort-error-" + profile.id', [attr.aria-invalid]='!!fieldError("api-effort-" + profile.id)')
+                  select.form-control(*ngIf='profile.piConnection', [id]='"api-effort-" + profile.id', [(ngModel)]='profile.reasoningEffort', (ngModelChange)='draftChanged(profile)', [attr.aria-describedby]='"api-effort-error-" + profile.id', [attr.aria-invalid]='!!fieldError("api-effort-" + profile.id)')
+                    option(value='') {{t("服务商默认")}}
+                    option(*ngFor='let level of piModel(profile)?.thinkingLevels || ["off", "minimal", "low", "medium", "high"]', [value]='level') {{level}}
                   small.settings-muted {{t("按模型文档填写原始值；留空不发送。")}}
-                .settings-field
+                .settings-field(*ngIf='!profile.piConnection')
                   label([attr.for]='"api-context-" + profile.id') {{t("上下文窗口 tokens")}}
-                  input.form-control(type='number', [id]='"api-context-" + profile.id', min='0', [(ngModel)]='profile.contextWindow', (ngModelChange)='save()')
+                  input.form-control(type='number', [id]='"api-context-" + profile.id', min='0', [(ngModel)]='profile.contextWindow', (ngModelChange)='draftChanged(profile)')
                   small.settings-muted {{t("0 表示未知，用于显示使用占比，不代表账户额度。")}}
                 .settings-field
                   label([attr.for]='"api-output-" + profile.id') {{t("单次最大输出 tokens")}}
-                  input.form-control(type='number', [id]='"api-output-" + profile.id', min='256', max='131072', [(ngModel)]='profile.maxOutputTokens', (ngModelChange)='save()')
+                  small.field-notice([id]='"api-output-error-" + profile.id', *ngIf='fieldError("api-output-" + profile.id)') {{fieldError("api-output-" + profile.id)}}
+                  input.form-control(type='number', [id]='"api-output-" + profile.id', min='256', [max]='piModel(profile)?.maxTokens || profile.piConnection?.maxTokens || 131072', [(ngModel)]='profile.maxOutputTokens', (ngModelChange)='draftChanged(profile)', [attr.aria-describedby]='"api-output-error-" + profile.id', [attr.aria-invalid]='!!fieldError("api-output-" + profile.id)')
                 .settings-field.settings-field-wide
                   label([attr.for]='"api-iterations-" + profile.id') {{t("每回合工具轮数上限")}}
                   input.form-control(type='number', [id]='"api-iterations-" + profile.id', min='0', max='100', [ngModel]='profile.maxIterations', (ngModelChange)='setToolRoundLimit(profile, $event)')
                   small.settings-muted {{t("0 表示不限固定轮数（默认）。1–100 限制工具调用轮数，另留收尾请求读取最后结果及更新目标；停止和目标 token 预算仍然生效。")}}
             .settings-test
               .settings-test-actions
+                button.btn.btn-outline-secondary(type='button', *ngIf='profile.runtime === "pi"', (click)='checkConfiguration(profile)', [disabled]='connectionTests[profile.id]?.running') {{t("Check configuration / runtime (no inference)")}}
                 button.btn.btn-outline-primary(type='button', (click)='testProfile(profile)', [disabled]='connectionTests[profile.id]?.running') {{connectionTests[profile.id]?.running ? t("测试中…") : t("测试连接")}}
                 button.btn.btn-link(type='button', *ngIf='connectionTests[profile.id]?.running', (click)='cancelTest(profile)') {{t("取消测试")}}
                 small.settings-muted {{t("发送简短请求，产生少量 API 用量。")}}
@@ -404,4 +451,61 @@
                   label(for='codex-budget') {{t("每个目标的 token 上限")}}
                   input#codex-budget.form-control(type='number', min='0', [(ngModel)]='settings.goalTokenBudget', (ngModelChange)='save()')
                   small.settings-muted {{t("0 表示不设置上限。达到上限会显示未完成状态。")}}
-  p.settings-footer.settings-muted {{t("配置自动保存。修改连接参数后，在侧栏点击连接图标应用；切换连接保留当前对话，输入 /new 开始新对话。")}}
+        .editor-body.instructions-editor
+          section.settings-section(aria-labelledby='custom-instructions-heading')
+            h5#custom-instructions-heading.section-heading {{t("Instructions and sessions")}}
+            p.settings-muted {{t("Custom instructions apply to new sessions. Existing sessions keep their saved snapshot. Use /new to apply changes; active tasks are unchanged.")}}
+            .settings-fields
+              .settings-field
+                label(for='instruction-scope') {{t("Instruction scope")}}
+                select#instruction-scope.form-control([(ngModel)]='instructionScope', (ngModelChange)='instructionScopeChanged()')
+                  option(value='connection') {{t("This connection")}}
+                  option(value='default') {{t("AI Tools default")}}
+              .settings-field
+                label(for='instruction-source') {{t("Instruction source")}}
+                select#instruction-source.form-control([(ngModel)]='instructionDraft.mode', (ngModelChange)='instructionChanged()')
+                  option(value='inherit', *ngIf='instructionScope !== "default"') {{t("Inherit AI Tools default")}}
+                  option(value='inline') {{t("Edit instruction text")}}
+                  option(value='file') {{t("Local AGENTS.md file")}}
+                  option(value='none') {{t("No custom instructions")}}
+              .settings-field.settings-field-wide(*ngIf='instructionDraft.mode === "inline"')
+                label(for='instruction-text') {{t("Custom instruction text (up to 32 KiB)")}}
+                textarea#instruction-text.form-control(rows='7', dir='auto', [(ngModel)]='instructionDraft.text', (ngModelChange)='instructionChanged()')
+              .settings-field.settings-field-wide(*ngIf='instructionDraft.mode === "file"')
+                label(for='instruction-file') {{t("Absolute local file path")}}
+                input#instruction-file.form-control(dir='ltr', [(ngModel)]='instructionDraft.path', (ngModelChange)='instructionChanged()', placeholder='/path/to/AGENTS.md', aria-describedby='instruction-file-hint')
+                label.btn.btn-outline-secondary(for='instruction-file-picker') {{t("Choose file")}}
+                input#instruction-file-picker(type='file', accept='.md,.txt,text/plain,text/markdown', (change)='chooseInstructionFile($event)')
+                small#instruction-file-hint.settings-muted {{t("UTF-8, up to 32 KiB. Saving binds the file; it never overwrites it. Missing files prevent new sessions from starting.")}}
+            .memory-row
+              button.btn.btn-primary(type='button', (click)='saveInstructions()', [disabled]='instructionSaving || draftSaving') {{t("Save instructions")}}
+              button.btn.btn-outline-secondary(type='button', (click)='discardInstructions()', [disabled]='instructionSaving || draftSaving') {{t("Discard instruction edits")}}
+              button.btn.btn-outline-secondary(type='button', (click)='previewInstructions()') {{t("Preview selected instructions")}}
+            p.field-notice(role='status', aria-live='polite', *ngIf='instructionNotice') {{t(instructionNotice)}}
+            details.instruction-preview(*ngIf='instructionPreview')
+              summary {{t("Custom layer preview (not the complete model prompt)")}}
+              p.settings-muted(dir='auto') {{instructionPreview.source}} · {{instructionPreview.hash.slice(0, 12)}}
+              p.settings-muted(*ngIf='instructionPreview.modifiedAt') {{scheduleTime(instructionPreview.modifiedAt)}}
+              pre(dir='auto') {{instructionPreview.text}}
+            p.settings-muted {{t("Built-in tool guidance remains enabled. Custom text does not grant tool permissions or enable extensions. Native project rules remain controlled by each engine.")}}
+            p.settings-muted {{selectedProfile ? t("API and Pi: only the selected custom instructions are added; Pi automatic context discovery stays disabled.") : claudeCodeSelected ? t("Claude Code may also load native CLAUDE.md rules; settings sources and tool restrictions remain unchanged.") : t("Codex also discovers native project AGENTS.md rules; the custom layer is added separately.")}}
+          section.settings-section(*ngIf='!selectedProfile', aria-labelledby='session-space-heading')
+            h5#session-space-heading.section-heading {{t("CLI session storage")}}
+            p.settings-muted {{t("Private storage keeps Tabby sessions out of your normal CLI history, with the same workspace directory. Authentication is checked separately and may require a new login.")}}
+            label(for='native-space-mode') {{t("Session space")}}
+            select#native-space-mode.form-control([ngModel]='nativeSpaceDraft.mode', (ngModelChange)='changeNativeSpace($event)', [disabled]='nativeBusy')
+              option(value='tabby') {{t("Tabby private space (recommended)")}}
+              option(value='system') {{t("System space (legacy compatibility)")}}
+            p.settings-muted {{t("Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.")}}
+            .memory-row
+              button.btn.btn-primary(type='button', (click)='saveNativeSpace()', [disabled]='nativeBusy') {{t("Save session space")}}
+              button.btn.btn-outline-secondary(type='button', (click)='discardNativeSpace()', [disabled]='nativeBusy') {{t("Discard space edits")}}
+              button.btn.btn-outline-secondary(type='button', (click)='checkNativeSpace()', [disabled]='nativeBusy') {{t("Check selected-space login")}}
+              button.btn.btn-outline-secondary(type='button', (click)='checkNativeSpace(true)', [disabled]='nativeBusy') {{t("Generate login command")}}
+            p.field-notice(role='status', aria-live='polite', *ngIf='nativeBusy') {{t("Checking local CLI configuration…")}}
+            p.field-notice(role='status', aria-live='polite', *ngIf='nativeNotice') {{t(nativeNotice)}}
+            .instruction-preview(*ngIf='nativeCommand')
+              pre(dir='ltr') {{nativeCommand}}
+              button.btn.btn-outline-secondary(type='button', (click)='copyNativeCommand()') {{t("Copy login command")}}
+            p.settings-muted {{t("No credentials or system history are copied. Operating-system credential stores may still share an account; private history is not an operating-system sandbox.")}}
+  p.settings-footer.settings-muted {{t("连接使用草稿：保存或放弃；其他设置自动保存。保存后在侧栏空闲时重新连接以应用，输入 /new 开始新对话。")}}

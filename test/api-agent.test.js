@@ -51,7 +51,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const zone = { run: fn => fn(), runOutsideAngular: fn => fn() }
 const panelTools = { releaseOwner: () => {} }
 
-test('custom preset preserves a proxy URL, model and key drafts, defaults to Chat Completions and requires an explicit endpoint', async () => {
+test('custom preset retains provider-specific proxy/model drafts, isolates keys and requires an explicit endpoint', async () => {
   const component = new CodexSettingsComponent({ store: { codexAgent: {} }, save: async () => {} }, {}, zone)
   const profile = { id: 'custom-preset', provider: 'openai', baseUrl: 'https://proxy.example/v1/', model: 'user/model', apiKey: 'draft', keySource: 'direct', threads: {} }
   component.changeProvider(profile, 'custom')
@@ -59,17 +59,22 @@ test('custom preset preserves a proxy URL, model and key drafts, defaults to Cha
   assert.equal(profile.model, 'user/model')
   assert.equal(profile.apiFormat, 'chat-completions')
   assert.equal(profile.apiKeyEnv, 'CUSTOM_API_KEY')
-  assert.equal(profile.apiKey, 'draft')
+  assert.equal(profile.apiKey, '', 'a new provider must not receive the previous provider key')
   component.changeApiFormat(profile, 'responses')
   assert.equal(profile.apiFormat, 'responses')
   component.changeKeySource(profile, 'none')
   assert.equal(await new AgentSecretsService().read(profile), '')
   component.changeProvider(profile, 'openai')
   assert.equal(profile.keySource, 'direct')
-  assert.equal(profile.baseUrl, PROVIDER_URLS.openai)
+  assert.equal(profile.baseUrl, 'https://proxy.example/v1/')
+  assert.equal(profile.apiKey, 'draft', 'returning to the previous provider restores its private draft')
   component.changeProvider(profile, 'custom')
-  assert.equal(normalizeApiProfile(profile).baseUrl, '')
-  assert.throws(() => apiUrl(normalizeApiProfile(profile).baseUrl, 'models'), /Base URL/)
+  assert.equal(profile.apiFormat, 'responses')
+  assert.equal(profile.keySource, 'none')
+  const fresh = { id: 'fresh-custom', provider: 'openai', baseUrl: PROVIDER_URLS.openai, model: '' }
+  component.changeProvider(fresh, 'custom')
+  assert.equal(normalizeApiProfile(fresh).baseUrl, '')
+  assert.throws(() => apiUrl(normalizeApiProfile(fresh).baseUrl, 'models'), /Base URL/)
   component.ngOnDestroy()
 })
 
@@ -261,7 +266,7 @@ test('Kimi and Alibaba presets keep API and membership endpoints, models and env
     assert.equal(profile.model, model)
     assert.equal(profile.apiKeyEnv, env)
     assert.equal(profile.maxOutputTokens, 32768)
-    assert.equal(profile.apiKey, 'user-key', 'keep the draft so the user can replace it with the matching platform key')
+    assert.equal(profile.apiKey, '', 'a new product requires its own key')
     assert.equal(normalizeApiProfile({ ...profile, baseUrl: '' }).baseUrl, url)
     assert.equal(PROVIDER_URLS[provider], url)
     assert.equal(PROVIDER_ENV[provider], env)
@@ -292,7 +297,7 @@ for (const provider of ['kimi', 'kimi-coding', 'bailian-coding']) {
     assert.equal(profile.baseUrl, PROVIDER_URLS[provider])
     profile.baseUrl += '/'
     assert.equal(component.endpointRegion(profile), 'china')
-    assert.equal(saved, 2)
+    assert.equal(saved, 0, 'region changes remain in the connection draft')
     component.ngOnDestroy()
   })
 }
@@ -847,7 +852,7 @@ test('legacy default limits migrate to unlimited while explicit limits survive s
   component.setToolRoundLimit(legacy, 20)
   assert.equal(normalizeApiProfile(legacy).maxIterations, 20)
   assert.equal(normalizeApiProfile({ provider: 'glm', maxIterations: 20 }).maxIterations, 0)
-  assert.equal(saves, 2)
+  assert.equal(saves, 1, 'explicit tool limits remain in the draft until Save')
 })
 
 for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {
@@ -1407,7 +1412,10 @@ test('factory keeps Codex and each API backend independent and uses the Tabby co
   const factory = new AgentBackendFactory({ store: { codexAgent: { apiProfiles: [profile], defaultProfileId: 'test' } } }, codex,
     { read: async () => 'secret' }, { getConfigPath: () => path.join(os.tmpdir(), 'tabby', 'config.yaml') })
   assert.equal(factory.defaultProfileId, 'test')
-  assert.equal(factory.create(''), codex)
+  const privateCodex = factory.create('')
+  assert.notEqual(privateCodex, codex)
+  assert.equal(privateCodex.sessionSpace.engine, 'codex')
+  assert.match(privateCodex.sessionSpace.native, /spaces/)
   const first = factory.create('test'), second = factory.create('test')
   assert.notEqual(first, second)
   assert.equal(first.profile.baseUrl, 'https://open.bigmodel.cn/api/paas/v4')
@@ -1876,23 +1884,26 @@ test('settings switch the editor without changing the default or discarding edit
   const settings = { apiProfiles: [first, second], defaultProfileId: 'second' }
   let saves = 0
   const component = new CodexSettingsComponent({ store: { codexAgent: settings }, save: async () => { saves++ } }, {}, zone)
-  assert.equal(component.selectedProfile, second)
-  second.apiKey = 'plugin-managed-key'
-  second.name = 'Edited name'
+  assert.deepEqual(component.selectedProfile, second)
+  const draft = component.selectedProfile
+  draft.apiKey = 'plugin-managed-key'
+  draft.name = 'Edited name'
   component.advancedOpen = true
   component.selectProfile(first.id)
-  assert.equal(component.selectedProfile, first)
+  assert.deepEqual(component.selectedProfile, first)
   assert.equal(component.advancedOpen, false)
   assert.equal(settings.defaultProfileId, 'second')
   component.selectProfile('')
   assert.equal(component.selectedProfile, undefined)
   component.selectProfile(second.id)
   assert.equal(component.selectedProfile.name, 'Edited name')
-  assert.equal(second.apiKey, 'plugin-managed-key')
+  assert.equal(component.selectedProfile.apiKey, 'plugin-managed-key')
+  assert.equal(second.apiKey, undefined, 'saved connection stays unchanged')
+  assert.equal(second.name, 'DeepSeek')
   assert.equal(saves, 0, 'editor navigation must not save or change configuration')
   component.setDefault(first.id)
   assert.equal(settings.defaultProfileId, first.id)
-  assert.equal(component.selectedProfile, second, 'setting the default must not switch the editor')
+  assert.equal(component.selectedProfile, draft, 'setting the default must not switch the editor')
   assert.equal(saves, 1)
 })
 
@@ -1906,13 +1917,13 @@ test('settings select new connections and keep a valid editor when removing sele
   component.removeProfile(second)
   assert.equal(controller.signal.aborted, true)
   assert.equal(settings.defaultProfileId, '')
-  assert.equal(component.selectedProfile, first)
+  assert.deepEqual(component.selectedProfile, first)
   assert.equal(settings.apiProfiles.some(profile => profile.id === second.id), false)
   component.addProfile()
   const added = component.selectedProfile
   assert.ok(added.id)
   assert.notEqual(added.id, first.id)
-  assert.equal(settings.apiProfiles.length, 2)
+  assert.equal(settings.apiProfiles.length, 1, 'new connections stay unsaved')
   assert.equal(settings.defaultProfileId, '', 'adding a connection must preserve the default')
   component.removeProfile(first)
   assert.equal(component.selectedProfile, added, 'deleting a different connection must preserve selection')
@@ -1933,7 +1944,7 @@ test('settings handle an empty list and select a neighboring connection after de
   const profiles = ['a', 'b', 'c'].map(id => ({ id, name: id, provider: 'openai' }))
   const settings = { apiProfiles: profiles, defaultProfileId: 'missing' }
   const component = new CodexSettingsComponent({ store: { codexAgent: settings }, save: async () => {} }, {}, zone)
-  assert.equal(component.selectedProfile, profiles[0], 'stale default falls back to the first connection')
+  assert.deepEqual(component.selectedProfile, profiles[0], 'stale default falls back to the first connection')
   component.selectProfile('b')
   component.removeProfile(profiles[1])
   assert.equal(component.selectedProfile.id, 'c')
@@ -2165,6 +2176,8 @@ test('model connection metadata omits stored keys, endpoints and foreground conv
   assert.equal(metadata.find(connection => connection.profileId === 'private-api').model, 'configured-model')
   assert.equal(metadata.find(connection => connection.profileId === 'claude-code').provider, 'claude-code')
   assert.doesNotMatch(JSON.stringify(metadata), /secret-key|private-endpoint|PRIVATE_API_KEY|foreground-id/)
+  config.store.codexAgent.apiProfiles[0].piConnection = { version: 1, mode: 'native', providerId: 'google' }
+  assert.equal(factory.modelConnections().find(connection => connection.profileId === 'private-api').provider, 'google')
 })
 
 for (const provider of ['openai', 'deepseek', 'glm', 'kimi', 'kimi-coding', 'bailian-coding', 'claude', 'custom']) {

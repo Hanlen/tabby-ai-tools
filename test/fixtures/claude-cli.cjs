@@ -5,7 +5,10 @@ const scenario = JSON.parse(fs.readFileSync(path.join(__dirname, 'scenario.json'
 const args = process.argv.slice(2)
 const flags = ['--tools', '--strict-mcp-config', '--setting-sources', '--disable-slash-commands', '--append-system-prompt-file', '--include-partial-messages', '--system-prompt-snapshot']
 if (args[0] === '--help') { console.log(flags.filter(flag => flag !== scenario.missingFlag).join('\n')); process.exit(0) }
-if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: scenario.loggedIn !== false, authMethod: 'claude.ai' })); process.exit(scenario.loggedIn === false ? 1 : 0) }
+if (args[0] === 'auth') {
+  if (scenario.captureEnvironment) fs.writeFileSync(path.join(__dirname, 'auth-environment.json'), JSON.stringify({ configDir: process.env.CLAUDE_CONFIG_DIR }))
+  console.log(JSON.stringify({ loggedIn: scenario.loggedIn !== false, authMethod: 'claude.ai' })); process.exit(scenario.loggedIn === false ? 1 : 0)
+}
 const flag = name => args[args.indexOf(name) + 1]
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
 ;(async () => {
@@ -18,7 +21,7 @@ const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
   let input = ''
   for await (const part of process.stdin) input += part
   const config = JSON.parse(fs.readFileSync(flag('--mcp-config'), 'utf8')).mcpServers.tabby
-  const capture = { args, input, pid: process.pid, config, system: fs.readFileSync(flag('--append-system-prompt-file'), 'utf8'), calls: [] }
+  const capture = { args, input, pid: process.pid, config, configDir: process.env.CLAUDE_CONFIG_DIR, system: fs.readFileSync(flag('--append-system-prompt-file'), 'utf8'), calls: [] }
   const save = () => fs.writeFileSync(path.join(__dirname, 'capture.json'), JSON.stringify(capture))
   save()
   if (scenario.hang) { setInterval(() => {}, 1000); return }

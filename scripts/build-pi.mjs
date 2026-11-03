@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises'
 import { isBuiltin } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'dist/pi')
 await mkdir(output, { recursive: true })
+await rm(join(output, 'resolver.mjs'), { force: true })
 
-// Keep Pi out of Electron's Angular bundle. Its external Node process loads this
-// prebuilt ESM bundle without installing SDK packages or running their scripts.
+// Keep Pi out of Electron's Angular bundle. The Electron utility process (or
+// explicit compatibility Node) loads this bundle without installing SDK packages.
 const result = await build({
   absWorkingDir: root,
   entryPoints: ['runtime/pi/sidecar.mts', 'runtime/pi/provider.mts'],
@@ -68,3 +69,10 @@ await build({
   platform: 'node', format: 'cjs', target: 'node22.19', external: ['electron'],
 })
 console.log(`Built self-contained Pi runtime with notices for ${packages.size} packages`)
+
+// Internal resolver assertions use an unshipped test artifact; production only
+// includes the resolver inside sidecar.mjs, avoiding a duplicate SDK bundle.
+await mkdir(join(root, 'artifacts'), { recursive: true })
+await build({ absWorkingDir: root, entryPoints: ['runtime/pi/resolver.mts'], outfile: join(root, 'artifacts/pi-resolver.mjs'),
+  bundle: true, platform: 'node', format: 'esm', target: 'node22.19',
+  banner: { js: 'import {createRequire as __tabbyRequire} from "node:module"; const require = __tabbyRequire(import.meta.url);' } })

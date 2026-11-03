@@ -8,6 +8,7 @@ import type { ApiProfile } from './agent-types'
 import type { AgentSettings } from './config'
 import { CodexClient } from './codex-client'
 import { redactMemory } from './task-memory'
+import type { NativeSessionSpace } from './session-space'
 
 export interface ModelProbeResult {
   ok: boolean; model: string; reasoningEffort: string; testedAt: number; totalTokens: number; error?: string
@@ -43,7 +44,7 @@ export async function probeApiModel (profile: ApiProfile, getKey: () => Promise<
 }
 
 /** Independent ephemeral Codex session in an empty directory with read-only access. */
-export async function probeCodexModel (settings: AgentSettings, signal: AbortSignal, client = new CodexClient(), reportUsage: ReportUsage = () => {}): Promise<number> {
+export async function probeCodexModel (settings: AgentSettings, signal: AbortSignal, client = new CodexClient(), reportUsage: ReportUsage = () => {}, space?: NativeSessionSpace): Promise<number> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-model-test-'))
   const nonce = randomBytes(8).toString('hex')
   let threadId = '', totalTokens = 0, confirmed = false
@@ -74,7 +75,7 @@ export async function probeCodexModel (settings: AgentSettings, signal: AbortSig
   const onDisconnect = (error: Error) => reject(error || new Error('模型测试连接中断'))
   client.on('event', onEvent); client.on('disconnected', onDisconnect)
   try {
-    await withAbort(client.connect(settings.executable || 'codex'), signal)
+    await withAbort(client.connect(settings.executable || 'codex', space), signal)
     const started = await withAbort(client.request('thread/start', { cwd: directory, ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only',
       ...(settings.model ? { model: settings.model } : {}),
       config: { 'features.shell_tool': false, 'features.apps': false, web_search: 'disabled', ...(settings.reasoningEffort ? { model_reasoning_effort: settings.reasoningEffort } : {}) },

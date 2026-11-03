@@ -632,3 +632,90 @@ for (const baseUrl of ['https://api.kimi.com/coding/v1', 'https://api.kimi.ai/co
   assert.equal(wire.body.reasoning_effort, 'high')
   assert.deepEqual(wire.body.thinking, { type: 'enabled' })
 })
+
+for (const variant of ['google-native', 'openrouter-native', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']) {
+  integration(`Pi P0/P1 ${variant}: packaged stream, explicit key, host-only tool round trip`, { timeout: 20000 }, async t => {
+    const protocol = variant === 'google-native' ? 'google-generative-ai' : variant === 'openrouter-native' ? 'openai-completions' : variant
+    const native = variant.endsWith('-native')
+    const config = native ? { version: 1, mode: 'native', providerId: variant === 'google-native' ? 'google' : 'openrouter' }
+      : { version: 1, mode: 'custom', api: protocol, maxTokens: 1024 }
+    const f = await fixture(t, (req, res, body, n) => {
+      assert.ok(n <= 2, 'one tool round only')
+      if (protocol === 'openai-completions') {
+        assert.equal(req.url, '/v1/chat/completions')
+        assert.deepEqual(body.tools.map(tool => tool.function.name), ['fixture_probe'])
+        reply(res, n === 1 ? '' : 'VERIFIED', n === 1 ? [{ name: 'fixture_probe' }] : undefined)
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const emit = event => res.write(`${event.type ? 'event: ' + event.type + '\n' : ''}data: ${JSON.stringify(event)}\n\n`)
+      if (protocol === 'google-generative-ai') {
+        assert.match(req.url, /:streamGenerateContent/)
+        assert.equal(req.headers['x-goog-api-key'], 'fixture-key')
+        assert.deepEqual(body.tools.flatMap(tool => tool.functionDeclarations || []).map(tool => tool.name), ['fixture_probe'])
+        emit({ candidates: [{ index: 0, content: { role: 'model', parts: n === 1 ? [{ functionCall: { name: 'fixture_probe', args: {} } }] : [{ text: 'VERIFIED' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 10, totalTokenCount: 30 } })
+      } else if (protocol === 'anthropic-messages') {
+        assert.equal(req.headers['x-api-key'], 'fixture-key')
+        assert.equal(new URL(req.url, 'http://localhost').pathname, '/v1/messages')
+        assert.deepEqual(body.tools.map(tool => tool.name), ['fixture_probe'])
+        emit({ type: 'message_start', message: { id: `msg_${n}`, type: 'message', role: 'assistant', model: 'fixture', content: [], usage: { input_tokens: 20, output_tokens: 0 } } })
+        emit({ type: 'content_block_start', index: 0, content_block: n === 1 ? { type: 'tool_use', id: 'call_probe', name: 'fixture_probe', input: {} } : { type: 'text', text: '' } })
+        emit({ type: 'content_block_delta', index: 0, delta: n === 1 ? { type: 'input_json_delta', partial_json: '{}' } : { type: 'text_delta', text: 'VERIFIED' } })
+        emit({ type: 'content_block_stop', index: 0 })
+        emit({ type: 'message_delta', delta: { stop_reason: n === 1 ? 'tool_use' : 'end_turn' }, usage: { output_tokens: 10 } })
+        emit({ type: 'message_stop' })
+      } else {
+        assert.equal(req.url, '/v1/responses')
+        assert.equal(req.headers.authorization, 'Bearer fixture-key')
+        assert.deepEqual(body.tools.map(tool => tool.name), ['fixture_probe'])
+        const item = n === 1 ? { id: 'fc_probe', type: 'function_call', call_id: 'call_probe', name: 'fixture_probe', arguments: '{}' }
+          : { id: 'msg_probe', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'VERIFIED', annotations: [] }] }
+        emit({ type: 'response.created', response: { id: `resp_${n}`, status: 'in_progress', output: [] } })
+        emit({ type: 'response.output_item.added', output_index: 0, item: n === 1 ? { ...item, arguments: '' } : { ...item, content: [] } })
+        if (n === 1) emit({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: 0, delta: '{}' })
+        else {
+          emit({ type: 'response.content_part.added', item_id: item.id, output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } })
+          emit({ type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: 'VERIFIED' })
+        }
+        emit({ type: 'response.output_item.done', output_index: 0, item })
+        emit({ type: 'response.completed', response: { id: `resp_${n}`, status: 'completed', output: [item], usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 } } })
+      }
+      res.end()
+    }, { piConnection: config, keySource: 'direct', model: native ? variant === 'google-native' ? 'gemini-2.5-flash' : 'openai/gpt-4o-mini' : 'fixture' })
+    let calls = 0
+    const result = await runPiProcess(process.execPath, { profile: f.profile, key: 'fixture-key', directory: path.join(f.root, 'direct'),
+      system: 'Use only fixture_probe.', tools: [{ name: 'fixture_probe', description: 'Harmless fixture', inputSchema: { type: 'object', properties: {} } }],
+      sourceMessages: [[{ role: 'user', content: 'Call fixture_probe then reply VERIFIED.' }]], sourceOffset: 0 }, new AbortController().signal, async (message, send) => {
+      if (message.type === 'lifecycle' && message.event.type === 'auto_retry_start') throw new Error(JSON.stringify(message.event))
+      if (message.type === 'ready') send({ type: 'start' })
+      if (message.type === 'accepted') send({ type: 'accepted' })
+      if (message.type === 'tool') { calls++; assert.equal(message.name, 'fixture_probe'); send({ type: 'tool_result', id: message.id, result: 'observed' }) }
+    }, process.env.TABBY_PI_FIXTURE_SIDECAR)
+    assert.equal(result.text, 'VERIFIED'); assert.equal(calls, 1); assert.equal(f.requests.length, 2)
+    const transcript = fs.readFileSync(result.file, 'utf8')
+    assert.ok(!transcript.includes('fixture-key'))
+    assert.ok(transcript.includes(native ? config.providerId : 'tabby'))
+  })
+}
+
+integration('Pi native resolver retains SDK metadata, endpoint override and per-instance credentials', async () => {
+  const { resolveConnection, catalogDTO, createRuntime } = await import('../artifacts/pi-resolver.mjs')
+  const base = { runtime: 'pi', piConnection: { version: 1, mode: 'native', providerId: 'openrouter' }, model: 'openai/gpt-4o-mini', thinking: 'default', reasoningEffort: '', maxOutputTokens: 512 }
+  const [a, b] = await Promise.all([
+    resolveConnection({ ...base, baseUrl: 'http://127.0.0.1:1111/v1' }, 'connection-A'),
+    resolveConnection({ ...base, baseUrl: 'http://127.0.0.1:2222/v1' }, 'connection-B'),
+  ])
+  assert.equal(a.model.provider, 'openrouter'); assert.equal(a.model.baseUrl, 'http://127.0.0.1:1111/v1')
+  assert.equal(b.model.baseUrl, 'http://127.0.0.1:2222/v1')
+  const original = (await createRuntime()).getModel('openrouter', base.model)
+  assert.deepEqual(a.model.compat, original.compat)
+  assert.equal(a.model.contextWindow, original.contextWindow)
+  assert.equal(a.model.maxTokens, original.maxTokens)
+  assert.equal((await a.runtime.getAuth(a.model)).auth.apiKey, 'connection-A')
+  assert.equal((await b.runtime.getAuth(b.model)).auth.apiKey, 'connection-B')
+  const catalog = catalogDTO(a.runtime)
+  assert.ok(!JSON.stringify(catalog).includes('connection-A'))
+  assert.match(catalog.providers.find(p => p.id === 'amazon-bedrock').unavailableReason, /identity.*dependency/)
+  assert.match(catalog.providers.find(p => p.id === 'openai-codex').unavailableReason, /CLI/)
+  await assert.rejects(resolveConnection({ ...base, piConnection: { ...base.piConnection, providerId: 'amazon-bedrock' } }, 'key'), /identity/)
+})

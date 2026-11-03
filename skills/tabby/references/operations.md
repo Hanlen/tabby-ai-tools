@@ -1,5 +1,7 @@
 # Operation routes
 
+For custom AGENTS.md instructions or separate CLI history, guide the user to Settings → AI Tools → the selected connection → Instructions and sessions. Shared defaults can be overridden or disabled per connection. Previewing and saving perform no inference; new sessions read and freeze the chosen text/file, while existing snapshots remain usable. Codex/Claude Code private spaces keep native history separate from ordinary CLI use, use the same workspace and require their own authentication check. Generate the selected-space login command and let the user complete official authentication locally; never ask for a password/token in chat. Save space changes and reconnect only when idle to transfer the current conversation, or use `/new` to start fresh. Source histories remain in place; private storage does not grant an OS sandbox or additional tools. See the packaged instructions/session documentation for platform validation limits.
+
 | Task | Tools and verification |
 | --- | --- |
 | Find capabilities | `get_capabilities`, then `list_profiles`, `list_commands`, `list_hotkeys` as needed. Providers and commands are discovered on demand. |
@@ -103,4 +105,20 @@ API connections may select an isolated Pi SDK runtime. Since plugin 0.5.1, its S
 
 The user can run /compact on an idle API/Pi session. Summaries cost tokens and retain raw history; automatic compaction is opt-in. Preserve current user constraints, active skills, observed outcomes and pending workflow checkpoints. Neither a summary nor previous tool success substitutes for current terminal evidence. After interruption or an unknown action result, read the actual terminal before continuing; never replay a modifying operation merely to recover a lost response. Goal token budgets and host tool limits still apply during retries and summaries.
 
+
+
+## Pi configuration boundaries
+
+For Gemini/OpenRouter and supported native API-key providers, browse the offline SDK 1.4.0 directory without a key, then select the connection's explicit credential. Native protocol and model limits come from SDK metadata. Manual models require an explicit protocol, context window and maximum output capability; request output budget is separate. Custom protocols: OpenAI Chat Completions, Responses, Anthropic Messages, Google Generative AI. Native endpoints may be overridden without dropping SDK identity/metadata. Never equate catalog entries or local credential checks with account permission, quota or successful host-tool execution.
+
+Connection changes stay in a draft until Save; Discard cancels new profiles, Copy creates a separate ID with no thread references. Saved edits apply after an idle reconnect; running tasks retain their snapshot. Legacy fingerprints and Kimi Coding protocol patches remain intact. No automatic tool replay occurs on handoff. Bedrock/Vertex/cloud identity and OAuth adapters, advanced headers/import/export/network refresh remain pending. Custom AGENTS.md snapshots and private Codex/Claude history spaces are available through Settings.
+
 On Windows, leave the Codex CLI executable blank or set it to codex for automatic version selection. Discovery collects all PATH matches, desktop/standalone installs, user .local/bin and known/npm global prefix locations, comparing --version using semantic versions instead of file dates or hash names. Probes do not call a model; each has a 1.5-second/16-KiB limit, with four concurrent probes and cancellation cleanup. A valid version outranks failed/unknown probes; all unknown retains discovery order without guaranteeing newest. Each new connection rescans. An explicit stable OpenAI/Codex/bin directory compares only its child installations. Removed version-specific desktop paths recover within that same installation; existing explicit file paths and custom command names stay pinned. CLI freshness alone does not grant account model access.
+
+## File and image attachments
+
+Use attachment_list to find this conversation's local file IDs, attachment_upload for an explicit native SSH target and existing absolute parent directory, and attachment_download for a remote regular file. The plugin streams all chunks and verifies SHA-256; never copy base64 through model messages or repeated read_tab/send_input calls. The destination filename is private and unique. Downloads write only to the plugin cache, not model-selected local paths. Both directions are disabled in read-only mode. Use the same requestId for one operation; attachment_status observes it, attachment_cancel stops it. Running status may be queried after a bounded wait; missing acknowledgement or unknown requires remote inspection, not automatic resubmission.
+
+The target tab shows native progress; UI Attachments provides file previews, path/byte details and cancellation. Transports are SFTP, independent exec raw bytes, exec base64 and finally framed PTY base64 only in a verified idle Shell. Do not interrupt an existing Agent to force fallback. Paths and account belong to the outer SSH connection; confirm visibility for nested SSH, containers or sandboxed Agents. Copying a verified image path is not proof of visual input. This release does not automatically attach images to an existing Codex conversation or send them to the sidebar model. Remote uploads remain until explicitly removed; cached attachments can be removed in the panel. Restart does not replay transfers. See installed docs/attachments.md for limits, permissions and verification boundaries.
+
+Attachment transfer actions are not reusable workflow steps. Perform the transfer before /remember or a saved alias, and verify its resulting path as an explicit workflow prerequisite.
