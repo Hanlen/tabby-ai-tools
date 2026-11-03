@@ -74,20 +74,24 @@ require('readline').createInterface({input:process.stdin}).on('line',line=>{
   t.after(() => { try { process.kill(descendant, 'SIGKILL') } catch {} })
   await client.close()
   assert.ok(old.signalCode || old.exitCode !== null)
-  // A killed orphan can briefly remain as a zombie on Linux containers. It
-  // cannot execute work; on macOS and on reaping hosts ESRCH is sufficient.
-  let alive = true
-  try { process.kill(descendant, 0) } catch (error) { if (error.code === 'ESRCH') alive = false; else throw error }
-  if (alive && process.platform === 'linux') {
+  // SIGKILL delivery and orphan reaping are asynchronous. A stopped process
+  // can briefly remain runnable while the kernel finishes its exit transition.
+  // Wait for ESRCH or a Linux zombie; never accept a live descendant at timeout.
+  const deadline = Date.now() + 2000
+  while (true) {
     try {
-      const stat = fs.readFileSync(`/proc/${descendant}/stat`, 'utf8')
-      assert.match(stat.slice(stat.lastIndexOf(')') + 1), /^ Z /)
+      process.kill(descendant, 0)
+      if (process.platform === 'linux') {
+        const stat = fs.readFileSync(`/proc/${descendant}/stat`, 'utf8')
+        if (/^ [ZX] /.test(stat.slice(stat.lastIndexOf(')') + 1))) break
+      }
     } catch (error) {
-      // The kernel can reap the zombie after kill(pid, 0), or after opening
-      // /proc but before read(). Both ENOENT and ESRCH prove it is gone.
-      if (!['ENOENT', 'ESRCH'].includes(error.code)) throw error
+      if (['ENOENT', 'ESRCH'].includes(error.code)) break
+      throw error
     }
-  } else assert.equal(alive, false)
+    assert.ok(Date.now() < deadline, 'descendant must stop after process-group SIGKILL')
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
 })
 
 test('failed cleanup is reported and blocks starting another service', posix, async t => {
