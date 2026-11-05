@@ -2,6 +2,8 @@
 
 [← 返回 README](../README.md) · [使用指南](guide.md)
 
+粘贴、图片预览与附件传输回归直接运行 `npm run test:attachments`，无需切换 Node。`npm test` 自动包含这些用例；真正启动 Pi 的测试会检查当前 Node，低于 22.19 时显示明确的跳过原因。API 压缩测试使用独立的 API 夹具，不启动 Pi，也不因 Pi 的版本要求跳过。完整 Pi 集成验证仍由 Node 22.19+ 的开发环境／CI 执行；脚本不下载或切换运行时。
+
 后续供应商设置页改版尚未实现；规划和研究资料仅保留在本地，不随插件分发。功能与发布状态以实际代码和发布说明为准。
 
 v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
@@ -187,3 +189,7 @@ The scoped russh event-buffer retention adapter is adapted from [tabby-ai-worksp
 ### CLI 启动并发
 
 `CodexClient` 将缺省空间与 `system:codex` 视为同一连接身份，启动时冻结传给探测的空间，避免后台预连接被侧栏补充空间元数据时取消。后台运行时只报告最新连接尝试的错误。`ClaudeCodeAgent` 对相同 CLI、工作目录与空间的并发连接共享正在进行的就绪检查；替换、关闭和失败后允许重新检查。`test/client.test.js`、`test/runtime.test.js` 与 `test/claude-code.test.js` 覆盖这些竞态及取消／重试，不调用真实模型。
+
+## Terminal streams and task logs
+
+`terminal-stream.ts` owns stateful control filtering and scoped opaque tokens. `terminal-output.service.ts` rotates stream identity on session changes and publishes only privacy-filtered chunks. `terminal-log-store.ts` writes bounded private text segments with atomic manifests; `tab-tools.ts` owns capture lifecycle and read/search routing. Panel and scheduled bridges supply session-space/run-scoped identities. Continuation cursors pin the committed log boundary; reads do not execute or verify commands. See [terminal logs](terminal-logs.md) for limits and retention timing.

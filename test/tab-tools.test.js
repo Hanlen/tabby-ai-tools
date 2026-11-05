@@ -628,3 +628,111 @@ test('terminal identity exposes stable connection IDs, IP and actual cwd without
     assert.notEqual(changed.server.serverId, id, 'pane IDs are not stable server IDs')
   } finally { tools.ngOnDestroy() }
 })
+
+test('delta waits for output, paginates without repeats, rejects stale and cross-owner cursors', async () => {
+  const terminal = new FakeTerminal('Stream', [])
+  let text = '', stream = 's1'
+  const output = {
+    watch: () => 0, unwatch: () => {}, streamId: () => stream, cursor: () => text.length,
+    updates$: new Subject(), lifecycle$: new Subject(), isSuppressed: () => false,
+    readSince: (_tab, cursor, max) => ({ text: text.slice(cursor, cursor + max), cursor: Math.min(text.length, cursor + max), hasMore: cursor + max < text.length, truncated: false }),
+  }
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, output)
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id, context = { owner: 'a' }
+    const baseline = await tools.call('read_tab', { tabId, mode: 'delta' }, context)
+    const waiting = tools.call('read_tab', { tabId, mode: 'delta', cursor: baseline.nextCursor, waitMs: 10000, maxChars: 2 }, context)
+    text = 'abcd'; output.updates$.next(terminal)
+    const first = await waiting
+    assert.equal(first.text, 'ab'); assert.equal(first.wakeReason, 'output'); assert.equal(first.hasMore, true)
+    const second = await tools.call('read_tab', { tabId, mode: 'delta', cursor: first.nextCursor, maxChars: 2 }, context)
+    assert.equal(second.text, 'cd')
+    await assert.rejects(tools.call('read_tab', { tabId, mode: 'delta', cursor: first.nextCursor }, { owner: 'b' }), /unavailable/)
+    stream = 's2'
+    await assert.rejects(tools.call('read_tab', { tabId, mode: 'delta', cursor: first.nextCursor }, context), /session_changed/)
+    assert.equal(output.updates$.observers.length, 0)
+  } finally { tools.ngOnDestroy() }
+})
+
+test('delta cancellation cleans all wait listeners and sends no input', async () => {
+  const terminal = new FakeTerminal('Quiet', [])
+  const output = { watch: () => 0, unwatch: () => {}, streamId: () => 's', cursor: () => 0, updates$: new Subject(), lifecycle$: new Subject(), isSuppressed: () => false, readSince: () => ({ text: '', cursor: 0, hasMore: false, truncated: false }) }
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, output)
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id, controller = new AbortController(), context = { owner: 'a', signal: controller.signal }
+    const base = await tools.call('read_tab', { tabId, mode: 'delta' }, context)
+    const waiting = tools.call('read_tab', { tabId, mode: 'delta', cursor: base.nextCursor, waitMs: 10000 }, context)
+    controller.abort()
+    await assert.rejects(waiting, /stopped/)
+    assert.equal(output.updates$.observers.length, 0)
+    assert.equal(output.lifecycle$.observers.length, 1) // the service retains its own lifecycle subscription
+    assert.deepEqual(terminal.sent, [])
+  } finally { tools.ngOnDestroy() }
+})
+
+test('task logs persist only scoped captured output and remain readable after owner release', async t => {
+  const os = require('node:os'), path = require('node:path')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-log-tools-'))
+  const terminal = new FakeTerminal('Task', [])
+  let text = ''
+  const output = { watch: () => 0, unwatch: () => {}, streamId: () => 's', cursor: () => text.length, chunks$: new Subject(), updates$: new Subject(), lifecycle$: new Subject(), isSuppressed: () => false, readSince: (_tab, cursor, max) => ({ text: text.slice(cursor, cursor + max), cursor: Math.min(text.length, cursor + max), hasMore: cursor + max < text.length, truncated: false }) }
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, output, undefined, undefined, { getConfigPath: () => path.join(root, 'config.yaml') })
+  t.after(async () => { tools.ngOnDestroy(); await tools.logs.flush(); fs.rmSync(root, { recursive: true, force: true }) })
+  const tabId = (await tools.call('list_tabs', {}))[0].id, context = { owner: 'a', logScope: 'space:a' }
+  output.chunks$.next({ terminal, streamId: 's', text: 'before capture' })
+  await tools.call('read_tab', { tabId, mode: 'delta' }, context)
+  text = 'first needle last'
+  output.chunks$.next({ terminal, streamId: 's', text })
+  await tools.logs.flush()
+  const listed = await tools.call('list_logs', {}, context), logId = listed[0].logId
+  const page = await tools.call('read_log', { logId, maxChars: 5 }, context)
+  assert.equal(page.text, 'first')
+  const hits = await tools.call('search_log', { logId, query: 'needle' }, context)
+  assert.equal(hits.hits.length, 1); assert.equal(hits.partial, false)
+  await assert.rejects(tools.call('read_log', { logId }, { owner: 'b', logScope: 'space:b' }), /unavailable/)
+  tools.releaseOwner('a')
+  output.chunks$.next({ terminal, streamId: 's', text: 'after task' })
+  const remaining = await tools.call('read_log', { logId, cursor: page.nextCursor }, context)
+  assert.equal(remaining.text, ' needle last')
+  assert.equal(remaining.logState, 'sealed')
+})
+
+test('completion waits reject an old prompt and wake only for a newer completion', async () => {
+  const terminal = new FakeTerminal('Completion', [])
+  const output = { watch: () => 0, unwatch: () => {}, streamId: () => 's', cursor: () => 0, updates$: new Subject(), lifecycle$: new Subject(), isSuppressed: () => false, readSince: () => ({ text: '', cursor: 0, hasMore: false, truncated: false }) }
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, output)
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id, context = { owner: 'a' }
+    tools.completedCommands.set(terminal, terminal.session)
+    tools.completionRevisions.set(terminal, 1)
+    const base = await tools.call('read_tab', { tabId, mode: 'delta' }, context)
+    const unchanged = await tools.call('read_tab', { tabId, mode: 'delta', cursor: base.nextCursor, waitFor: 'completion', waitMs: 10 }, context)
+    assert.equal(unchanged.wakeReason, 'timeout')
+    const waiting = tools.call('read_tab', { tabId, mode: 'delta', cursor: base.nextCursor, waitFor: 'completion', waitMs: 10000 }, context)
+    tools.completionRevisions.set(terminal, 2); tools.controls$.next([])
+    assert.equal((await waiting).wakeReason, 'completion')
+    assert.deepEqual(terminal.sent, [])
+  } finally { tools.ngOnDestroy() }
+})
+
+test('delta reads inherit controlled-terminal default wait and preserve explicit zero and uncontrolled defaults', async () => {
+  const terminal = new FakeTerminal('Quiet', [])
+  const output = { watch: () => 0, unwatch: () => {}, streamId: () => 's', cursor: () => 0, updates$: new Subject(), lifecycle$: new Subject(), isSuppressed: () => false, readSince: () => ({ text: '', cursor: 0, hasMore: false, truncated: false }) }
+  const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, output)
+  try {
+    const tabId = (await tools.call('list_tabs', {}))[0].id, context = { owner: 'a' }
+    const base = await tools.call('read_tab', { tabId, mode: 'delta' }, context)
+    const waits = []
+    tools.waitStream = async (_tab, _start, ms) => { waits.push(ms); return 'timeout' }
+    const args = { tabId, mode: 'delta', cursor: base.nextCursor }
+    assert.equal((await tools.call('read_tab', args, context)).wakeReason, 'immediate')
+    tools.lock(terminal, 'a', 'quiet command')
+    assert.equal((await tools.call('read_tab', args, context)).wakeReason, 'timeout')
+    assert.deepEqual(waits, [1000])
+    assert.equal((await tools.call('read_tab', { ...args, waitMs: 0 }, context)).wakeReason, 'immediate')
+    await tools.call('read_tab', { ...args, waitMs: 2500 }, context)
+    assert.deepEqual(waits, [1000, 2500])
+    assert.equal(args.waitMs, undefined, 'resolved defaults must not mutate caller arguments')
+    tools.release(terminal)
+  } finally { tools.ngOnDestroy() }
+})

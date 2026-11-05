@@ -1,6 +1,6 @@
 # Files, clipboard images and SSH transfers
 
-Paste a screenshot or copied file directly into the AI Tools composer with **Ctrl+V** (**Cmd+V** on macOS), or drag files into it. Attachments appear inline above the input with their name, size and a remove button; pasted images show thumbnails. There is no attachment button or transfer popup. Plain text pastes normally.
+Paste a screenshot or copied file directly into the AI Tools composer with **Ctrl+V** (**Cmd+V** on macOS), or drag files into it. Attachments appear inline above the input with their name, size and a remove button; pasted images show thumbnails. Click a thumbnail (or focus it and press Enter/Space) to open a larger image preview, sized to the window. Press Esc, use the close button or click the backdrop to close it and return focus to the thumbnail. Changing conversations or removing the attachment closes its preview. Plain text pastes normally.
 
 For SSH uploads and downloads, ask the assistant to use the attachment tools with the exact connected native SSH terminal and an existing absolute upload parent directory (default `/tmp` on POSIX servers). The plugin creates a unique private subdirectory and never overwrites an existing project file. Downloads require the remote file's absolute path and are stored in the attachment cache. Query transfer status or request cancellation through the assistant; the target tab also shows Tabby's native progress bar. Integrity verification finishes before an operation reports success. Closing the sidebar does not stop a transfer.
 

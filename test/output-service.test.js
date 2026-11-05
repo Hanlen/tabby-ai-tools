@@ -99,3 +99,22 @@ test('same-directory recovery binds only an unambiguous terminal', async () => {
   app.tabs = [first]
   assert.equal(await service.findSource('/project'), first)
 })
+
+test('changing sessions starts a fresh stream and filtered chunks exclude attachment bytes', () => {
+  const terminal = new FakeTerminal('/project'), service = new CodexTerminalOutputService({ tabs: [terminal] })
+  service.watch(terminal)
+  const stream = service.streamId(terminal), chunks = []
+  const subscription = service.chunks$.subscribe(chunk => chunks.push(chunk.text))
+  terminal.session.output$.next('old')
+  const release = service.suppress(terminal)
+  terminal.session.output$.next('PRIVATE_PAYLOAD')
+  release()
+  terminal.session = { output$: new Subject(), getWorkingDirectory: async () => '/project' }
+  terminal.sessionChanged$.next(terminal.session)
+  assert.notEqual(service.streamId(terminal), stream)
+  assert.equal(service.cursor(terminal), 0)
+  terminal.session.output$.next('new')
+  assert.equal(service.readSince(terminal, 0, 100).text, 'new')
+  assert.deepEqual(chunks, ['old', 'new'])
+  subscription.unsubscribe(); service.unwatch(terminal)
+})

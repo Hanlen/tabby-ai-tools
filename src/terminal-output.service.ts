@@ -2,18 +2,14 @@ import { Injectable } from '@angular/core'
 import { AppService, SplitTabComponent } from 'tabby-core'
 import { BaseTerminalTabComponent, BaseSession } from 'tabby-terminal'
 import { Subject, Subscription } from 'rxjs'
+import { randomBytes } from 'crypto'
+import { TerminalTextFilter } from './terminal-stream'
 import { IncrementalOutputBuffer, OutputSlice } from './output-buffer'
 
-function cleanOutput (chunk: string): string {
-  return chunk
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-_]/g, '')
-    .replace(/\r(?!\n)/g, '\n')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
-}
-
 interface WatchedTerminal {
+  streamId: string
+  closed: boolean
+  filter: TerminalTextFilter
   users: number
   buffer: IncrementalOutputBuffer
   sessionSubscription?: Subscription
@@ -24,6 +20,8 @@ interface WatchedTerminal {
 /** Subscribes only to terminals explicitly bound to an AI tab. */
 @Injectable()
 export class CodexTerminalOutputService {
+  readonly chunks$ = new Subject<{ terminal: BaseTerminalTabComponent<any>; streamId: string; text: string }>()
+  readonly lifecycle$ = new Subject<BaseTerminalTabComponent<any>>()
   readonly updates$ = new Subject<BaseTerminalTabComponent<any>>()
   private watched = new Map<BaseTerminalTabComponent<any>, WatchedTerminal>()
   private suppressed = new Map<BaseTerminalTabComponent<any>, number>()
@@ -48,11 +46,13 @@ export class CodexTerminalOutputService {
   isSuppressed (terminal: BaseTerminalTabComponent<any>): boolean { return !!this.suppressed.get(terminal) }
   suppress (terminal: BaseTerminalTabComponent<any>): () => void {
     const session = terminal.session
+    this.watched.get(terminal)?.filter.reset()
     let released = false
     this.suppressed.set(terminal, (this.suppressed.get(terminal) || 0) + 1)
     return () => {
       if (released || terminal.session !== session) return
       released = true
+      this.watched.get(terminal)?.filter.reset()
       const remaining = (this.suppressed.get(terminal) || 1) - 1
       if (remaining) this.suppressed.set(terminal, remaining); else this.suppressed.delete(terminal)
       const view = this.privateViews.get(terminal)
@@ -85,28 +85,50 @@ export class CodexTerminalOutputService {
       return existing.buffer.cursor
     }
     const state: WatchedTerminal = {
+      streamId: randomBytes(16).toString('hex'), closed: false, filter: new TerminalTextFilter(),
       users: 1,
-      buffer: new IncrementalOutputBuffer(),
+      buffer: new IncrementalOutputBuffer(256 * 1024),
       changeSubscription: new Subscription(),
     }
     const attachSession = (session: BaseSession | null) => {
-      if (state.session !== session) { this.suppressed.delete(terminal); this.privateViews.delete(terminal) }
+      if (state.session !== session) {
+        this.suppressed.delete(terminal); this.privateViews.delete(terminal)
+        state.buffer = new IncrementalOutputBuffer(256 * 1024)
+        state.streamId = randomBytes(16).toString('hex'); state.filter.reset()
+      }
       state.session = session
+      state.closed = !session
       state.sessionSubscription?.unsubscribe()
-      state.sessionSubscription = session?.output$.subscribe(chunk => {
-        if (this.isSuppressed(terminal)) return
-        const text = cleanOutput(chunk)
+      this.lifecycle$.next(terminal)
+      state.sessionSubscription = new Subscription()
+      state.sessionSubscription.add(session?.output$.subscribe(chunk => {
+        if (state.closed || this.isSuppressed(terminal)) return
+        const text = state.filter.feed(String(chunk))
         if (text) {
           state.buffer.append(text)
+          let excess = [...this.watched.values()].reduce((sum, item) => sum + item.buffer.size, 0) - 8 * 1024 * 1024
+          for (const item of this.watched.values()) {
+            if (excess <= 0) break
+            const drop = Math.min(excess, item.buffer.size)
+            item.buffer.trimTo(item.buffer.size - drop); excess -= drop
+          }
+          this.chunks$.next({ terminal, streamId: state.streamId, text })
           this.updates$.next(terminal)
         }
-      })
+      }))
+      const closed = () => { state.closed = true; this.lifecycle$.next(terminal) }
+      state.sessionSubscription.add(session?.closed$?.subscribe(closed))
+      state.sessionSubscription.add(session?.destroyed$?.subscribe(closed))
     }
     this.watched.set(terminal, state)
-    state.changeSubscription = terminal.sessionChanged$.subscribe(attachSession)
+    state.changeSubscription.add(terminal.sessionChanged$.subscribe(attachSession))
     attachSession(terminal.session)
     return state.buffer.cursor
   }
+
+  isClosed (terminal: BaseTerminalTabComponent<any>): boolean { return this.watched.get(terminal)?.closed ?? true }
+
+  streamId (terminal: BaseTerminalTabComponent<any>): string { return this.watched.get(terminal)?.streamId || '' }
 
   unwatch (terminal: BaseTerminalTabComponent<any>): void {
     const state = this.watched.get(terminal)
@@ -114,6 +136,7 @@ export class CodexTerminalOutputService {
     state.changeSubscription.unsubscribe()
     state.sessionSubscription?.unsubscribe()
     this.watched.delete(terminal)
+    this.lifecycle$.next(terminal)
     this.suppressed.delete(terminal)
     this.privateViews.delete(terminal)
   }

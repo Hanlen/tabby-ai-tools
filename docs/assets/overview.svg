@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1900" viewBox="0 0 1800 1900" role="img" aria-labelledby="title desc">
-<title id="title">Tabby AI Tools v0.8.2 interface illustration — conditional interactive workflows, helper models, local login and API connections</title>
-<desc id="desc">Shared Codex/Claude CLI discovery prevents startup cancellation races; clipboard attachments with inline previews and native tab progress; custom instructions/private CLI session spaces and Pi configuration: native provider search, offline SDK 1.4.0 catalog, four custom protocols and Save/Discard/Copy drafts. Interface illustration, not a running screenshot. Windows default Codex discovery compares actual CLI versions across PATH and desktop/standalone installations; a stable directory limits selection to its own children. Conditional recordings preserve interaction intent; local rules run first, with an optional current-connection helper model and rebind-before-resume checkpoints. Settings use two-row connection cards and editor summaries, compact headings and full-page scrolling for connections, workflows/preferences and scheduled tasks, with no fixed-height editor. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. Thinking and tool calls appear as collapsed conversation entries that can be expanded. Terminal reads return early after reliable shell completion. Terminal output is read on demand without automatic forwarding; a completed explicit recording and a saved workflow alias are shown. Archive status distinguishes successful checkpoints from successful persistence. Pi runtime settings show the built-in runtime and an optional Node override, host-only tools and opt-in automatic context compaction. The provider list includes Kimi and Alibaba Cloud Coding Plan connections. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. Version 0.8.2 example with optional Pi SDK runtime, built-in Node 22.19+, manual context compaction and structured retry waiting.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2060" viewBox="0 0 1800 2060" role="img" aria-labelledby="title desc">
+<title id="title">Tabby AI Tools v0.9.0 interface illustration — conditional interactive workflows, helper models, local login and API connections</title>
+<desc id="desc">Shared Codex/Claude CLI discovery prevents startup cancellation races; clipboard attachments with clickable thumbnails and larger image previews and native tab progress; custom instructions/private CLI session spaces and Pi configuration: native provider search, offline SDK 1.4.0 catalog, four custom protocols and Save/Discard/Copy drafts. Interface illustration, not a running screenshot. Windows default Codex discovery compares actual CLI versions across PATH and desktop/standalone installations; a stable directory limits selection to its own children. Conditional recordings preserve interaction intent; local rules run first, with an optional current-connection helper model and rebind-before-resume checkpoints. Settings use two-row connection cards and editor summaries, compact headings and full-page scrolling for connections, workflows/preferences and scheduled tasks, with no fixed-height editor. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. Thinking and tool calls appear as collapsed conversation entries that can be expanded. Terminal reads return early after reliable shell completion. Terminal output is read on demand without automatic forwarding; a completed explicit recording and a saved workflow alias are shown. Archive status distinguishes successful checkpoints from successful persistence. Pi runtime settings show the built-in runtime and an optional Node override, host-only tools and opt-in automatic context compaction. The provider list includes Kimi and Alibaba Cloud Coding Plan connections. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. Version 0.9.0 example with optional Pi SDK runtime, built-in Node 22.19+, manual context compaction and structured retry waiting.</desc>
 <defs>
 <linearGradient id="background" x2="1" y2="1"><stop stop-color="#0c1622"/><stop offset="1" stop-color="#151729"/></linearGradient>
 <linearGradient id="outline"><stop stop-color="#375d5d"/><stop offset="1" stop-color="#3b3d5c"/></linearGradient>
@@ -10,12 +10,12 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 .mono{font-family:"DejaVu Sans Mono",monospace}
 </style>
 
-<rect x="0" y="0" width="1800" height="1900" rx="24" fill="url(#background)"/>
+<rect x="0" y="0" width="1800" height="2060" rx="24" fill="url(#background)"/>
 <rect x="48" y="38" width="42" height="38" rx="10" fill="#173a33" stroke="#306355"/>
 <text x="56" y="65" font-size="23" font-weight="700" style="fill:#8ae6c2" class="mono">&gt;_</text>
 <text x="106" y="66" font-size="21" font-weight="700" style="fill:#a7b8cb">TABBY AI TOOLS</text>
 <rect x="1534" y="44" width="218" height="28" rx="6" fill="#22313f"/>
-<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">v0.8.2 / CLI startup</text>
+<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">v0.9.0 / Task logs</text>
 <text x="48" y="134" font-size="54" font-weight="700" style="fill:#f1f6ff">Your terminals. Working together.</text>
 <text x="50" y="176" font-size="23" font-weight="400" style="fill:#a7b8cb">Codex + Claude Code + APIs + optional Pi SDK  /  Terminal tools  /  Scheduled AI tasks</text>
 <rect x="48" y="210" width="1704" height="632" rx="14" fill="#0d1520" stroke="url(#outline)"/>
@@ -185,16 +185,21 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="1124" y="1470" font-size="16">Login command / Check login / Save space</text>
 <text x="1124" y="1507" font-size="16" style="fill:#8ae6c2">Same workspace · Original histories retained</text>
 <rect x="48" y="1562" width="1704" height="248" rx="12" fill="#172130" stroke="#35475c"/>
-<text x="72" y="1596" font-size="22" font-weight="650">Clipboard attachments / inline preview example</text>
+<text x="72" y="1596" font-size="22" font-weight="650">Clipboard attachments / click-to-preview example</text>
 <rect x="72" y="1620" width="72" height="72" rx="8" fill="#243247" stroke="#4c657f"/>
 <path d="M85 1677L103 1655L117 1668L131 1647" fill="none" stroke="#8ae6c2" stroke-width="4"/>
 <text x="164" y="1645" font-size="19">screenshot.png · 128 KiB                       ×</text>
-<text x="164" y="1676" font-size="16" style="fill:#a7b8cb">Ctrl+V / Cmd+V in composer · image thumbnail · remove inline</text>
+<text x="164" y="1676" font-size="16" style="fill:#a7b8cb">Ctrl+V / Cmd+V · Click thumbnail to enlarge · Esc to close</text>
 <rect x="72" y="1714" width="1010" height="10" rx="5" fill="#263a4e"/>
 <rect x="72" y="1714" width="686" height="10" rx="5" fill="#8ae6c2"/>
 <text x="1110" y="1724" font-size="18" style="fill:#8ae6c2">68% · Native target-tab progress</text>
 <text x="72" y="1760" font-size="16" style="fill:#a7b8cb">SFTP → independent exec → base64 fallback · SHA-256 verification · Ask assistant for status / cancel / path</text>
 <text x="72" y="1790" font-size="15" style="fill:#a7b8cb">Upload is separate from attaching an image to Codex. Sidebar model visual input is not included.</text>
-<text x="49" y="1846" font-size="16" font-weight="400" style="fill:#8ca0b8">INTERFACE ILLUSTRATION · Example connections and task output; not a running screenshot.</text>
-<text x="49" y="1871" font-size="14" font-weight="400" style="fill:#8ca0b8">Appearance varies with your Tabby theme, window size and configured connections.</text>
+<text x="49" y="2000" font-size="16" font-weight="400" style="fill:#8ca0b8">INTERFACE ILLUSTRATION · Example connections and task output; not a running screenshot.</text>
+<text x="49" y="2031" font-size="14" font-weight="400" style="fill:#8ca0b8">Appearance varies with your Tabby theme, window size and configured connections.</text>
+<rect x="48" y="1830" width="1704" height="145" rx="12" fill="#172130" stroke="#35475c"/>
+<text x="72" y="1866" font-size="22" font-weight="650">Incremental output and task logs — example</text>
+<text x="72" y="1901" font-size="17" fill="#a7b8cb">Cursor pages · Wait for output / completion · Fresh screen before interaction</text>
+<text x="72" y="1934" font-size="17" fill="#8ae6c2">Settings: Save task terminal logs · Local retention · Paging and literal search</text>
+<text x="72" y="1960" font-size="15" fill="#a7b8cb">Session-scoped logs · Partial / interrupted states · Saving does not verify command success</text>
 </svg>

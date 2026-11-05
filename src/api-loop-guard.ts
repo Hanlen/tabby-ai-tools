@@ -66,7 +66,8 @@ export class ApiToolLoopGuard {
   record (call: ModelToolCall, output: ToolResult): ToolLoopEvidence | undefined {
     const args = argumentsFor(call)
     let result = parsed(output.result)
-    if (call.name === 'read_tab' && typeof args?.tabId === 'string' && typeof result?.text === 'string') {
+    if (call.name === 'read_tab' && args?.mode === 'delta' && result?.text === '' && result?.commandState !== 'prompt') { this.state.observations = []; return undefined }
+    if (call.name === 'read_tab' && args?.mode !== 'delta' && typeof args?.tabId === 'string' && typeof result?.text === 'string') {
       const current = result.text.replace(/\r\n/g, '\n').trimEnd()
       const previous = Object.prototype.hasOwnProperty.call(this.state.reads, args.tabId) ? this.state.reads[args.tabId] : undefined
       const delta = newOutput(previous, current)

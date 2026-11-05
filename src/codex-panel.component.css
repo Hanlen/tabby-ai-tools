@@ -170,4 +170,13 @@
 .codex-attachment-info small { margin: 0; }
 .codex-attachment-card img { flex: 0 0 64px; width: 64px; height: 64px; object-fit: contain; border-radius: 4px; }
 .codex-attachment-card button { flex-shrink: 0; min-width: 32px; min-height: 32px; }
+.codex-attachment-thumbnail { padding: 0; border: 0; border-radius: 4px; background: transparent; cursor: zoom-in; }
+.codex-attachment-thumbnail:focus-visible, .codex-image-preview button:focus-visible { outline: 2px solid var(--theme-fg, currentColor); outline-offset: 3px; }
+.codex-image-preview { box-sizing: border-box; width: max-content; max-width: 90vw; max-height: 90vh; padding: 12px; border: 1px solid var(--theme-fg-more, #777); border-radius: 8px; background: var(--theme-bg, #222); color: var(--theme-fg, #eee); overflow: auto; }
+.codex-image-preview::backdrop { background: rgba(0, 0, 0, .7); }
+.codex-image-preview-content { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.codex-image-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.codex-image-preview-heading strong { min-width: 0; overflow-wrap: anywhere; }
+.codex-image-preview-heading button { flex-shrink: 0; min-width: 36px; min-height: 36px; }
+.codex-image-preview-content > img { display: block; max-width: 100%; max-height: calc(90vh - 100px); width: auto; height: auto; object-fit: contain; align-self: center; }
 @container (max-width:360px) { .codex-compose-toolbar { flex-wrap: wrap; } .codex-compose-actions { margin-inline-start: auto; flex-wrap: wrap; } }
