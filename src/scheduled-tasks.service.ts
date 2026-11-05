@@ -247,7 +247,7 @@ export class ScheduledTasksService implements OnDestroy {
             if (decision.profile) Object.assign(decision.profile, { model: task.settings.model, reasoningEffort: task.settings.reasoningEffort })
             return decision
           },
-          call: (name, args, context) => this.tabs.call(name, args, context), release: owner => this.tabs.releaseOwner(owner),
+          call: (name, args, context) => this.tabs.call(name, args, { ...context, logScope: JSON.stringify([task.profileId, claim.run.id, context.owner]) }), release: owner => this.tabs.releaseOwner(owner),
           close: () => backend.client.close(),
           approval: approval => this.approvals$.next(approval),
         })

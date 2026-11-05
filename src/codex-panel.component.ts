@@ -64,24 +64,44 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   attachmentBusy = false
   attachmentItems: Attachment[] = []
   attachmentPreviews = new Map<string, string>()
+  previewAttachment?: Attachment
+  @ViewChild('attachmentPreviewDialog') private attachmentPreviewDialog?: ElementRef<HTMLDialogElement>
   private attachmentSubscription?: Subscription
   private attachmentPreviewPending = new Set<string>()
   private attachmentsDestroyed = false
 
   private refreshAttachments (): void {
-    if (!this.attachments || !this.threadId) { this.attachmentItems = []; return }
     const owner = this.threadId
-    try { this.attachmentItems = this.attachments.list(owner) }
-    catch (error: any) { this.attachmentItems = []; this.attachmentError = error.message; return }
+    try { this.attachmentItems = this.attachments && owner ? this.attachments.list(owner) : [] }
+    catch (error: any) { this.attachmentItems = []; this.attachmentError = error.message }
+    const ids = new Set(this.attachmentItems.map(item => item.id))
+    if (this.previewAttachment && !ids.has(this.previewAttachment.id)) this.closeAttachmentPreview()
+    for (const [id, url] of this.attachmentPreviews) {
+      if (!ids.has(id)) { URL.revokeObjectURL(url); this.attachmentPreviews.delete(id) }
+    }
+    if (!this.attachments) return
     for (const item of this.attachmentItems) {
       if (!item.mime.startsWith('image/') || this.attachmentPreviews.has(item.id) || this.attachmentPreviewPending.has(item.id)) continue
       this.attachmentPreviewPending.add(item.id)
       void this.attachments.preview(owner, item.id).then(preview => {
-        if (!preview || this.attachmentsDestroyed || this.threadId !== owner || !this.attachmentItems.some(file => file.id === item.id)) return
+        if (!preview || this.attachmentsDestroyed || this.threadId !== owner || this.attachmentPreviews.has(item.id) || !this.attachmentItems.some(file => file.id === item.id)) return
         this.zone.run(() => { this.attachmentPreviews.set(item.id, preview); this.changeDetector?.detectChanges() })
       }).catch(() => { /* A missing preview must not prevent removing a cached attachment. */ })
         .finally(() => this.attachmentPreviewPending.delete(item.id))
     }
+  }
+
+  openAttachmentPreview (file: Attachment): void {
+    const dialog = this.attachmentPreviewDialog?.nativeElement
+    if (!dialog || !this.attachmentItems.some(item => item.id === file.id) || !this.attachmentPreviews.has(file.id)) return
+    this.previewAttachment = file
+    this.changeDetector?.detectChanges()
+    if (!dialog.open) dialog.showModal()
+  }
+
+  closeAttachmentPreview (): void {
+    this.attachmentPreviewDialog?.nativeElement.close()
+    this.previewAttachment = undefined
   }
 
   onAttachmentPaste (event: ClipboardEvent): void {
@@ -115,10 +135,17 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           } finally { URL.revokeObjectURL(url) }
         }
         const item = await this.attachments.stage(owner, file.name || 'clipboard.png', file.type, new Uint8Array(await file.arrayBuffer()))
-        if (file.type.startsWith('image/')) this.attachmentPreviews.set(item.id, URL.createObjectURL(file))
+        if (file.type.startsWith('image/') && !this.attachmentsDestroyed && this.threadId === owner) {
+          const previous = this.attachmentPreviews.get(item.id)
+          if (previous) URL.revokeObjectURL(previous)
+          this.attachmentPreviews.set(item.id, URL.createObjectURL(file))
+        }
       }
     } catch (error: any) { this.attachmentError = error.message }
-    finally { this.refreshAttachments(); this.attachmentBusy = false; this.changeDetector?.detectChanges() }
+    finally {
+      this.attachmentBusy = false
+      if (!this.attachmentsDestroyed) { this.refreshAttachments(); this.changeDetector?.detectChanges() }
+    }
   }
 
   async removeAttachment (id: string): Promise<void> {
@@ -201,6 +228,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   sessionTotalTokens: number | null = null
   private latestTurnStatus = ''
   private outputCursor = 0
+  private outputStreamId = ''
   private retrySnapshot?: TurnRetryState
   private retryTimer?: ReturnType<typeof setInterval>
   get retryState (): TurnRetryState | undefined { return this.retrySnapshot }
@@ -893,6 +921,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (this.sourceTerminal && this.sourceBound) this.terminalOutput.unwatch(this.sourceTerminal)
     this.sourceTerminal = terminal
     this.outputCursor = this.terminalOutput.watch(terminal)
+    this.outputStreamId = this.terminalOutput.streamId?.(terminal) || ''
     this.sourceBound = true
     this.allowSourceRecovery = true
     this.outputNotice = ''
@@ -915,6 +944,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   private readOutput (maxChars: number): { message: string; cursor: number; length: number; hasMore: boolean } {
     if (!this.sourceTerminal) return { message: '', cursor: this.outputCursor, length: 0, hasMore: false }
+    const stream = this.terminalOutput.streamId?.(this.sourceTerminal) || ''
+    if (stream !== this.outputStreamId) { this.outputCursor = 0; this.outputStreamId = stream }
     const slice = this.terminalOutput.readSince(this.sourceTerminal, this.outputCursor, maxChars)
     return {
       message: slice.text || slice.truncated ? outputMessage(slice.text, slice.truncated) : '',
@@ -1430,7 +1461,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
             if (library && write) { library.markAction(owner, token, name, args); await library.persistRun(owner) }
             try {
               if (signal?.aborted || this.threadId !== owner || this.codex !== backend) throw new Error('流程已停止或切换')
-              const result = await this.tabTools.call(name, args, { owner, signal, sudoLease: this.sudoWorkflow, readOnly: settings.sandbox === 'read-only' })
+              const result = await this.tabTools.call(name, args, { owner, logScope: JSON.stringify([backend.sessionSpace?.key || profileId || 'default', owner]), signal, sudoLease: this.sudoWorkflow, readOnly: settings.sandbox === 'read-only' })
               if (memory?.enabled) library?.record(owner, token, name, args, result)
               if (library && write) { library.clearAction(owner, token); await library.persistRun(owner) }
               return result
@@ -1817,8 +1848,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy (): void {
     this.attachmentsDestroyed = true
+    this.closeAttachmentPreview()
     this.attachmentSubscription?.unsubscribe()
     for (const url of this.attachmentPreviews.values()) URL.revokeObjectURL(url)
+    this.attachmentPreviews.clear()
     this.retryState = undefined
     this.scheduleSubscriptions.unsubscribe()
     this.agents?.memory?.activeLibrary?.forgetRun(this.threadId)

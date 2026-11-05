@@ -987,5 +987,10 @@
   "无法读取图片": "Unable to read image",
   "只读模式禁止附件传输": "Attachment transfers are disabled in read-only mode",
   "请从详情复制远端路径": "Copy the remote path from the transfer details",
-  "保存到本机": "Save locally"
+  "保存到本机": "Save locally",
+  "图片预览": "चित्र पूर्वावलोकन",
+  "关闭图片预览": "चित्र पूर्वावलोकन बंद करें",
+  "预览图片：{0}": "चित्र का पूर्वावलोकन: {0}",
+  "保存任务终端日志": "Save task terminal logs",
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving."
 }

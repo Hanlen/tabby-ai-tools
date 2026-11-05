@@ -28,6 +28,7 @@ export interface AgentSettings {
   tabToolVersions?: Record<string, number>
   defaultProfileId?: string
   apiProfiles?: ApiProfile[]
+  terminalLogsEnabled?: boolean
   taskMemoryEnabled?: boolean
   openOnStartup?: boolean
   language?: string
@@ -52,6 +53,7 @@ export class CodexConfigProvider extends ConfigProvider {
       tabToolVersions: {},
       defaultProfileId: '',
       apiProfiles: [],
+      terminalLogsEnabled: true,
       taskMemoryEnabled: true,
       // Tabby must retain mutations to this dynamic per-connection dictionary.
       workflowHelpers: { __nonStructural: true } as unknown as NonNullable<AgentSettings['workflowHelpers']>,

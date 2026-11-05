@@ -1,4 +1,10 @@
 .codex-agent([attr.dir]='direction', [attr.lang]='languageCode')
+  dialog.codex-image-preview(#attachmentPreviewDialog, [attr.aria-label]='t("图片预览")', (cancel)='$event.preventDefault(); closeAttachmentPreview()', (click)='$event.target === $event.currentTarget && closeAttachmentPreview()', (keydown)='$event.stopPropagation()', (close)='previewAttachment = undefined')
+    .codex-image-preview-content(*ngIf='previewAttachment')
+      .codex-image-preview-heading
+        strong {{previewAttachment.name}}
+        button.btn.btn-outline-secondary(type='button', autofocus, (click)='closeAttachmentPreview()', [attr.aria-label]='t("关闭图片预览")') ×
+      img([src]='attachmentPreviews.get(previewAttachment.id)', [alt]='previewAttachment.name')
   .codex-header
     .codex-heading
       strong {{agentLabel}}
@@ -267,7 +273,8 @@
       button.btn.btn-link.btn-sm(type='button', *ngIf='pendingModel', (click)='pendingModel = undefined', [disabled]='modelSaving') {{t("返回模型列表")}}
     .codex-attachments(*ngIf='attachmentItems.length', [attr.aria-label]='t("文件与图片附件")')
       .codex-attachment-card(*ngFor='let file of attachmentItems')
-        img(*ngIf='attachmentPreviews.get(file.id)', [src]='attachmentPreviews.get(file.id)', [alt]='file.name', width='64', height='64')
+        button.codex-attachment-thumbnail(type='button', *ngIf='attachmentPreviews.get(file.id)', (click)='openAttachmentPreview(file)', [attr.aria-label]='t("预览图片：{0}", [file.name])', [attr.title]='t("预览图片：{0}", [file.name])', aria-haspopup='dialog')
+          img([src]='attachmentPreviews.get(file.id)', [alt]='file.name', width='64', height='64')
         .codex-attachment-info
           span {{file.name}}
           small {{(file.size / 1024).toFixed(1)}} KiB

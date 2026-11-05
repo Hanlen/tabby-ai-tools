@@ -21,7 +21,11 @@ const { compactionBoundary, contextHash, projectApiContext } = require('../src/a
 const { ApiAgent } = require('../src/api-agent.ts')
 Module._load = originalLoad
 const [major, minor] = process.versions.node.split('.').map(Number)
-const integration = major > 22 || major === 22 && minor >= 19 ? test : test.skip
+function integration (name, options, run) {
+  if (typeof options === 'function') { run = options; options = {} }
+  const skip = major > 22 || major === 22 && minor >= 19 ? false : `Pi requires Node >=22.19.0; current Node is ${process.versions.node}`
+  return test(name, { ...options, skip }, run)
+}
 const settings = { sandbox: 'workspace-write', approvalPolicy: 'never', goalTokenBudget: 0, cwd: process.cwd() }
 const finished = agent => new Promise(resolve => {
   const handler = event => { if (event.method === 'turn/completed') { agent.off('event', handler); resolve(event.params.turn) } }
@@ -87,7 +91,7 @@ integration('packaged Pi sidecar works outside the repository without installed 
   assert.equal(f.requests.length, 2)
   assert.deepEqual(f.requests[0].body.tools.map(tool => tool.function.name), ['fixture_probe'])
 })
-async function fixture (t, handler, overrides = {}) {
+async function fixture (t, handler, overrides = {}, Backend = PiBackend) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-pi 中文 space-'))
   const store = new AgentStore(root)
   const requests = []
@@ -101,7 +105,7 @@ async function fixture (t, handler, overrides = {}) {
   const profile = { id: 'pi-fixture', name: 'Pi fixture', runtime: 'pi', provider: 'custom', apiFormat: 'chat-completions', keySource: 'none',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: 'fixture', thinking: 'disabled', reasoningEffort: '',
     contextWindow: 8000, maxOutputTokens: 512, maxIterations: 0, piNodeExecutable: process.execPath, threads: {}, ...overrides }
-  const agent = new PiBackend(profile, store, async () => profile.keySource === 'none' ? '' : 'fixture-key')
+  const agent = new Backend(profile, store, async () => profile.keySource === 'none' ? '' : 'fixture-key')
   t.after(async () => { agent.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true }) })
   await agent.connect(settings)
   return { root, store, profile, agent, requests }
@@ -289,10 +293,8 @@ integration('Pi real HTTP: policy denial remains in durable history and no host 
 })
 
 test('API manual compaction preserves tool batches and raw history across reload', async t => {
-  const f = await fixture(t, (_req, res) => reply(res, 'Preserved constraints, pending step 2, both tool results.'))
-  const api = new ApiAgent({ ...f.profile, runtime: undefined }, f.store, async () => '')
-  t.after(() => api.close())
-  await api.connect(settings)
+  const f = await fixture(t, (_req, res) => reply(res, 'Preserved constraints, pending step 2, both tool results.'), { runtime: undefined }, ApiAgent)
+  const api = f.agent
   const id = await api.openThread(process.cwd(), settings)
   const saved = await f.store.load(id)
   saved.messages = [{ role: 'user', content: 'constraint' }, { role: 'assistant', tool_calls: [{ id: 'a', type: 'function', function: { name: 'list_tabs', arguments: '{}' } }] },
@@ -466,10 +468,8 @@ integration('empty Pi /compact makes no inference request and leaves the next re
 })
 
 test('API automatic compaction spends its summary budget before any subsequent inference or tool', async t => {
-  const f = await fixture(t, (_req, res) => reply(res, 'Earlier constraints and pending checkpoint retained.'))
-  const api = new ApiAgent({ ...f.profile, runtime: undefined, autoCompact: true, contextWindow: 100 }, f.store, async () => '')
-  t.after(() => api.close())
-  await api.connect(settings)
+  const f = await fixture(t, (_req, res) => reply(res, 'Earlier constraints and pending checkpoint retained.'), { runtime: undefined, autoCompact: true, contextWindow: 100 }, ApiAgent)
+  const api = f.agent
   const id = await api.openThread(process.cwd(), settings)
   const saved = await f.store.load(id)
   saved.messages = [{ role: 'user', content: 'original constraints '.repeat(100) }, { role: 'assistant', content: 'observed' },

@@ -24,6 +24,11 @@
     select#agent-language.form-control([ngModel]='settings.language || "auto"', (ngModelChange)='settings.language = $event; save()', aria-describedby='agent-language-hint')
       option(value='auto') {{t("跟随 Tabby")}}
       option(*ngFor='let language of languages', [value]='language.code', [attr.lang]='language.code') {{language.name}}
+  .settings-default
+    .settings-default-label
+      label(for='agent-terminal-logs') {{t("保存任务终端日志")}}
+      span#agent-terminal-logs-hint.settings-muted {{t("仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。")}}
+    input#agent-terminal-logs(type='checkbox', [(ngModel)]='settings.terminalLogsEnabled', (ngModelChange)='save()', aria-describedby='agent-terminal-logs-hint')
   p.settings-notice(role='status', *ngIf='notice') {{t(notice)}}
   .settings-workspace
     nav.connection-nav([attr.aria-label]='t("AI 连接列表")')

@@ -1,10 +1,13 @@
 import { Injectable, OnDestroy } from '@angular/core'
-import { AppService, BaseTabComponent, SplitTabComponent } from 'tabby-core'
+import { AppService, BaseTabComponent, SplitTabComponent, PlatformService, ConfigService } from 'tabby-core'
 import { BaseTerminalTabComponent } from 'tabby-terminal'
 import { BehaviorSubject, Subscription } from 'rxjs'
 import { CodexTerminalOutputService } from './terminal-output.service'
 import { TabbyCapabilitiesService } from './tabby-capabilities.service'
 import * as os from 'os'
+import * as path from 'path'
+import { StreamTokens } from './terminal-stream'
+import { TerminalLogStore } from './terminal-log-store'
 import { isIP } from 'net'
 import { WorkflowTarget, redactMemory, observationFingerprint } from './task-memory'
 import { SudoWorkflowLease } from './sudo-workflow'
@@ -17,6 +20,7 @@ import { runAttachmentPty } from './attachment-pty'
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
 export interface TabToolContext {
   owner: string
+  logScope?: string
   signal?: AbortSignal
   readOnly?: boolean
   sudoLease?: boolean
@@ -41,8 +45,12 @@ export { TAB_TOOLS } from './tab-tool-definitions'
 @Injectable()
 export class TabbyTabToolsService implements OnDestroy {
   readonly controls$ = new BehaviorSubject<ControlledTab[]>([])
+  private streamTokens = new StreamTokens()
+  private logs?: TerminalLogStore
+  private captures = new Map<string, { owner: string; scope: string; tab: BaseTerminalTabComponent<any>; stream: string; logId: string }>()
   private sudoLeases = new Map<string, Map<BaseTerminalTabComponent<any>, { lease: SudoWorkflowLease; session: any }>>()
   private controlled = new Map<BaseTerminalTabComponent<any>, ControlState>()
+  private completionRevisions = new WeakMap<BaseTerminalTabComponent<any>, number>()
   private completedCommands = new WeakMap<BaseTerminalTabComponent<any>, any>()
   private completionWatchers = new Map<BaseTerminalTabComponent<any>, Subscription>()
   private ids = new WeakMap<BaseTabComponent, string>()
@@ -53,7 +61,19 @@ export class TabbyTabToolsService implements OnDestroy {
   private tracked = new Set<BaseTerminalTabComponent<any>>()
   private subscriptions = new Subscription()
 
-  constructor (private app: AppService, private output: CodexTerminalOutputService, private capabilities?: TabbyCapabilitiesService, private attachments?: AttachmentTransferService) {
+  constructor (private app: AppService, private output: CodexTerminalOutputService, private capabilities?: TabbyCapabilitiesService, private attachments?: AttachmentTransferService, platform?: PlatformService, private config?: ConfigService) {
+    const configPath = platform?.getConfigPath()
+    if (configPath) this.logs = new TerminalLogStore(path.join(path.dirname(configPath), 'tabby-terminal-logs'))
+    if (this.output.chunks$) this.subscriptions.add(this.output.chunks$.subscribe(chunk => {
+      if (this.config?.store?.codexAgent?.terminalLogsEnabled === false) {
+        for (const capture of this.captures.values()) this.logs?.finish(capture.logId, 'partial', 'Saving disabled')
+        this.captures.clear(); return
+      }
+      for (const capture of this.captures.values()) if (capture.tab === chunk.terminal && capture.stream === chunk.streamId) this.logs?.append(capture.logId, chunk.text)
+    }))
+    if (this.output.lifecycle$) this.subscriptions.add(this.output.lifecycle$.subscribe(tab => {
+      for (const [key, capture] of this.captures) if (capture.tab === tab && (capture.stream !== this.output.streamId(tab) || this.output.isClosed?.(tab))) { this.logs?.finish(capture.logId, 'interrupted', 'Terminal session changed'); this.captures.delete(key) }
+    }))
     this.refresh()
     this.subscriptions.add(this.app.tabsChanged$.subscribe(() => this.refresh()))
     this.subscriptions.add(this.app.activeTabChange$.subscribe(() => this.refresh()))
@@ -117,6 +137,7 @@ export class TabbyTabToolsService implements OnDestroy {
   }
 
   releaseOwner (owner: string): void {
+    for (const [key, capture] of this.captures) if (capture.owner === owner) { this.logs?.finish(capture.logId); this.captures.delete(key) }
     this.stopSudoLeases(owner)
     for (const state of Array.from(this.controlled.values())) if (state.owner === owner) this.release(state.tab)
   }
@@ -177,7 +198,10 @@ export class TabbyTabToolsService implements OnDestroy {
     state.subscriptions.unsubscribe()
     tab.sendInput = state.originalSendInput
     this.controlled.delete(tab)
-    if (state.completion === 'prompt' && state.automaticCompletion && tab.session === state.session && state.session?.open) this.completedCommands.set(tab, state.session)
+    if (state.completion === 'prompt' && state.automaticCompletion && tab.session === state.session && state.session?.open) {
+      this.completedCommands.set(tab, state.session)
+      this.completionRevisions.set(tab, (this.completionRevisions.get(tab) || 0) + 1)
+    }
     this.publishControls()
   }
 
@@ -331,6 +355,76 @@ export class TabbyTabToolsService implements OnDestroy {
     return target
   }
 
+  private capture (tab: BaseTerminalTabComponent<any>, context?: TabToolContext): string | undefined {
+    if (!this.logs || !context?.logScope || this.config?.store?.codexAgent?.terminalLogsEnabled === false) return undefined
+    const stream = this.output.streamId(tab), key = context.logScope + ':' + stream
+    const prior = this.captures.get(key)
+    if (prior) return prior.logId
+    let logId: string
+    try { logId = this.logs.start(context.logScope, stream) } catch { return undefined }
+    this.captures.set(key, { owner: context.owner, scope: context.logScope, tab, stream, logId })
+    return logId
+  }
+
+  private async readStream (tab: BaseTerminalTabComponent<any>, args: any, context?: TabToolContext): Promise<any> {
+    const startedAt = Date.now()
+    const scope = context?.logScope || context?.owner
+    if (!scope) throw new Error('Delta reads require an active session')
+    if (args.maxLines !== undefined) throw new Error('maxLines is only valid for snapshot')
+    const stream = this.output.streamId(tab), session = tab.session
+    const max = Math.max(2, Math.min(20000, Number(args.maxChars) || 8000))
+    const baselineRevision = args.cursor ? this.streamTokens.inspect(args.cursor, scope).revision : undefined
+    const start = args.cursor ? this.streamTokens.decode(args.cursor, scope, stream) : Math.max(0, this.output.cursor(tab) - max)
+    const wait = Math.max(0, Math.min(30000, Number(args.waitMs) || 0))
+    const mode = args.waitFor || 'either'
+    if (!['output', 'completion', 'either'].includes(mode)) throw new Error('Invalid waitFor')
+    let reason = 'immediate'
+    if (args.cursor && !this.output.readSince(tab, start, max).text && wait) reason = await this.waitStream(tab, start, wait, mode, context?.signal, baselineRevision)
+    if (session !== tab.session || stream !== this.output.streamId(tab)) throw new Error('cursor_session_changed: read the current terminal again')
+    const logId = this.capture(tab, context)
+    if (this.output.isSuppressed(tab)) return { tabId: args.tabId, text: '[Attachment payload omitted]', wakeReason: reason }
+    const slice = this.output.readSince(tab, start, max)
+    if (slice.truncated && args.cursor) return { tabId: args.tabId, status: 'cursor_expired', truncated: true, logRef: logId ? { logId } : undefined }
+    return { tabId: args.tabId, mode: 'delta', streamId: stream, text: slice.text,
+      nextCursor: this.streamTokens.encode(scope, stream, slice.cursor, this.completionRevisions.get(tab) || 0), hasMore: slice.hasMore, truncated: false,
+      startPolicy: args.cursor ? undefined : 'tail', wakeReason: reason, waitedMs: Date.now() - startedAt, controlledByAI: this.controlled.has(tab),
+      commandState: this.controlled.get(tab)?.completion || (this.completedCommands.get(tab) === session ? 'prompt' : 'unknown'),
+      logRef: logId ? { logId, saveState: 'writing' } : undefined }
+  }
+
+  private waitStream (tab: BaseTerminalTabComponent<any>, start: number, ms: number, mode: string, signal?: AbortSignal, sinceRevision?: number): Promise<string> {
+    const session = tab.session, stream = this.output.streamId(tab)
+    const baselineRevision = sinceRevision ?? (this.completionRevisions.get(tab) || 0)
+    return new Promise((resolve, reject) => {
+      const subscriptions = new Subscription()
+      let done = false, settle: ReturnType<typeof setTimeout> | undefined
+      let firstOutput = 0
+      const deadline = Date.now() + ms
+      const finish = (reason: string) => { if (done) return; done = true; clearTimeout(timer); if (settle) clearTimeout(settle); subscriptions.unsubscribe(); signal?.removeEventListener('abort', abort); reason === 'abort' ? reject(new Error('Agent task was stopped')) : resolve(reason) }
+      const timer = setTimeout(() => finish('timeout'), ms)
+      const abort = () => finish('abort')
+      const check = () => {
+        if (tab.session !== session || this.output.streamId(tab) !== stream) finish('session_changed')
+        else if (!session?.open) finish('session_closed')
+        else if (mode !== 'completion' && this.output.cursor(tab) > start && !this.output.isSuppressed(tab)) {
+          if (!firstOutput) firstOutput = Date.now()
+          if (settle) clearTimeout(settle)
+          settle = setTimeout(() => finish('output'), Math.max(0, Math.min(50, 200 - (Date.now() - firstOutput), deadline - Date.now())))
+        }
+        else if (mode !== 'output' && (this.completionRevisions.get(tab) || 0) > baselineRevision && this.completedCommands.get(tab) === session && !this.controlled.has(tab)) finish('completion')
+      }
+      signal?.addEventListener('abort', abort, { once: true })
+      subscriptions.add(this.output.updates$.subscribe(check))
+      subscriptions.add(this.controls$.subscribe(check))
+      subscriptions.add(tab.sessionChanged$.subscribe(check))
+      subscriptions.add(session?.closed$?.subscribe(() => finish('session_closed')))
+      subscriptions.add(session?.destroyed$?.subscribe(() => finish('session_closed')))
+      subscriptions.add(this.output.lifecycle$.subscribe(check))
+      if (done) subscriptions.unsubscribe()
+      if (signal?.aborted) abort(); else check()
+    })
+  }
+
   private async waitForTerminal (tab: BaseTabComponent, waitMs: number, signal?: AbortSignal): Promise<void> {
     const terminal = tab instanceof BaseTerminalTabComponent ? tab : undefined
     const session = terminal?.session
@@ -406,6 +500,35 @@ export class TabbyTabToolsService implements OnDestroy {
     checkStopped()
     if (context?.readOnly && TABBY_MUTATIONS.has(name)) throw new Error('只读模式禁止 Tabby 修改操作')
     this.refresh()
+    if (['list_logs', 'read_log', 'search_log'].includes(name)) {
+      if (!this.logs || !context?.logScope) throw new Error('Logs unavailable')
+      const scope = context.logScope
+      if (name === 'list_logs') return this.logs.list(scope)
+      const id = args.logId
+      if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('Log unavailable')
+      if (name === 'search_log' && (typeof args.query !== 'string' || !args.query.length || args.query.length > 256)) throw new Error('query must contain 1..256 characters')
+      const cursorKey = scope + ':' + id + ':' + (name === 'search_log' ? args.query : '')
+      const token = args.cursor ? this.streamTokens.inspect(args.cursor, cursorKey) : undefined
+      const offset = token?.offset || 0
+      const high = token && token.stream !== 'follow' ? Number(token.stream) : undefined
+      if (high !== undefined && (!Number.isSafeInteger(high) || high < offset)) throw new Error('Cursor unavailable')
+      const limit = name === 'search_log' ? 65536 : Math.max(2, Math.min(20000, Number(args.maxChars) || 8000))
+      const result = await this.logs.read(scope, id, offset, limit, high, context.signal)
+      checkStopped()
+      if (name === 'search_log') {
+        const hits = []; let responseChars = 0; let index = result.text.indexOf(args.query)
+        while (index >= 0 && hits.length < 50 && responseChars < 8000) {
+          const at = offset + Math.max(0, index - 80)
+          responseChars += args.query.length + 160
+          hits.push({ text: result.text.slice(Math.max(0, index - 80), index + args.query.length + 80), cursor: this.streamTokens.encode(scope + ':' + id + ':', String(result.readEnd), at) })
+          index = result.text.indexOf(args.query, index + 1)
+        }
+        const partial = result.hasMore || index >= 0
+        const next = index >= 0 ? offset + index : result.hasMore ? result.offset - Math.min(args.query.length - 1, result.text.length - 1) : result.offset
+        return { hits, partial, nextCursor: partial ? this.streamTokens.encode(cursorKey, String(result.readEnd), next) : undefined, logState: result.logState, reason: result.reason, scannedRange: [offset, result.offset] }
+      }
+      return { ...result, followCursor: this.streamTokens.encode(cursorKey, 'follow', result.readEnd), nextCursor: result.hasMore ? this.streamTokens.encode(cursorKey, String(result.readEnd), result.offset) : undefined }
+    }
     if (name.startsWith('attachment_')) {
       if (!this.attachments || !context?.owner) throw new Error('Attachments require an active session')
       const owner = context.owner
@@ -455,7 +578,19 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'read_tab') {
       const current = this.find(args.tabId)
       const waitMs = Math.max(0, Math.min(30000, Number(args.waitMs ?? (current instanceof BaseTerminalTabComponent && this.controlled.has(current) ? 1000 : 0)) || 0))
-      if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
+      if (!['snapshot', 'delta', undefined].includes(args.mode)) throw new Error('Invalid read mode')
+      if (current instanceof BaseTerminalTabComponent) {
+        this.capture(current, context)
+        if (args.mode === 'delta') return this.readStream(current, { ...args, waitMs }, context)
+        if (args.cursor || args.maxChars !== undefined) throw new Error('cursor/maxChars require delta mode')
+        if (args.waitFor) {
+          if (!['output', 'completion', 'either'].includes(args.waitFor)) throw new Error('Invalid waitFor')
+          if (waitMs) await this.waitStream(current, this.output.cursor(current), waitMs, args.waitFor, context?.signal)
+        } else if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
+      } else {
+        if (args.mode === 'delta' || args.cursor || args.waitFor) throw new Error('Terminal parameters require a terminal')
+        if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
+      }
       checkStopped()
     }
     const tab = this.find(args.tabId)
@@ -515,7 +650,13 @@ export class TabbyTabToolsService implements OnDestroy {
       const maxLines = Math.max(1, Math.min(300, Number(args.maxLines) || 100))
       if (tab instanceof BaseTerminalTabComponent) {
         if (this.output.isSuppressed?.(tab)) return { tabId: args.tabId, text: '[Attachment transfer in progress; payload omitted. Use attachment_status.]', commandState: 'running', controlledByAI: true }
+        const observedSession = tab.session, observedStream = this.output.streamId?.(tab)
+        const scope = context?.logScope || context?.owner
+        const nextCursor = scope && observedStream ? this.streamTokens.encode(scope, observedStream, this.output.cursor(tab), this.completionRevisions.get(tab) || 0) : undefined
         const server = await this.serverIdentity(tab)
+        const runningProcesses = await this.processes(tab)
+        if (observedSession !== tab.session) throw new Error('Terminal session changed during observation')
+        checkStopped()
         const commandState = this.controlled.get(tab)?.completion || (this.completedCommands.get(tab) === tab.session ? 'prompt' : 'unknown')
         const xterm = (tab.frontend as any)?.xterm
         const buffer = xterm?.buffer?.active
@@ -524,11 +665,11 @@ export class TabbyTabToolsService implements OnDestroy {
           const lines: string[] = []
           for (let i = start; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) || '')
           const text = lines.join('\n'), safeText = this.output.sanitizeView?.(tab, text) ?? text
-          return { tabId: args.tabId, title: tab.title, server, commandState, text: safeText.slice(-20000), truncated: start > 0 || text.length > 20000, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), interaction: safeText === text ? terminalInteractionState(xterm, start) : undefined }
+          return { tabId: args.tabId, title: tab.title, server, commandState, text: safeText.slice(-20000), truncated: start > 0 || text.length > 20000, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), interaction: safeText === text ? terminalInteractionState(xterm, start) : undefined }
         }
         const end = this.output.cursor(tab)
         const slice = this.output.readSince(tab, Math.max(0, end - 20000), 20000)
-        return { tabId: args.tabId, title: tab.title, server, commandState, text: slice.text, truncated: slice.truncated, runningProcesses: await this.processes(tab), controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
+        return { tabId: args.tabId, title: tab.title, server, commandState, text: slice.text, truncated: slice.truncated, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
       }
       const nodes: Node[] = (tab.hostView as any)?.rootNodes || []
       const text = nodes.map(node => node.textContent || '').join('\n').trim()
@@ -546,6 +687,7 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'send_input') {
       if (!(tab instanceof BaseTerminalTabComponent)) throw new Error('This tab is not a terminal')
       if (!tab.session?.open) throw new Error('The terminal session is closed')
+      this.capture(tab, context)
       if (typeof args.text !== 'string' || args.text.length > 10000) throw new Error('text must be a string of at most 10,000 characters')
       const owner = context?.owner || 'legacy'
       const existing = this.controlled.get(tab)
@@ -644,6 +786,8 @@ export class TabbyTabToolsService implements OnDestroy {
     for (const watcher of this.completionWatchers.values()) watcher.unsubscribe()
     this.completionWatchers.clear()
     for (const owner of Array.from(this.sudoLeases.keys())) this.stopSudoLeases(owner)
+    for (const capture of this.captures.values()) this.logs?.finish(capture.logId, 'interrupted')
+    this.captures.clear()
     this.subscriptions.unsubscribe()
     for (const tab of Array.from(this.controlled.keys())) this.release(tab)
     for (const terminal of this.tracked) this.output.unwatch(terminal)

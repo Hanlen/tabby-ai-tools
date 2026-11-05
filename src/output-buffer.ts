@@ -21,15 +21,27 @@ export class IncrementalOutputBuffer {
     this.end += chunk.length
     if (this.tail.length > this.capacity) {
       const dropped = this.tail.length - this.capacity
-      this.tail = this.tail.slice(dropped)
-      this.start += dropped
+      const safeDrop = /[\udc00-\udfff]/.test(this.tail[dropped] || '') ? dropped + 1 : dropped
+      this.tail = this.tail.slice(safeDrop)
+      this.start += safeDrop
     }
   }
 
+  trimTo (capacity: number): void {
+    let dropped = Math.max(0, this.tail.length - capacity)
+    if (/[\udc00-\udfff]/.test(this.tail[dropped] || '')) dropped++
+    this.tail = this.tail.slice(dropped); this.start += dropped
+  }
+
+  get size (): number { return this.tail.length }
+
   readSince (cursor: number, maxChars: number): OutputSlice {
     const truncated = cursor < this.start
-    const offset = Math.max(this.start, Math.min(cursor, this.end)) - this.start
-    const text = this.tail.slice(offset, offset + Math.max(0, maxChars))
+    let offset = Math.max(this.start, Math.min(cursor, this.end)) - this.start
+    if (/[\udc00-\udfff]/.test(this.tail[offset] || '')) offset++
+    let end = offset + Math.max(0, maxChars)
+    if (end < this.tail.length && /[\udc00-\udfff]/.test(this.tail[end])) end--
+    const text = this.tail.slice(offset, end)
     const nextCursor = this.start + offset + text.length
     return { text, cursor: nextCursor, truncated, hasMore: nextCursor < this.end }
   }
