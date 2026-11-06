@@ -501,7 +501,7 @@
             select#native-space-mode.form-control([ngModel]='nativeSpaceDraft.mode', (ngModelChange)='changeNativeSpace($event)', [disabled]='nativeBusy')
               option(value='tabby') {{t("Tabby private space (recommended)")}}
               option(value='system') {{t("System space (legacy compatibility)")}}
-            p.settings-muted {{t("Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.")}}
+            p.settings-muted {{t("Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.")}}
             .memory-row
               button.btn.btn-primary(type='button', (click)='saveNativeSpace()', [disabled]='nativeBusy') {{t("Save session space")}}
               button.btn.btn-outline-secondary(type='button', (click)='discardNativeSpace()', [disabled]='nativeBusy') {{t("Discard space edits")}}

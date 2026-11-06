@@ -954,7 +954,7 @@
   "Session space": "Session space",
   "Tabby private space (recommended)": "Tabby private space (recommended)",
   "System space (legacy compatibility)": "System space (legacy compatibility)",
-  "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.",
+  "Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "احفظ وتحقق من تسجيل الدخول إلى المساحة المحددة، ثم أعد الاتصال من الشريط الجانبي عند الخمول. تنقل إعادة الاتصال المحادثة الحالية؛ وتبقى السجلات الأصلية في موقعها. استخدم /new لبدء محادثة جديدة.",
   "Save session space": "Save session space",
   "Discard space edits": "Discard space edits",
   "Check selected-space login": "Check selected-space login",
@@ -992,5 +992,15 @@
   "关闭图片预览": "إغلاق معاينة الصورة",
   "预览图片：{0}": "معاينة الصورة: {0}",
   "保存任务终端日志": "Save task terminal logs",
-  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving."
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving.",
+  "{0} 认证失败": "فشلت مصادقة {0}",
+  "认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。": "فشلت المصادقة. انسخ تسجيل الدخول مجددًا من مجلد CLI المحلي الأصلي وأعد الاتصال. تُحفظ المحادثة والمسودة ولا تُعاد المهام تلقائيًا.",
+  "认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。": "فشلت المصادقة. سجّل الدخول مجددًا في CLI المحلي ثم أعد الاتصال. تُحفظ المحادثة والمسودة ولا تُعاد المهام تلقائيًا.",
+  "重新复制登录并重连": "نسخ تسجيل الدخول مجددًا وإعادة الاتصال",
+  "正在恢复登录…": "جارٍ استعادة تسجيل الدخول…",
+  "已重新复制本机登录，请重新发送或继续任务。": "نُسخ تسجيل الدخول المحلي مجددًا. أعد إرسال الرسالة أو تابع المهمة.",
+  "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "لا توجد ذاكرة تسجيل دخول محلية قابلة لإعادة الاستخدام. سجّل الدخول في CLI الأصلي أولًا؛ يتطلب تسجيل الدخول المحفوظ في سلسلة المفاتيح فقط تسجيل الدخول في المساحة المحددة.",
+  "登录已失效，请重新复制本机登录并重连。": "انتهت صلاحية تسجيل الدخول. انسخ تسجيل الدخول المحلي مجددًا وأعد الاتصال.",
+  "登录已失效，请在本机重新登录后重连。": "انتهت صلاحية تسجيل الدخول. سجّل الدخول محليًا مجددًا ثم أعد الاتصال.",
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "تم الحفظ. تعيد مساحة CLI الخاصة بلا تسجيل دخول استخدام الذاكرة المحلية. أعد الاتصال عند الخمول؛ تُحفظ الجلسات الأصلية."
 }

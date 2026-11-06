@@ -954,7 +954,7 @@
   "Session space": "Session space",
   "Tabby private space (recommended)": "Tabby private space (recommended)",
   "System space (legacy compatibility)": "System space (legacy compatibility)",
-  "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.",
+  "Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "सहेजें, चुने गए स्थान का लॉगिन जाँचें, फिर निष्क्रिय होने पर साइडबार में फिर से कनेक्ट करें। इससे वर्तमान बातचीत स्थानांतरित होती है; मूल रिकॉर्ड अपने स्थान पर रहते हैं। नई बातचीत के लिए /new का उपयोग करें।",
   "Save session space": "Save session space",
   "Discard space edits": "Discard space edits",
   "Check selected-space login": "Check selected-space login",
@@ -992,5 +992,15 @@
   "关闭图片预览": "चित्र पूर्वावलोकन बंद करें",
   "预览图片：{0}": "चित्र का पूर्वावलोकन: {0}",
   "保存任务终端日志": "Save task terminal logs",
-  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving."
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving.",
+  "{0} 认证失败": "{0} प्रमाणीकरण विफल",
+  "认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。": "प्रमाणीकरण विफल। मूल स्थानीय CLI निर्देशिका से लॉगिन फिर से कॉपी करके कनेक्ट करें। बातचीत और ड्राफ़्ट सुरक्षित रहते हैं। कार्य अपने आप दोबारा नहीं भेजे जाते।",
+  "认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。": "प्रमाणीकरण विफल। स्थानीय CLI में फिर से लॉगिन करें, फिर कनेक्ट करें। बातचीत और ड्राफ़्ट सुरक्षित रहते हैं। कार्य अपने आप दोबारा नहीं भेजे जाते।",
+  "重新复制登录并重连": "लॉगिन फिर कॉपी करें और कनेक्ट करें",
+  "正在恢复登录…": "लॉगिन बहाल हो रहा है…",
+  "已重新复制本机登录，请重新发送或继续任务。": "स्थानीय लॉगिन फिर से कॉपी किया गया। संदेश दोबारा भेजें या कार्य जारी रखें।",
+  "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "दोबारा उपयोग योग्य स्थानीय लॉगिन कैश नहीं मिला। पहले मूल CLI में लॉगिन करें; केवल कीचेन में सहेजे लॉगिन के लिए चुने गए स्थान में लॉगिन करना होगा।",
+  "登录已失效，请重新复制本机登录并重连。": "लॉगिन समाप्त हो गया। स्थानीय लॉगिन फिर कॉपी करके कनेक्ट करें।",
+  "登录已失效，请在本机重新登录后重连。": "लॉगिन समाप्त हो गया। स्थानीय रूप से फिर लॉगिन करके कनेक्ट करें।",
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "सहेजा गया। बिना लॉगिन वाला निजी CLI स्थान स्थानीय लॉगिन कैश का उपयोग करता है। निष्क्रिय होने पर फिर कनेक्ट करें; मूल सत्र सुरक्षित रहते हैं।"
 }

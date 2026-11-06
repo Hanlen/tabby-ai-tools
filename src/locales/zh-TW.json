@@ -954,7 +954,7 @@
   "Session space": "会话空间",
   "Tabby private space (recommended)": "Tabby 独立空间（推荐）",
   "System space (legacy compatibility)": "系统空间（旧版兼容）",
-  "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "保存并在选定空间登录后，空闲时点击侧栏重连。切换空间时交接当前对话，原记录保留在原处。使用 /new 开始全新对话。",
+  "Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "儲存後，檢查所選空間的登入狀態，再於閒置時在側欄重新連線。重新連線會轉移目前對話；來源記錄保留在原位置。使用 /new 可開始新對話。",
   "Save session space": "保存会话空间",
   "Discard space edits": "放弃空间修改",
   "Check selected-space login": "检查选定空间登录",
@@ -992,5 +992,15 @@
   "关闭图片预览": "關閉圖片預覽",
   "预览图片：{0}": "預覽圖片：{0}",
   "保存任务终端日志": "儲存任務終端日誌",
-  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "僅儲存任務存取的終端輸出，在本機保留 7 天；輸出可能含敏感資訊。關閉後停止新增儲存。"
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "僅儲存任務存取的終端輸出，在本機保留 7 天；輸出可能含敏感資訊。關閉後停止新增儲存。",
+  "{0} 认证失败": "{0} 驗證失敗",
+  "认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。": "驗證失敗。可從本機原始 CLI 目錄重新複製登入並重新連線。目前對話和輸入會保留，任務不會自動重送。",
+  "认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。": "驗證失敗。請先在本機 CLI 重新登入，再重新連線。目前對話和輸入會保留，任務不會自動重送。",
+  "重新复制登录并重连": "重新複製登入並重新連線",
+  "正在恢复登录…": "正在恢復登入…",
+  "已重新复制本机登录，请重新发送或继续任务。": "已重新複製本機登入，請重新傳送或繼續任務。",
+  "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "本機沒有可重用的登入快取，請先在原始 CLI 登入；僅存於鑰匙圈的登入需要在所選空間重新登入。",
+  "登录已失效，请重新复制本机登录并重连。": "登入已失效，請重新複製本機登入並重新連線。",
+  "登录已失效，请在本机重新登录后重连。": "登入已失效，請在本機重新登入後重新連線。",
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "已儲存。尚未登入的 CLI 私有空間會重用本機登入快取。請在閒置時重新連線；原工作階段會保留。"
 }

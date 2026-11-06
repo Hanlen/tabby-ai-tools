@@ -113,8 +113,8 @@ export async function inspectClaudeCode (configured: string, cwd: string, signal
   let auth: any
   try { auth = JSON.parse(await run(['auth', 'status'])) } catch (error: any) {
     if (signal.aborted) throw error
-    throw new Error('无法确认 Claude Code 登录状态；请在本机终端运行 claude auth login，再用 claude auth status 检查。')
+    throw Object.assign(new Error('无法确认 Claude Code 登录状态；请在本机终端运行 claude auth login，再用 claude auth status 检查。'), { code: 'authentication_required' })
   }
-  if (auth.loggedIn !== true) throw new Error(env?.CLAUDE_CONFIG_DIR ? 'Selected Claude Code space is not logged in. Generate its login command in Settings → AI Tools → Instructions and sessions.' : 'Claude Code 尚未登录；请在本机终端运行 claude auth login 完成官方登录。')
+  if (auth.loggedIn !== true) throw Object.assign(new Error(env?.CLAUDE_CONFIG_DIR ? 'Selected Claude Code space is not logged in. Generate its login command in Settings → AI Tools → Instructions and sessions.' : 'Claude Code 尚未登录；请在本机终端运行 claude auth login 完成官方登录。'), { code: 'authentication_required' })
   return executable
 }

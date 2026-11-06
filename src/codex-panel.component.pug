@@ -1,4 +1,13 @@
 .codex-agent([attr.dir]='direction', [attr.lang]='languageCode')
+  dialog.codex-auth-warning(#authWarningDialog, role='alertdialog', [attr.aria-label]='t("{0} 认证失败", [authAgentLabel])', (cancel)='$event.preventDefault(); dismissAuthWarning()', (keydown)='$event.stopPropagation()')
+    h3
+      i.fas.fa-exclamation-triangle(aria-hidden='true')
+      |  {{t("{0} 认证失败", [authAgentLabel])}}
+    p {{canRecoverNativeAuth ? t("认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。") : t("认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。")}}
+    p.codex-detail-error(*ngIf='authRecoveryError', role='alert') {{t(authRecoveryError)}}
+    .codex-auth-warning-actions
+      button.btn.btn-primary(type='button', *ngIf='canRecoverNativeAuth', autofocus, (click)='recoverAuthentication()', [disabled]='loading || authRecovering') {{authRecovering ? t("正在恢复登录…") : t("重新复制登录并重连")}}
+      button.btn.btn-outline-secondary(type='button', (click)='dismissAuthWarning()', [disabled]='authRecovering') {{t("关闭")}}
   dialog.codex-image-preview(#attachmentPreviewDialog, [attr.aria-label]='t("图片预览")', (cancel)='$event.preventDefault(); closeAttachmentPreview()', (click)='$event.target === $event.currentTarget && closeAttachmentPreview()', (keydown)='$event.stopPropagation()', (close)='previewAttachment = undefined')
     .codex-image-preview-content(*ngIf='previewAttachment')
       .codex-image-preview-heading
@@ -30,6 +39,7 @@
       option(value='enabled') {{t("开启")}}
       option(value='disabled') {{t("关闭")}}
   small.codex-detail-error(*ngIf='connectionError') {{t(connectionError)}}
+  button.btn.btn-outline-warning.btn-sm(type='button', *ngIf='authWarning', (click)='showAuthWarningDialog()') {{t("{0} 认证失败", [authAgentLabel])}}
   small.codex-detail-error(*ngIf='apiMode && modelError', role='alert') {{t(modelError)}}
   .codex-summary
     button.codex-status(type='button', [class.codex-done]='status === "任务已完成"', (click)='toggleStatus()', [attr.title]='t(t(status))', [attr.aria-expanded]='statusOpen', [attr.aria-label]='t("任务状态：{0}；展开或收起详情", [t(status)])') {{t(status)}}

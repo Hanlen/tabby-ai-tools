@@ -41,6 +41,36 @@ test('old threads are upgraded and new threads retain Tabby tools on resume', as
   assert.ok(calls[1].params.developerInstructions.includes(require('../src/tabby-knowledge.json').skill))
 })
 
+test('a saved thread without a rollout is replaced without starting inference', async () => {
+  const service = new CodexService(), calls = []
+  service.client.request = async (method, params) => {
+    calls.push({ method, params })
+    if (method === 'thread/resume') throw new Error('no rollout found for thread id unsent-thread')
+    assert.equal(method, 'thread/start')
+    return { thread: { id: 'replacement' } }
+  }
+  const settings = { model: 'chosen', reasoningEffort: 'high', approvalPolicy: 'never', sandbox: 'read-only',
+    threads: { '/project': 'unsent-thread' }, tabToolThreads: { '/project': 'unsent-thread' } }
+  assert.equal(await service.openThread('/project', settings, 'unsent-thread'), 'replacement')
+  assert.deepEqual(calls.map(call => call.method), ['thread/resume', 'thread/start'])
+  assert.equal(calls[1].params.model, 'chosen')
+  assert.equal(calls[1].params.dynamicTools[0].name, 'tabby_tabs')
+  assert.equal(settings.tabToolThreads['/project'], 'replacement')
+})
+
+test('resume errors never replace a thread with recoverable context or unrelated failures', async () => {
+  for (const message of ['permission denied', 'model not found', 'no rollout found for thread id saved']) {
+    const service = new CodexService(), calls = []
+    service.resumeThread = async () => { throw new Error(message) }
+    service.client.request = async method => { calls.push(method); throw new Error('unexpected start') }
+    service.setContextStore({ loadCodexContext: async () => message.startsWith('no rollout') ? { messages: [{ role: 'user', content: 'keep this' }] } : undefined })
+    const settings = { tabToolThreads: { '/project': 'saved' } }
+    await assert.rejects(service.openThread('/project', settings, 'saved'), { message })
+    assert.deepEqual(calls, [])
+    assert.equal(settings.tabToolThreads['/project'], 'saved')
+  }
+})
+
 test('session history lists this plugin\'s sessions for the current directory', async () => {
   const service = new CodexService()
   const calls = []

@@ -18,7 +18,7 @@ import { ScheduledTasksService } from './scheduled-tasks.service'
 import { ScheduleDocument, ScheduledTask, ScheduledRun, activeRun } from './scheduled-tasks'
 import { formatDateTime, getLanguage, SUPPORTED_LANGUAGES, textDirection, translate } from './i18n'
 import { AgentInstructions, InstructionsSnapshot, resolveInstructions, validateInstructions } from './agent-instructions'
-import { NativeEngine, SessionSpaceConfig, privateSpaceConfig, sessionSpaceConfig, resolveSessionSpace, prepareSessionSpace, sessionEnvironment, nativeLoginCommand } from './session-space'
+import { NativeEngine, SessionSpaceConfig, privateSpaceConfig, sessionSpaceConfig, resolveSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment, nativeLoginCommand } from './session-space'
 import { CodexClient } from './codex-client'
 import { resolveCodexLaunch } from './codex-discovery'
 import { inspectClaudeCode, resolveClaudeExecutable } from './claude-code-client'
@@ -279,7 +279,7 @@ export class CodexSettingsComponent implements OnDestroy {
       await prepareSessionSpace(space)
       this.settings.cliSessionSpaces = { ...previous, [engine]: value }
       await this.config.save()
-      this.nativeNotice = 'Saved. Log in to this space, then reconnect when idle. Original sessions are retained.'
+      this.nativeNotice = 'Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.'
     } catch (error: any) { this.settings.cliSessionSpaces = previous; this.nativeNotice = error.message }
     finally { this.nativeBusy = false; this.changeDetector?.markForCheck() }
   }
@@ -301,6 +301,7 @@ export class CodexSettingsComponent implements OnDestroy {
         const result = await client.request('account/read', { refreshToken: false })
         this.nativeNotice = result.account ? 'Selected space is logged in; model access is unverified.' : 'Selected space is not logged in. Generate its login command.'
       } else {
+        await initializeNativeAuth(space, process.env)
         await inspectClaudeCode(executable, this.settings.cwd || process.cwd(), controller.signal, sessionEnvironment(space, process.env))
         this.nativeNotice = 'Selected space is logged in; model access is unverified.'
       }

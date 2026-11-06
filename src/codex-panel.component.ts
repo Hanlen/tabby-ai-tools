@@ -24,6 +24,7 @@ import type { ScheduledTask, ScheduledRun } from './scheduled-tasks'
 import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 import { AttachmentTransferService } from './attachment-transfer.service'
 import { Attachment } from './attachments'
+import { isNativeAuthenticationError } from './cli-auth'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 
@@ -51,6 +52,83 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private codex: AgentBackend
   profileId = ''
   connectionError = ''
+  authWarning = false
+  authRecovering = false
+  authRecoveryError = ''
+  private authBackend?: AgentBackend
+  private authProfileId = ''
+  @ViewChild('authWarningDialog') private authWarningDialog?: ElementRef<HTMLDialogElement>
+
+  get authAgentLabel (): string {
+    return (this.authBackend || this.codex).profile?.runtime === 'claude-code' ? 'Claude Code' : 'Codex'
+  }
+
+  get canRecoverNativeAuth (): boolean {
+    const backend = this.authBackend || this.codex
+    return (!backend.profile || backend.profile.runtime === 'claude-code') && !!backend.sessionSpace?.native && !!backend.refreshAuthentication
+  }
+
+  private warnAuthentication (error: any, backend = this.codex, profileId = this.profileId): boolean {
+    if (backend.profile && backend.profile.runtime !== 'claude-code' || !isNativeAuthenticationError(error)) return false
+    if (!this.authWarning) {
+      this.authBackend = backend
+      this.authProfileId = profileId
+      this.authWarning = true
+      this.authRecoveryError = ''
+      this.showAuthWarningDialog()
+    }
+    return true
+  }
+
+  showAuthWarningDialog (): void {
+    this.changeDetector?.detectChanges()
+    const dialog = this.authWarningDialog?.nativeElement
+    if (this.authWarning && dialog && !dialog.open) dialog.showModal()
+  }
+
+  dismissAuthWarning (): void { if (!this.authRecovering) this.authWarningDialog?.nativeElement.close() }
+
+  private clearAuthWarning (): void {
+    this.authWarning = false
+    this.authRecoveryError = ''
+    this.authBackend = undefined
+    this.authWarningDialog?.nativeElement.close()
+  }
+
+  async recoverAuthentication (): Promise<void> {
+    if (!this.canRecoverNativeAuth || this.authRecovering || this.loading) return
+    this.authRecovering = true
+    this.loading = true
+    this.authRecoveryError = ''
+    const backend = this.authBackend || this.codex
+    const targetId = this.authBackend ? this.authProfileId : this.profileId
+    const settings = this.connectionSettings(targetId, backend)
+    this.cancelWorkflowOperations()
+    this.pendingQuestionReply = ''
+    try {
+      if (backend === this.codex && this.busy && this.turnId) await backend.interrupt(this.threadId, this.turnId)
+      await backend.refreshAuthentication!(settings)
+      if (backend === this.codex) {
+        if (!await this.reconnect()) throw new Error(this.status)
+      } else {
+        // A failed connection switch may have restored the previous provider.
+        await backend.client.close()
+        this.loading = false
+        await this.selectConnection(targetId, true)
+        if (this.profileId !== targetId || !this.connected) throw new Error(this.connectionError || this.status)
+      }
+      this.clearAuthWarning()
+      this.sendNotice = '已重新复制本机登录，请重新发送或继续任务。'
+      this.status = this.sendNotice
+    } catch (error: any) {
+      this.authRecoveryError = error.message
+      if (backend === this.codex) this.connected = false
+    } finally {
+      this.authRecovering = false
+      this.loading = false
+      this.changeDetector?.detectChanges()
+    }
+  }
   @Input() cwd = ''
   @Input() sourceTerminal?: BaseTerminalTabComponent<any>
   @Output() closeRequested = new EventEmitter<void>()
@@ -273,6 +351,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.pendingQuestionReply = ''
     this.questionInterrupting = false
     this.status = `连接中断：${error.message}。任务尚未确认完成，可重新连接。`
+    this.warnAuthentication(error)
   })
 
   get apiProfiles (): ApiProfile[] { return this.config.store.codexAgent.apiProfiles || [] }
@@ -853,6 +932,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.pendingWorkflow = undefined
       this.workflowPanelOpen = false
       if (previous.codex !== backend && (previous.codex.profile || previous.codex.sessionSpace?.native)) previous.codex.client.close()
+      this.clearAuthWarning()
     } catch (error: any) {
       const indexesChanged = targetThreads?.[targetCwd] !== previousSavedId || targetSettings?.tabToolThreads?.[targetCwd] !== previousToolId
       if (targetThreads) {
@@ -876,6 +956,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       } else if (indexesChanged) await this.config.save().catch(() => undefined)
       if (backend !== previous.codex && (backend?.profile || backend?.sessionSpace?.native)) backend.client.close()
       this.zone.run(() => { this.connectionError = error.message })
+      this.warnAuthentication(error, backend || this.codex, id)
     } finally { this.zone.run(() => { this.loading = false; this.changeDetector?.detectChanges() }) }
   }
 
@@ -890,6 +971,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.zone.run(() => { this.showJumpToLatest = visible })
       })
     })
+    if (this.authWarning) this.showAuthWarningDialog()
   }
 
   jumpToLatest (): void {
@@ -980,12 +1062,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       const goal = await this.codex.getGoal(this.threadId)
       this.goalStatus = goal?.status || ''
       this.connected = true
+      this.connectionError = ''
       this.status = upgraded ? '已创建支持访问所有 Tabby 标签的新会话' : this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '就绪'
       return true
     } catch (error: any) {
       const serverConnected = this.codex.client.isConnected
       this.connected = false
       this.status = `${serverConnected ? '会话恢复失败' : '连接失败'}：${error.message}`
+      this.connectionError = this.status
+      this.warnAuthentication(error)
       return false
     } finally {
       this.zone.run(() => { this.loading = false })
@@ -1516,6 +1601,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.status = '正在执行任务…'
         break
       case 'item/agentMessage/delta':
+        this.clearAuthWarning()
         this.finishThinking()
         this.clearRetryState()
         this.sendNotice = ''
@@ -1633,7 +1719,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const message = String(error?.message || '未知错误')
     const info = error?.codexErrorInfo
     let hint = ''
-    if (info === 'contextWindowExceeded' || /context.{0,20}(exceeded|limit|full|long)/i.test(message)) hint = '上下文已超出限制，请使用 /new 创建新会话后重试。'
+    if (this.warnAuthentication(error)) hint = this.canRecoverNativeAuth ? '登录已失效，请重新复制本机登录并重连。' : '登录已失效，请在本机重新登录后重连。'
+    else if (info === 'contextWindowExceeded' || /context.{0,20}(exceeded|limit|full|long)/i.test(message)) hint = '上下文已超出限制，请使用 /new 创建新会话后重试。'
     else if (info === 'sessionBudgetExceeded' || /budget.{0,20}(exceeded|limit)/i.test(message)) hint = '当前会话已达到预算上限，请调整预算或使用 /new 创建新会话。'
     else if (isRateLimitError(error)) {
       const exhausted = [this.statusRateLimits?.primary, this.statusRateLimits?.secondary].filter(window => window && window.usedPercent >= 100)
