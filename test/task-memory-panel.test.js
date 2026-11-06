@@ -40,9 +40,10 @@ async function setup (t, api = false) {
   }
   const agents = { memory, defaultProfileId: api ? profile.id : '', create: () => backend }
   const panel = new CodexPanelComponent({ store: { codexAgent: { apiProfiles: [profile], goalTokenBudget: 0 } } }, backend,
-    { run: fn => fn() }, {}, { releaseOwner: () => {}, call: async (name, args) => {
-      tools.push({ name, args })
-      return name === 'send_input' ? { sent: true, submitted: true } : { title: 'project shell', server: localServer, text: 'build output' }
+    { run: fn => fn() }, {}, { releaseOwner: () => {}, call: async (name, args, context) => {
+      tools.push({ name, args, context })
+      if (name === 'attach_process') return { attached: true }
+      return ['send_input', 'send_keys'].includes(name) ? { sent: true, submitted: true } : { title: 'project shell', server: localServer, text: 'build output' }
     } }, agents)
   Object.assign(panel, { loading: false, threadId: 'thread', cwd: '/project', connected: true })
   panel.ensureSource = async () => {}
@@ -113,6 +114,92 @@ test('ordinary requests and global disable send ordinary prompts and do not reco
   f.panel.prompt = 'another task'
   await f.panel.send()
   assert.equal(f.sent[1][4], 'current terminal data')
+})
+
+const terminalActions = [
+  ['send_input', { tabId: 'shell', text: 'echo ordinary', submit: true }],
+  ['send_input', { tabId: 'shell', mode: 'stdin', text: 'answer', submit: true }],
+  ['send_keys', { tabId: 'shell', key: 'Enter' }],
+  ['attach_process', { tabId: 'shell', expectedProcess: 'codex', purpose: 'supervise' }],
+]
+
+for (const api of [false, true]) for (const enabled of [false, true]) {
+  test(`${api ? 'API' : 'Codex'} ordinary terminal tools reach the adapter with workflows ${enabled ? 'idle' : 'disabled'}`, async t => {
+    const f = await setup(t, api)
+    f.memory.enabled = enabled
+    f.panel.prompt = 'run an ordinary terminal task'
+    await f.panel.send()
+    await f.tool('workflow_status', {})
+    assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).state, enabled ? 'idle' : 'disabled')
+    assert.equal(f.library.token('thread'), undefined)
+    const journalBefore = await f.library.store.loadRun('thread')
+    f.library.runtime = () => assert.fail('ordinary tools must not read workflow runtime')
+    f.panel.codex.getGoal = async () => assert.fail('ordinary tools must not enter the workflow helper budget check')
+    for (const [name, args] of terminalActions) {
+      await f.tool(name, args)
+      assert.equal(f.replies.at(-1)[1].success, true, f.replies.at(-1)[1].contentItems[0].text)
+      assert.equal(f.tools.at(-1).name, name)
+      assert.deepEqual(f.tools.at(-1).args, args)
+      assert.equal(f.tools.at(-1).context.owner, 'thread')
+      assert.equal(f.tools.at(-1).context.readOnly, false)
+    }
+    assert.equal(f.tools.length, terminalActions.length)
+    assert.equal((await f.library.store.read()).workflows.length, 0)
+    assert.deepEqual(await f.library.store.loadRun('thread'), journalBefore)
+  })
+}
+
+for (const [name, args] of terminalActions) {
+  test(`active workflow ${name}${args.mode ? ' stdin' : ''} retains helper budget enforcement`, async t => {
+    for (const helperTokens of [0, 5]) for (const used of [9, 10]) await t.test(`helper=${helperTokens}, used=${used}/10`, async t => {
+      const f = await setup(t)
+      f.panel.prompt = '/remember supervise a terminal task'
+      await f.panel.send()
+      const token = f.library.token('thread')
+      assert.ok(token)
+      if (name === 'send_keys' || args.mode === 'stdin') {
+        await f.tool('send_input', { tabId: 'shell', text: 'interactive-command', submit: true })
+        assert.equal(f.replies.at(-1)[1].success, true)
+      }
+      await f.tool('read_tab', { tabId: 'shell' })
+      f.library.addHelperTokens('thread', token, helperTokens)
+      let goalReads = 0
+      f.panel.codex.getGoal = async () => { goalReads++; return { tokenBudget: 10, usedTokens: used } }
+      const before = f.tools.length
+      await f.tool(name, args)
+      const blocked = helperTokens > 0 && used >= 10
+      assert.equal(f.replies.at(-1)[1].success, !blocked, f.replies.at(-1)[1].contentItems[0].text)
+      assert.equal(f.tools.length, before + (blocked ? 0 : 1))
+      assert.equal(goalReads, helperTokens > 0 ? 1 : 0)
+      if (blocked) assert.match(f.replies.at(-1)[1].contentItems[0].text, /token 预算/)
+      assert.equal(f.library.runtime('thread', token, 'shell').uncertain, undefined)
+    })
+  })
+}
+
+test('a cancelled tool waiting for the helper budget cannot act on a replacement workflow', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember original task'
+  await f.panel.send()
+  const token = f.library.token('thread')
+  f.library.addHelperTokens('thread', token, 5)
+  let release, entered
+  const waiting = new Promise(resolve => { entered = resolve })
+  f.panel.codex.getGoal = () => { entered(); return new Promise(resolve => { release = resolve }) }
+  const pending = f.tool('send_input', { tabId: 'shell', text: 'must not send', submit: true })
+  await waiting
+  f.panel.cancelWorkflowOperations()
+  await f.library.prepare('thread', 'replacement task', '/project', true)
+  const replacement = f.library.token('thread')
+  assert.notEqual(replacement, token)
+  assert.throws(() => f.library.runtime('thread', token, 'shell'), /当前没有可续接的流程/)
+  release({ tokenBudget: 10, tokensUsed: 9 })
+  await pending
+  assert.equal(f.replies.at(-1)[1].success, false)
+  assert.equal(f.tools.length, 0)
+  const state = f.library.runtime('thread', replacement, 'shell')
+  assert.equal(state.pending, undefined)
+  assert.equal(state.uncertain, undefined)
 })
 
 test('an unreadable memory store does not fail or duplicate a live task', async t => {

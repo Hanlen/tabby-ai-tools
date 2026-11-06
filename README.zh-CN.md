@@ -22,7 +22,9 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.9.0 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.9.1 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**v0.9.1 修复：** 流程空闲或关闭时，普通命令、stdin、Enter 与进程接管可正常执行；活动流程的预算和取消校验继续生效。Codex／Claude 独立空间可继承已有本机登录文件缓存，登录失效时可明确选择重新复制并重连，不重放任务；缺失 Codex 会话仅在没有可恢复上下文时替换。Pi 连续压缩回归为 Windows 预留更充足的测试时间。[发布说明](docs/releases/0.9.1.md)。
 
 **v0.9.0 新增图片预览、终端增量输出与任务日志。** 点击粘贴图片的缩略图可放大预览；终端支持游标分页和新输出唤醒，任务日志可在本机保存、分页和字面搜索。过期日志可自动回收容量，增量读取沿用受控终端的默认等待。见[终端日志说明](docs/terminal-logs.md)和[发布说明](docs/releases/0.9.0.md)。
 
@@ -56,8 +58,8 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 | 连接方式 | 如何使用 |
 | --- | --- |
-| **ChatGPT 订阅 → 本机 Codex** | 安装 Codex CLI 并选择 **Codex（本机登录）**，在设置的“指令与会话”生成选定空间的登录命令。 |
-| **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI 并选择 **Claude Code（本机登录）**，生成目标空间登录命令，完成后在设置里检查该空间登录。 |
+| **ChatGPT 订阅 → 本机 Codex** | 安装 Codex CLI 并选择 **Codex（本机登录）**，先在设置的“指令与会话”检查选定空间登录；私有缓存缺失时会继承可用的本机 ChatGPT 文件缓存，必要时生成登录命令。 |
+| **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI 并选择 **Claude Code（本机登录）**，先检查目标空间登录；私有缓存缺失时会继承可用的本机 OAuth 文件缓存，必要时生成登录命令。 |
 | **OpenAI API** | 添加 OpenAI 连接，配置 API Key、Base URL 和模型 ID。 |
 | **DeepSeek** | 添加 DeepSeek API 连接，选择模型与 Thinking 设置。 |
 | **GLM／智谱** | 添加 GLM API 连接，使用账号对应套餐的端点和模型。 |
@@ -92,7 +94,7 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 ## ChatGPT 订阅用户如何开始
 
 1. 在运行 Tabby 的本机安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)。
-2. 打开 **Settings → AI Tools → Codex → 指令与会话**，生成选定空间的登录命令，在本地终端执行并完成 ChatGPT 官方登录，再检查该空间认证。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
+2. 打开 **Settings → AI Tools → Codex → 指令与会话**，先检查选定空间认证；私有缓存缺失时会继承可用的本机 ChatGPT 文件缓存。必要时生成登录命令，在本地终端完成官方登录后再次检查。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
 
    ```bash
    codex login

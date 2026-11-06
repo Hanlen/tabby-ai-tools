@@ -22,7 +22,9 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.9.0 interface illustration with SSH attachments, native tab progress, native Pi providers, offline model catalog, instruction snapshots, private CLI history and connection drafts: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.9.1 interface illustration with SSH attachments, native tab progress, native Pi providers, offline model catalog, instruction snapshots, private CLI history and connection drafts: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**Fixed in v0.9.1:** ordinary commands, stdin, Enter and process attachment work when workflows are idle or disabled. Active workflow budgets and cancellation checks remain enforced. Private Codex/Claude spaces inherit available local login caches; an expired login offers explicit cache recovery and reconnect without replaying tasks. Missing Codex rollouts recover only when no saved context is available. Pi repeated-compaction tests allow more time on Windows. [Release notes](docs/releases/0.9.1.md).
 
 **New in v0.9.0: image previews, incremental output and task logs.** Click a pasted image thumbnail to open a larger preview. Terminal reads support cursor paging and output waiting; task-scoped local logs provide bounded paging and literal search. Expired logs reclaim capacity, and delta reads preserve the controlled-terminal default wait. See [terminal logs](docs/terminal-logs.md) and [release notes](docs/releases/0.9.0.md).
 
@@ -56,8 +58,8 @@ Terminal output is read on demand with `read_tab`; it is no longer automatically
 
 | Connection | How to use it |
 | --- | --- |
-| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. Generate the selected-space login command in Settings → AI Tools → Instructions and sessions. |
-| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Generate its selected-space login command, then check that space's login in Settings. |
+| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. Check selected-space login in Settings → AI Tools → Instructions and sessions; a missing private cache inherits a local ChatGPT file cache when available. Generate a login command if needed. |
+| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Check the selected-space login; a missing private cache inherits a local OAuth file cache when available. Generate a login command if needed. |
 | **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
 | **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
 | **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |
@@ -92,7 +94,7 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
 ## Start with your local ChatGPT subscription login
 
 1. Install [Codex CLI](https://learn.chatgpt.com/docs/cli) on the computer running Tabby.
-2. Open **Settings → AI Tools → Codex → Instructions and sessions**. Generate the selected-space login command, run it in a local terminal and complete the official ChatGPT login. Then check the selected-space login. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
+2. Open **Settings → AI Tools → Codex → Instructions and sessions**. Check the selected-space login first; a missing private cache imports an available local ChatGPT file cache. If needed, generate the selected-space login command, run it in a local terminal, complete the official ChatGPT login and check again. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
 
    ```bash
    codex login

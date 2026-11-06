@@ -1537,7 +1537,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           const settings = { ...this.settings, model: this.settings.model, reasoningEffort: this.settings.reasoningEffort, cwd: this.cwd }
           const call = async (name: string, args: any, fromRunner = false, signal = toolController.signal): Promise<any> => {
             if (this.threadId !== owner || backend !== this.codex || signal?.aborted) throw new Error('流程已停止或会话已切换')
-            if (library && ['send_input', 'send_keys', 'attach_process'].includes(name) && library.token(owner) === token && library.runtime(owner, token, args.tabId).helperTokens > 0) {
+            // An idle library and this call both have undefined tokens; that is not an active workflow.
+            if (library && token !== undefined && ['send_input', 'send_keys', 'attach_process'].includes(name) && library.token(owner) === token && library.runtime(owner, token, args.tabId).helperTokens > 0) {
               const goal = await backend.getGoal(owner)
               if (goal?.tokenBudget > 0 && Number(goal.tokensUsed ?? goal.usedTokens ?? 0) >= goal.tokenBudget) throw new Error('已达到目标 token 预算；保留当前节点，未发送后续操作')
             }
