@@ -25,6 +25,12 @@ npm run build
 
 CI 使用 Node.js 22.19.0，在 Ubuntu、macOS 和 Windows 上运行类型检查、测试和构建。开发时可用 `TABBY_PLUGINS=/path/to/tabby-ai-tools tabby --debug` 加载插件。
 
+### 普通终端工具与流程回归
+
+启用流程库但没有活动录制／别名执行时，当前令牌和工具捕获的令牌都可能为 `undefined`。读取流程运行状态前必须要求令牌存在且与当前令牌一致；普通任务仍经过终端适配器的只读、所有权和进程核验。`test/task-memory-panel.test.js` 覆盖 Codex／API 下流程关闭／idle 时的命令、stdin、按键与进程接管，以及活动流程的辅助 token 预算和取消后失效令牌隔离。
+
+Pi 连续压缩回归包含十轮独立 sidecar 启动，统一使用 90 秒时限。Windows Node 22.19.0 的外部实测在约 33.4 秒完成全部断言，超过原来的 30 秒；此调整保留原始历史、两次压缩、摘要成本及恢复断言，不改变产品压缩实现。此处耗时证据不代表本机已完成 Windows 复测。
+
 ### 安装后的重启提示
 
 Tabby 在应用内安装、升级插件后，已由[内置插件管理器](https://github.com/Eugeny/tabby/blob/master/tabby-plugin-manager/src/components/pluginsSettingsTab.component.ts)调用 `ConfigService.requestRestart()`。设置页据此显示“Restart the app to apply changes”，点击时通过 `HostAppService.relaunch()` 重启。首次安装时插件尚未加载，提示由宿主负责；本插件启动成功后不需要再次请求重启。`install:tabby` 是独立的文件复制脚本，无法直接调用 Tabby 进程内的注入服务，仍需用户手动重启。

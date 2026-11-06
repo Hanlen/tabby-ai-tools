@@ -1,4 +1,4 @@
-# Unreleased native CLI login inheritance and recovery — 2026-11-06
+# 0.9.1 native CLI login inheritance and recovery — 2026-11-06
 
 Codex and Claude Code private spaces initialize missing OAuth/ChatGPT file caches from the original CLI directory. Explicit authentication recovery atomically replaces a stale private cache, checks the selected account and reconnects without replaying a turn or tool. Existing private logins are preserved during ordinary connections. Missing/invalid sources leave the private cache intact. A native warning dialog handles 401/expired/missing login, deduplicates repeated errors, retains a reopening entry after dismissal, and targets the failing CLI even after a provider switch rolls back.
 
@@ -428,3 +428,19 @@ Limits: no new actual desktop/SSH or macOS/Windows validation, no cross-space lo
 ## Terminal log capacity and delta wait review fixes
 
 Expired sealed log metadata is reclaimed before the 2,000-record admission check; file deletion and byte accounting run after pending writes on the same queue. Active captures and pinned readers remain protected. Delta reads receive the resolved read_tab wait, preserving the 1,000 ms controlled-terminal default, explicit zero and uncontrolled-terminal behavior. `npm run test:terminal-logs` passed all 50 cases on the current Node runtime, including full-capacity recovery with queued writes and pinned readers. The full suite passed 839 tests with 39 conditional skips and zero failures (878 total); typecheck, skill consistency, production build and diff whitespace checks passed. No real model or desktop session was used for these fixes.
+
+## 0.9.0 ordinary terminal dispatch and Pi test timeout fixes — 2026-11-05
+
+An enabled but idle workflow library returned the same undefined token captured by an ordinary terminal call. The helper-budget guard treated that equality as an active run and called `runtime`, which rejected the call before terminal dispatch. The panel now requires a defined token as well as current-token equality before reading workflow runtime. The existing runtime validation, checkpoint rules and terminal adapter checks remain in place.
+
+Panel regressions exercise actual adapter calls for command input, stdin, Enter and process attachment under Codex/API with workflows idle or disabled. They also cover active workflow helper costs below/at the goal budget, no-helper handling, and cancellation/replacement while a budget query is pending; a stale runtime token still rejects and the cancelled action cannot reach the adapter or alter the replacement run. Existing workflow and terminal adapter tests cover checkpoint ordering, read-only policy, ownership and live-process verification. The targeted four-file suite passed all 120 cases on Linux / Node 20.20.2.
+
+The repeated Pi compaction test now allows 90 seconds on every platform for ten sidecar turns. User-provided Windows Node 22.19.0 diagnostics completed the unchanged assertions in 33,408 ms, exceeding the previous 30-second limit. Product compaction code and all history, summary-cost and resumption assertions are unchanged. On this Linux host with existing Node 22.19.0, the isolated test passed in 6.03 seconds and the full-suite case in 8.49 seconds.
+
+Final local `npm test` on Node 22.19.0: 903 cases, 897 passed, zero failed/cancelled, six Windows-only skips. `npm run skill:bundle`, `npm run skill:check`, `npm run typecheck`, `npm run build` (including Pi packaging) and `git diff --check` passed. Logs: `/tmp/tabby-090-fix-targeted.log`, `/tmp/tabby-090-fix-compaction.log`, `/tmp/tabby-090-fix-node22-tests.log`, `/tmp/tabby-090-fix-typecheck.log`, `/tmp/tabby-090-fix-build.log`. No paid model requests, actual Windows/macOS desktop retest, remote CI, version bump, commit or publication was performed. AGENTS.md and research remain locally ignored.
+
+## 0.9.1 patch release scope — 2026-11-06
+
+This patch packages the preceding native CLI login/session recovery commit, ordinary terminal dispatch fix and repeated-compaction test timeout adjustment described in the preceding implementation snapshot. The bilingual README, guide, development notes, release notes and synchronized overview SVG/PNG describe the final scope; robot GIF/static assets remain unchanged. The preceding recovery commit updated model-facing skill/knowledge; tool schemas and runtime dependencies are unchanged. ChatGPT entitlement/login wording was checked against the official authentication and developer-command pages on 2026-11-06.
+
+Release checks and exact-tarball installation evidence are retained in `/tmp/tabby-release-0.9.1-20261106/`; the published GitHub Release records the final check results, branch/tag three-platform CI links and tarball SHA-256. The preceding implementation snapshot's statement that no publication was performed applies to that earlier validation run. No new paid model or actual desktop/SSH tests are included in this patch release.

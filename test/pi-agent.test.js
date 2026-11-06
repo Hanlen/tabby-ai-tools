@@ -251,7 +251,9 @@ integration('Pi real HTTP: the native goal loop finishes once without an outer A
   assert.equal((await f.agent.getGoal(id)).status, 'complete')
 })
 
-integration('Pi real HTTP: repeated compaction retains raw entries, accounts summary costs and resumes', { timeout: 30000 }, async t => {
+// Ten turns launch separate sidecars; Windows Node 22.19 takes ~34s even without model latency.
+// Leave CI headroom on every platform while retaining all compaction/accounting assertions.
+integration('Pi real HTTP: repeated compaction retains raw entries, accounts summary costs and resumes', { timeout: 90000 }, async t => {
   const f = await fixture(t, (_req, res) => reply(res, '# Goal\nPreserve user constraints.\n# Pending\nStep 2 needs a fresh checkpoint.\n' + 'Observed result, never replay. '.repeat(120)))
   const id = await f.agent.openThread(process.cwd(), settings)
   async function turn (text) {
