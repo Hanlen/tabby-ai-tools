@@ -74,6 +74,7 @@ export interface AgentBackend {
   readonly runtimeInfo?: string
   getThreadConfiguration(threadId: string): ThreadConfiguration | undefined
   connect(settings: AgentSettings): Promise<void>
+  refreshAuthentication?(settings: AgentSettings): Promise<void>
   openThread(cwd: string, settings: AgentSettings, savedId?: string): Promise<string>
   resumeThread(threadId: string, cwd: string, settings: AgentSettings): Promise<string>
   listSessions(cwd: string, cursor?: string | null): Promise<SessionPage>

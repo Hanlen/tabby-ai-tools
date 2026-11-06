@@ -213,6 +213,19 @@ for (const policy of ['read-only', 'decline', 'accept']) {
   })
 }
 
+test('Claude auth failures in final JSON survive a nonzero CLI exit without retrying inference', async t => {
+  const f = await fixture(t, { authenticationError: true })
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const finished = done(f.agent)
+  await f.agent.startTurn(id, 'request', f.root, f.settings)
+  const turn = await finished
+  assert.equal(turn.status, 'failed')
+  assert.match(turn.error.message, /authentication_required/)
+  assert.equal((await f.store.load(id)).claudeSession, undefined)
+  assert.deepEqual(f.capture().calls, [])
+})
+
 for (const mode of ['hang', 'badJson', 'noResult', 'resultError', 'wrongSession']) {
   test(`Claude ${mode} stops cleanly and never retries inference`, async t => {
     const f = await fixture(t, { [mode]: true })

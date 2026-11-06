@@ -1,7 +1,9 @@
 import { promises as fs } from 'fs'
+import * as os from 'os'
 import * as path from 'path'
-import { createHash } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import type { AgentSettings } from './config'
+import { environmentValue, normalizeExecutable } from './codex-executable'
 
 export type NativeEngine = 'codex' | 'claude-code'
 export type SessionSpaceConfig = { mode: 'system' } | { mode: 'tabby'; spaceId: string }
@@ -52,6 +54,46 @@ export async function prepareSessionSpace (space: NativeSessionSpace): Promise<v
     if (error.code !== 'EEXIST') throw error
     const saved = JSON.parse(await fs.readFile(file, 'utf8'))
     if (saved.version !== 1 || saved.engine !== space.engine || saved.spaceId !== space.key) throw new Error('Session space belongs to another connection')
+  }
+}
+
+/** Seed an unconfigured private home from the official CLI's login cache.
+ * Publish a complete owner-only file; only explicit recovery replaces a login.
+ * Source credentials and native history are never changed or logged. */
+export async function initializeNativeAuth (space: NativeSessionSpace | undefined, inherited: NodeJS.ProcessEnv, options: { home?: string; replaceExisting?: boolean } = {}): Promise<boolean> {
+  if (!space?.native) return false
+  const codex = space.engine === 'codex'
+  const filename = codex ? 'auth.json' : '.credentials.json'
+  const home = options.home || os.homedir()
+  const target = path.join(space.native, filename)
+  try {
+    if (!options.replaceExisting) {
+      try { await fs.lstat(target); return false } catch (error: any) { if (error.code !== 'ENOENT') throw error }
+    }
+    let sourceHome = normalizeExecutable(environmentValue(inherited, codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR', process.platform === 'win32') || path.join(home, codex ? '.codex' : '.claude'))
+    if (/^~[/\\]/.test(sourceHome)) sourceHome = path.join(home, sourceHome.slice(2))
+    let cache: string
+    try { cache = await fs.readFile(path.join(sourceHome, filename), 'utf8') }
+    catch (error: any) { if (error.code === 'ENOENT') return false; throw error }
+    let auth: any
+    try { auth = JSON.parse(cache) } catch { return false }
+    // API-key-only caches must not silently change subscription billing.
+    if (!auth) return false
+    if (codex ? (auth.auth_mode && auth.auth_mode !== 'chatgpt') || typeof auth.tokens?.access_token !== 'string' || !auth.tokens.access_token
+      : typeof auth.claudeAiOauth?.accessToken !== 'string' || !auth.claudeAiOauth.accessToken) return false
+    const temporary = path.join(space.native, `.auth-${randomBytes(16).toString('hex')}.tmp`)
+    const handle = await fs.open(temporary, 'wx', 0o600)
+    try {
+      try { await handle.writeFile(cache) } finally { await handle.close() }
+      if (options.replaceExisting) { await fs.rename(temporary, target); return true }
+      try { await fs.link(temporary, target); return true }
+      catch (error: any) { if (error.code === 'EEXIST') return false; throw error }
+    } finally {
+      try { await fs.unlink(temporary) } catch (error: any) { if (error.code !== 'ENOENT') throw error }
+    }
+  } catch (error: any) {
+    // Do not include parser errors or file contents in a diagnostic.
+    throw new Error(`Cannot initialize CLI login cache (${error.code || 'file error'}). Check selected-space login.`)
   }
 }
 

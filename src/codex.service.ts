@@ -74,6 +74,9 @@ export class CodexService {
     })
   }
   setContextStore (store: AgentStore): void { this.contextStore = store }
+  async refreshAuthentication (settings: AgentSettings): Promise<void> {
+    await this.client.refreshAuthentication(settings.executable.trim() || 'codex', this.sessionSpace)
+  }
   private async checkOwnership (id: string, cwd?: string): Promise<InstructionsSnapshot | undefined> {
     const record = await this.contextStore?.loadNativeSession?.(id)
     if (this.sessionSpace?.native && (!record || record.spaceKey !== this.sessionSpace.key)) throw new Error('Session belongs to another space; select it in the original connection before transferring context')
@@ -144,7 +147,13 @@ export class CodexService {
 
   async openThread (cwd: string, settings: AgentSettings, savedId?: string): Promise<string> {
     if (savedId && settings.tabToolThreads?.[cwd] === savedId) {
-      return this.resumeThread(savedId, cwd, settings)
+      try { return await this.resumeThread(savedId, cwd, settings) } catch (error: any) {
+        // Threads without a first turn may have no persisted rollout after exit.
+        // Keep real errors and saved context intact; only replace a missing thread.
+        if (!/no rollout found for thread id|thread[^\n]*(?:not found|not materialized)/i.test(String(error.message)) ||
+          await this.contextStore?.loadCodexContext(savedId)) throw error
+        this.client.emit('diagnostic', `Saved Codex thread ${savedId} has no rollout; creating a new conversation.\n`)
+      }
     }
     return this.startThread(cwd, settings)
   }

@@ -5,7 +5,7 @@ import * as readline from 'readline'
 import { normalizeExecutable } from './codex-executable'
 import { resolveCodexLaunch } from './codex-discovery'
 import { terminateCodexProcess } from './codex-process'
-import { NativeSessionSpace, prepareSessionSpace, sessionEnvironment, codexSpaceArgs } from './session-space'
+import { NativeSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment, codexSpaceArgs } from './session-space'
 
 export interface RpcMessage {
   id?: number
@@ -30,6 +30,19 @@ export class CodexClient extends EventEmitter {
 
   get isConnected (): boolean { return this.connected }
 
+  async refreshAuthentication (executable: string, space?: NativeSessionSpace): Promise<void> {
+    if (!space?.native || space.engine !== 'codex') throw new Error('Select a private Codex space to copy the local login cache')
+    await this.close()
+    const resolved = await resolveCodexLaunch(normalizeExecutable(executable) || 'codex')
+    await prepareSessionSpace(space)
+    if (!await initializeNativeAuth(space, resolved.env, { replaceExisting: true })) {
+      throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
+    }
+    await this.connect(executable, space)
+    const result = await this.request('account/read', { refreshToken: false })
+    if (result.account?.type !== 'chatgpt') throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
+  }
+
   async connect (executable: string, space?: NativeSessionSpace): Promise<void> {
     executable = normalizeExecutable(executable) || 'codex'
     // The eager runtime has no space metadata; the panel later supplies the
@@ -53,6 +66,8 @@ export class CodexClient extends EventEmitter {
     if (space) await prepareSessionSpace(space)
     if (this.stopping) await this.stopping
     if (signal.aborted) throw new Error('Codex app-server was closed during CLI discovery')
+    await initializeNativeAuth(space, resolved.env)
+    if (signal.aborted) throw new Error('Codex app-server was closed during login cache initialization')
     executable = resolved.executable
     // Native binaries always use an absolute path and direct argument arrays.
     // Only Windows batch launchers need cmd.exe; cross-spawn escapes its command

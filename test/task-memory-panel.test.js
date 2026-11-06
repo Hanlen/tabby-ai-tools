@@ -20,6 +20,7 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 }).outputText, filename)
 const { CodexPanelComponent } = require('../src/codex-panel.component.ts')
 const { TaskMemory, TaskMemoryStore } = require('../src/task-memory.ts')
+const { isNativeAuthenticationError } = require('../src/cli-auth.ts')
 Module._load = originalLoad
 require.extensions['.ts'] = originalTsLoader
 const localServer = { type: 'local', profileId: 'local-shell', serverId: 'local-machine', host: 'workstation', ip: '127.0.0.1', port: 0, username: 'test', cwd: '/project' }
@@ -123,6 +124,103 @@ test('an unreadable memory store does not fail or duplicate a live task', async 
   assert.equal(f.sent[0][4], 'current terminal data')
   assert.match(f.panel.memoryNotice, /读取流程库失败/)
   assert.equal(f.panel.busy, true)
+})
+
+test('successful reconnect clears a failed connection switch and preserves the draft', async t => {
+  const { panel } = await setup(t)
+  panel.connectionError = '连接失败：请先在 AI Tools 设置中填写模型 ID'
+  panel.connected = false
+  panel.prompt = 'unsent user request'
+  panel.config.store.codexAgent.threads = {}
+  panel.config.save = async () => {}
+  panel.codex.connect = async () => {}
+  panel.codex.openThread = async () => 'replacement'
+  panel.loadHistory = async () => {}
+  assert.equal(await panel.reconnect(), true)
+  assert.equal(panel.connected, true)
+  assert.equal(panel.threadId, 'replacement')
+  assert.equal(panel.connectionError, '')
+  assert.equal(panel.prompt, 'unsent user request')
+})
+
+test('native authentication detection distinguishes structured 401/expired tokens from permissions and limits', () => {
+  for (const error of [new Error('401 Unauthorized'), { code: 'authentication_required' }, { message: 'refresh_token_reused' },
+    { message: 'OAuth token has expired' }, { codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } } }]) {
+    assert.equal(isNativeAuthenticationError(error), true)
+  }
+  for (const error of [new Error('403 Forbidden'), new Error('429 Too Many Requests'), new Error('model not found'), new Error('no rollout found for thread id old')]) {
+    assert.equal(isNativeAuthenticationError(error), false)
+  }
+})
+
+for (const claude of [false, true]) {
+  test(`${claude ? 'Claude Code' : 'Codex'} auth failure opens one warning and explicit recovery preserves the draft without replay`, async t => {
+    const f = await setup(t), { panel } = f
+    if (claude) { panel.codex.profile = { id: 'claude-code', runtime: 'claude-code', threads: {} }; panel.profileId = 'claude-code' }
+    panel.codex.sessionSpace = { engine: claude ? 'claude-code' : 'codex', key: 'private', native: '/fixture/private' }
+    let shown = 0, restored = 0
+    const dialog = { open: false, showModal () { this.open = true; shown++ }, close () { this.open = false } }
+    panel.authWarningDialog = { nativeElement: dialog }
+    panel.codex.refreshAuthentication = async () => { restored++; assert.equal(panel.loading, true) }
+    panel.codex.connect = async () => {}
+    panel.codex.openThread = async () => 'thread'
+    panel.config.store.codexAgent.threads = { '/project': 'thread' }
+    panel.config.save = async () => {}
+    panel.loadHistory = async () => { panel.busy = false }
+    panel.prompt = 'keep this unsent draft'
+    panel.handleEvent({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'failed', status: 'failed', error: { message: '401 Unauthorized' } } } })
+    assert.equal(dialog.open, true)
+    assert.equal(panel.canRecoverNativeAuth, true)
+    panel.showSendError({ message: 'OAuth token has expired' }, '执行错误')
+    assert.equal(shown, 1, 'repeated errors must not open overlapping warnings')
+    panel.dismissAuthWarning()
+    assert.equal(dialog.open, false)
+    assert.equal(panel.authWarning, true, 'the persistent recovery entry remains after dismissing')
+    panel.showAuthWarningDialog()
+    await panel.recoverAuthentication()
+    assert.equal(restored, 1)
+    assert.equal(panel.authWarning, false)
+    assert.equal(dialog.open, false)
+    assert.equal(panel.connected, true)
+    assert.equal(panel.prompt, 'keep this unsent draft')
+    assert.equal(panel.threadId, 'thread')
+    assert.deepEqual(f.sent, [])
+    assert.deepEqual(f.tools, [])
+  })
+}
+
+test('failed authentication recovery keeps the warning and draft, with no automatic inference', async t => {
+  const f = await setup(t), { panel } = f
+  panel.codex.sessionSpace = { engine: 'codex', key: 'private', native: '/fixture/private' }
+  panel.codex.refreshAuthentication = async () => { throw new Error('No reusable local login cache') }
+  panel.prompt = 'keep me'
+  panel.showSendError({ message: '401 Unauthorized' }, '执行错误')
+  await panel.recoverAuthentication()
+  assert.equal(panel.authWarning, true)
+  assert.equal(panel.authRecoveryError, 'No reusable local login cache')
+  assert.equal(panel.authRecovering, false)
+  assert.equal(panel.prompt, 'keep me')
+  assert.deepEqual(f.sent, [])
+})
+
+test('a warning after a rolled-back provider switch repairs the failed native provider', async t => {
+  const f = await setup(t, true), { panel } = f
+  let copied = 0, closed = 0, selected
+  const target = { sessionSpace: { engine: 'codex', key: 'private', native: '/fixture/private' },
+    client: { close: async () => { closed++ } }, refreshAuthentication: async () => { copied++ } }
+  panel.warnAuthentication({ message: '401 Unauthorized' }, target, '')
+  assert.equal(panel.apiMode, true, 'the previous provider remains selected after rollback')
+  assert.equal(panel.authAgentLabel, 'Codex')
+  assert.equal(panel.canRecoverNativeAuth, true)
+  panel.selectConnection = async (id, reload) => { selected = [id, reload]; panel.codex = target; panel.profileId = id; panel.connected = true }
+  panel.prompt = 'preserve draft across the switch'
+  await panel.recoverAuthentication()
+  assert.equal(copied, 1)
+  assert.equal(closed, 1)
+  assert.deepEqual(selected, ['', true])
+  assert.equal(panel.prompt, 'preserve draft across the switch')
+  assert.equal(panel.authWarning, false)
+  assert.deepEqual(f.sent, [])
 })
 
 test('/remember starts execution rather than saving a preference; workflow picker fills an alias', async t => {

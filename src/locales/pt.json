@@ -954,7 +954,7 @@
   "Session space": "Session space",
   "Tabby private space (recommended)": "Tabby private space (recommended)",
   "System space (legacy compatibility)": "System space (legacy compatibility)",
-  "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.",
+  "Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "Salve, verifique o login do espaço selecionado e reconecte pela barra lateral quando estiver ocioso. A reconexão transfere a conversa atual; os registros de origem permanecem no local original. Use /new para iniciar uma nova conversa.",
   "Save session space": "Save session space",
   "Discard space edits": "Discard space edits",
   "Check selected-space login": "Check selected-space login",
@@ -992,5 +992,15 @@
   "关闭图片预览": "Fechar pré-visualização da imagem",
   "预览图片：{0}": "Ver imagem: {0}",
   "保存任务终端日志": "Save task terminal logs",
-  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving."
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving.",
+  "{0} 认证失败": "Falha na autenticação de {0}",
+  "认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。": "Falha na autenticação. Copie novamente o login do diretório original da CLI local e reconecte. A conversa e o rascunho são mantidos. As tarefas não são reenviadas automaticamente.",
+  "认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。": "Falha na autenticação. Faça login novamente na CLI local e reconecte. A conversa e o rascunho são mantidos. As tarefas não são reenviadas automaticamente.",
+  "重新复制登录并重连": "Copiar login novamente e reconectar",
+  "正在恢复登录…": "Restaurando login…",
+  "已重新复制本机登录，请重新发送或继续任务。": "Login local copiado novamente. Reenvie a mensagem ou continue a tarefa.",
+  "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "Nenhum cache de login local reutilizável. Faça login primeiro na CLI original; logins apenas no chaveiro exigem login no espaço selecionado.",
+  "登录已失效，请重新复制本机登录并重连。": "Login expirado. Copie novamente o login local e reconecte.",
+  "登录已失效，请在本机重新登录后重连。": "Login expirado. Faça login novamente localmente e reconecte.",
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Salvo. Um espaço privado da CLI sem login reutiliza o cache de login local. Reconecte quando estiver ocioso; as sessões originais são mantidas."
 }

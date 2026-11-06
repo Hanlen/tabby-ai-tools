@@ -13,8 +13,9 @@ import { inspectClaudeCode, runClaudeProcess } from './claude-code-client'
 import type { CodexModel } from './codex.service'
 import { redactMemory } from './task-memory'
 import { modelReasoningEfforts } from './model-reasoning'
-import { NativeSessionSpace, prepareSessionSpace, sessionEnvironment } from './session-space'
+import { NativeSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment } from './session-space'
 import { normalizeExecutable } from './codex-executable'
+import { isNativeAuthenticationError } from './cli-auth'
 
 export { CLAUDE_CODE_ID, claudeCodeProfile } from './claude-code-profile'
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
@@ -106,6 +107,8 @@ export class ClaudeCodeAdapter extends ApiProviderAdapter {
     } catch (error) {
       // The CLI may have acted before failure. Rebuild from recorded history next time, never silently retry inference.
       delete this.sessionState.claudeSession
+      // A failing CLI can put the auth error only in its final JSON and exit 1.
+      if (!fatal && !controller.signal.aborted && final?.is_error && isNativeAuthenticationError(final)) throw new Error('Claude Code authentication_required: local CLI login expired or unauthorized')
       throw fatal || error
     } finally {
       controller.abort()
@@ -131,7 +134,10 @@ export class ClaudeCodeAgent extends ApiAgent {
     this.discovery = controller
     const ready = (async () => {
       try {
-        if (this.sessionSpace) await prepareSessionSpace(this.sessionSpace)
+        if (this.sessionSpace) {
+          await prepareSessionSpace(this.sessionSpace)
+          await initializeNativeAuth(this.sessionSpace, process.env)
+        }
         const resolved = await inspectClaudeCode(executable, cwd, controller.signal, sessionEnvironment(this.sessionSpace, process.env))
         if (controller.signal.aborted) throw new Error('请求已停止')
         this.executable = resolved
@@ -142,6 +148,15 @@ export class ClaudeCodeAgent extends ApiAgent {
     })()
     this.connecting = { key, ready }
     return ready
+  }
+  async refreshAuthentication (settings: AgentSettings): Promise<void> {
+    if (!this.sessionSpace?.native) throw new Error('Select a private Claude Code space to copy the local login cache')
+    this.close()
+    await prepareSessionSpace(this.sessionSpace)
+    if (!await initializeNativeAuth(this.sessionSpace, process.env, { replaceExisting: true })) {
+      throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
+    }
+    await this.connect(settings)
   }
   async listModels (): Promise<CodexModel[]> {
     // Official aliases, not a claim that an account is entitled to every model.
@@ -167,6 +182,7 @@ export async function probeClaudeCodeModel (profile: ApiProfile, configuredExecu
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-claude-probe-'))
   try {
     if (space) await prepareSessionSpace(space)
+    await initializeNativeAuth(space, process.env)
     const executable = await inspectClaudeCode(configuredExecutable, directory, signal, sessionEnvironment(space, process.env))
     const nonce = randomBytes(8).toString('hex')
     let confirmed = false

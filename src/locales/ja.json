@@ -954,7 +954,7 @@
   "Session space": "Session space",
   "Tabby private space (recommended)": "Tabby private space (recommended)",
   "System space (legacy compatibility)": "System space (legacy compatibility)",
-  "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "Save, log in to the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.",
+  "Save, check login for the selected space, then reconnect in the sidebar when idle. Reconnect transfers the current conversation; source records remain in their original location. Choose /new for a fresh conversation.": "保存後、選択したスペースのログイン状態を確認し、アイドル時にサイドバーで再接続してください。現在の会話が転送され、元の記録は元の場所に保持されます。新しい会話には /new を使用してください。",
   "Save session space": "Save session space",
   "Discard space edits": "Discard space edits",
   "Check selected-space login": "Check selected-space login",
@@ -992,5 +992,15 @@
   "关闭图片预览": "画像プレビューを閉じる",
   "预览图片：{0}": "画像をプレビュー：{0}",
   "保存任务终端日志": "Save task terminal logs",
-  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving."
+  "仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。": "Save output only from terminals accessed by a task. Keep locally for 7 days. Output may contain sensitive information; disabling stops new saving.",
+  "{0} 认证失败": "{0} の認証に失敗しました",
+  "认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。": "認証に失敗しました。ローカル CLI の元のディレクトリからログイン情報を再コピーして再接続できます。会話と下書きは保持され、タスクは自動で再送信されません。",
+  "认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。": "認証に失敗しました。ローカル CLI で再ログインしてから再接続してください。会話と下書きは保持され、タスクは自動で再送信されません。",
+  "重新复制登录并重连": "ログイン情報を再コピーして再接続",
+  "正在恢复登录…": "ログインを復元中…",
+  "已重新复制本机登录，请重新发送或继续任务。": "ローカルのログイン情報を再コピーしました。メッセージを再送信するか、タスクを続けてください。",
+  "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "再利用できるローカルログインキャッシュがありません。元の CLI でログインしてください。キーチェーンのみのログインは、選択したスペースで再ログインが必要です。",
+  "登录已失效，请重新复制本机登录并重连。": "ログインが失効しました。ローカルのログイン情報を再コピーして再接続してください。",
+  "登录已失效，请在本机重新登录后重连。": "ログインが失効しました。ローカルで再ログインしてから再接続してください。",
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "保存しました。ログインのない CLI 専用スペースはローカルのログインキャッシュを再利用します。アイドル時に再接続してください。元のセッションは保持されます。"
 }

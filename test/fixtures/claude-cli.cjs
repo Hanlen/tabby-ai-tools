@@ -7,7 +7,12 @@ const flags = ['--tools', '--strict-mcp-config', '--setting-sources', '--disable
 if (args[0] === '--help') { console.log(flags.filter(flag => flag !== scenario.missingFlag).join('\n')); process.exit(0) }
 if (args[0] === 'auth') {
   if (scenario.captureEnvironment) fs.writeFileSync(path.join(__dirname, 'auth-environment.json'), JSON.stringify({ configDir: process.env.CLAUDE_CONFIG_DIR }))
-  console.log(JSON.stringify({ loggedIn: scenario.loggedIn !== false, authMethod: 'claude.ai' })); process.exit(scenario.loggedIn === false ? 1 : 0)
+  let loggedIn = scenario.loggedIn !== false
+  if (scenario.requireLoginCache) {
+    try { loggedIn = JSON.parse(fs.readFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'))).claudeAiOauth.accessToken === 'fixture-claude-login' }
+    catch { loggedIn = false }
+  }
+  console.log(JSON.stringify({ loggedIn, authMethod: 'claude.ai' })); process.exit(loggedIn ? 0 : 1)
 }
 const flag = name => args[args.indexOf(name) + 1]
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
@@ -24,6 +29,11 @@ const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
   const capture = { args, input, pid: process.pid, config, configDir: process.env.CLAUDE_CONFIG_DIR, system: fs.readFileSync(flag('--append-system-prompt-file'), 'utf8'), calls: [] }
   const save = () => fs.writeFileSync(path.join(__dirname, 'capture.json'), JSON.stringify(capture))
   save()
+  if (scenario.authenticationError) {
+    emit({ type: 'result', subtype: 'error_during_execution', is_error: true, result: '401 Unauthorized: OAuth token has expired' })
+    process.exitCode = 1
+    return
+  }
   if (scenario.hang) { setInterval(() => {}, 1000); return }
   if (scenario.badJson) { process.stdout.write('{broken json\n'); setInterval(() => {}, 1000); return }
   const rpc = async (method, params) => {
