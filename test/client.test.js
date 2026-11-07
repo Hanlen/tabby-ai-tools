@@ -431,7 +431,11 @@ test('no alternative complete installation stops after one rescan with paths and
 })
 
 test('removal after successful preflight but before spawn is recovered once without a model request', async t => {
-  const f = recoveryFixture(t), cp = require('node:child_process'), original = cp.spawn
+  const f = recoveryFixture(t)
+  // Windows fixtures are .cmd launchers: intercept before cross-spawn rewrites
+  // their path to cmd.exe, so removal really occurs at the launch boundary.
+  const cp = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process')
+  const original = cp.spawn
   let removed = false
   t.mock.method(cp, 'spawn', (file, ...args) => {
     if (file === f.first && !removed) { removed = true; fs.unlinkSync(file) }
@@ -478,7 +482,8 @@ test('a helper removed between preflight and startup is detected in owned child 
     f.scans.push({ configured, excluded: [...context.excludedExecutables] })
     return { executable: file, companions: file === old ? [helper] : [], env: process.env }
   })
-  const cp = require('node:child_process'), original = cp.spawn
+  const cp = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process')
+  const original = cp.spawn
   t.mock.method(cp, 'spawn', (file, ...args) => { if (file === old) fs.unlinkSync(helper); return original(file, ...args) })
   await f.client.connect('codex')
   assert.equal(f.client.isConnected, true)
