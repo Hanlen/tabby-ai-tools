@@ -37,6 +37,8 @@ export interface ClaudeProcessOptions {
   timeoutMs?: number
   onLine?: (line: string) => void
   env?: NodeJS.ProcessEnv
+  /** Only auth status exit 1 with explicit loggedIn=false JSON is accepted. */
+  authStatus?: boolean
 }
 
 /** A bounded JSONL pipe with cancellation that waits for the owned process tree. */
@@ -86,7 +88,11 @@ export async function runClaudeProcess (options: ClaudeProcessOptions): Promise<
         closed = true
         try {
           if (!failure && pending.trim()) options.onLine?.(pending.trim())
-          if (!failure && code !== 0) failure = new Error(`Claude Code CLI 退出（${code ?? signal}）：${redactMemory(stderr, 2000)}`)
+          let loggedOutStatus = false
+          if (options.authStatus && code === 1) {
+            try { loggedOutStatus = JSON.parse(output)?.loggedIn === false } catch { /* Not a verified auth result. */ }
+          }
+          if (!failure && code !== 0 && !loggedOutStatus) failure = new Error(`Claude Code CLI 退出（${code ?? signal}）：${redactMemory(stderr, 2000)}`)
         } catch (error: any) { failure = error }
         resolve()
       })
@@ -105,16 +111,21 @@ export async function runClaudeProcess (options: ClaudeProcessOptions): Promise<
 
 export async function inspectClaudeCode (configured: string, cwd: string, signal: AbortSignal, env?: NodeJS.ProcessEnv): Promise<string> {
   const executable = resolveClaudeExecutable(configured)
-  const run = (args: string[]) => runClaudeProcess({ executable, args, cwd, env, signal, timeoutMs: 15000 })
+  const run = (args: string[], authStatus = false) => runClaudeProcess({ executable, args, cwd, env, signal, timeoutMs: 15000, authStatus })
   const help = await run(['--help'])
   for (const flag of ['--tools', '--strict-mcp-config', '--setting-sources', '--disable-slash-commands', '--append-system-prompt-file', '--include-partial-messages', '--system-prompt-snapshot']) {
     if (!help.includes(flag)) throw new Error(`Claude Code CLI 缺少 ${flag}；请更新官方 CLI 后重试。`)
   }
   let auth: any
-  try { auth = JSON.parse(await run(['auth', 'status'])) } catch (error: any) {
+  let status: string
+  try { status = await run(['auth', 'status'], true) } catch (error: any) {
     if (signal.aborted) throw error
-    throw Object.assign(new Error('无法确认 Claude Code 登录状态；请在本机终端运行 claude auth login，再用 claude auth status 检查。'), { code: 'authentication_required' })
+    throw new Error(`Claude Code CLI auth status probe failed before inference. CLI: ${executable}\n${redactMemory(String(error.message), 2000)}\nInspect the CLI installation and launcher; this failure does not establish that the account is logged out.`)
   }
+  try { auth = JSON.parse(status) } catch {
+    throw new Error(`Claude Code CLI auth status returned invalid JSON. CLI: ${executable}. Check CLI protocol compatibility; no inference was submitted.`)
+  }
+  if (typeof auth?.loggedIn !== 'boolean') throw new Error(`Claude Code CLI auth status returned an unsupported status schema. CLI: ${executable}. No inference was submitted.`)
   if (auth.loggedIn !== true) throw Object.assign(new Error(env?.CLAUDE_CONFIG_DIR ? 'Selected Claude Code space is not logged in. Generate its login command in Settings → AI Tools → Instructions and sessions.' : 'Claude Code 尚未登录；请在本机终端运行 claude auth login 完成官方登录。'), { code: 'authentication_required' })
   return executable
 }

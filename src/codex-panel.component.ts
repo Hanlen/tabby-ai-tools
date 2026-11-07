@@ -334,6 +334,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (this.status.startsWith('连接中断')) this.status = 'Codex 已重新连接，正在恢复会话…'
     if (!this.loading) void this.reconnect()
   })
+  private readonly onRecovered = () => this.zone.run(() => {
+    this.connected = true
+    this.status = 'Codex 安装故障已恢复连接；会话和输入已保留，未重发任务。继续前请读取终端，核对已提交操作的实际状态。'
+    this.entries.push({ id: `installation-recovered-${Date.now()}`, kind: 'system', text: this.status })
+  })
+  private readonly onRecoveryFailed = (error: Error) => this.zone.run(() => {
+    this.status = `Codex 安装恢复已停止：${error.message}`
+    this.entries.push({ id: `installation-failed-${Date.now()}`, kind: 'system', text: this.status })
+  })
   private readonly onDisconnect = (error: Error) => this.zone.run(() => {
     this.statusRequest++
     this.statusLoading = false
@@ -904,6 +913,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       }
       this.codex.client.off('event', this.onEvent)
       this.codex.client.off('connected', this.onConnected)
+      this.codex.client.off('recovered', this.onRecovered)
+      this.codex.client.off('recoveryFailed', this.onRecoveryFailed)
       this.codex.client.off('disconnected', this.onDisconnect)
       this.codex = backend
       this.profileId = id
@@ -923,6 +934,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.clearTokenUsage()
       this.codex.client.on('event', this.onEvent)
       this.codex.client.on('connected', this.onConnected)
+      this.codex.client.on('recovered', this.onRecovered)
+      this.codex.client.on('recoveryFailed', this.onRecoveryFailed)
       this.codex.client.on('disconnected', this.onDisconnect)
       if (await this.reconnect(transferredId || undefined) === false) throw new Error(this.status)
       this.cancelWorkflowOperations()
@@ -946,11 +959,15 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (this.codex !== previous.codex) {
         this.codex.client.off('event', this.onEvent)
         this.codex.client.off('connected', this.onConnected)
+        this.codex.client.off('recovered', this.onRecovered)
+        this.codex.client.off('recoveryFailed', this.onRecoveryFailed)
         this.codex.client.off('disconnected', this.onDisconnect)
         Object.assign(this, previous)
         this.refreshAttachments()
         this.codex.client.on('event', this.onEvent)
         this.codex.client.on('connected', this.onConnected)
+        this.codex.client.on('recovered', this.onRecovered)
+        this.codex.client.on('recoveryFailed', this.onRecoveryFailed)
         this.codex.client.on('disconnected', this.onDisconnect)
         await this.config.save().catch(() => undefined)
       } else if (indexesChanged) await this.config.save().catch(() => undefined)
@@ -994,6 +1011,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }))
     this.codex.client.on('event', this.onEvent)
     this.codex.client.on('connected', this.onConnected)
+    this.codex.client.on('recovered', this.onRecovered)
+    this.codex.client.on('recoveryFailed', this.onRecoveryFailed)
     this.codex.client.on('disconnected', this.onDisconnect)
     await this.reconnect()
   }
@@ -1952,6 +1971,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (this.sourceTerminal && this.sourceBound) this.terminalOutput.unwatch(this.sourceTerminal)
     this.codex.client.off('event', this.onEvent)
     this.codex.client.off('connected', this.onConnected)
+    this.codex.client.off('recovered', this.onRecovered)
+    this.codex.client.off('recoveryFailed', this.onRecoveryFailed)
     this.codex.client.off('disconnected', this.onDisconnect)
     if (this.apiMode || this.codex.sessionSpace?.native) this.codex.client.close()
   }

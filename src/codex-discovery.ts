@@ -6,13 +6,16 @@ import { Readable } from 'stream'
 import { codexExecutableCandidates, codexEnvironment, environmentValue, executableEnvironment, executableFile, ExecutableContext, normalizeExecutable, resolveCodexExecutable } from './codex-executable'
 import { packageManagerDirectories } from './codex-prefix'
 import { newestCodexExecutable } from './codex-version'
+import { checkCodexInstallation, codexCompanions, CodexInstallationError, CodexCapabilities } from './codex-installation'
 
 export interface CodexLaunch {
   executable: string
   env: NodeJS.ProcessEnv
+  companions?: string[]
 }
 
-export interface DiscoveryContext extends ExecutableContext {
+export interface DiscoveryContext extends ExecutableContext, CodexCapabilities {
+  excludedExecutables?: ReadonlySet<string>
   signal?: AbortSignal
   shellTimeoutMs?: number
   versionTimeoutMs?: number
@@ -239,6 +242,13 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
   checkCancelled(context.signal)
   let executable: string | undefined
   let originalError: Error | undefined
+  const companions = new Map<string, string[]>()
+  const validateWindowsCandidate = (file: string, version: Parameters<typeof codexCompanions>[1]): void => {
+    if (context.excludedExecutables?.has(file)) throw new CodexInstallationError(file, file, 'rejected after a confirmed installation failure; rescanned once')
+    const required = codexCompanions(file, version, resolution)
+    checkCodexInstallation(file, required, resolution)
+    companions.set(file, required)
+  }
   try {
     if (windows) {
       let candidates: string[] = []
@@ -257,9 +267,9 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
         }
       }
       if (!candidates.length) throw discoveryError
-      executable = candidates.length > 1
-        ? await newestCodexExecutable(candidates, env, { ...context, cwd })
-        : candidates[0]
+      executable = await newestCodexExecutable(candidates, env, { ...context, cwd,
+        validateCandidate: validateWindowsCandidate,
+      })
       checkCancelled(context.signal)
     } else executable = resolveCodexExecutable(configured, { ...resolution, env })
   } catch (error: any) {
@@ -267,7 +277,7 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
     if (!automatic || !supported) throw error
     originalError = error
   }
-  if (!supported || (windows && executable)) return launchEnvironment(executable!, env, platform)
+  if (!supported || (windows && executable)) return { ...launchEnvironment(executable!, env, platform), companions: companions.get(executable!) }
 
   const missingNode = async (selected: string): Promise<boolean> => {
     const launch = launchEnvironment(selected, env, platform)
@@ -296,38 +306,43 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
   const directories = await installDirectories(home, env, cwd, resolution, reasons)
   // Validate only this candidate. Never re-enter automatic Windows scanning or
   // CODEX_INSTALL_DIR while iterating fallback directories.
-  const select = (candidates: string[]): string | undefined => {
+  const select = async (candidates: string[]): Promise<string | undefined> => {
     for (const directory of candidates) {
       checkCancelled(context.signal)
       for (const name of windows ? ['codex.exe', 'codex.cmd'] : ['codex']) {
         const filename = paths.resolve(cwd, directory, name)
-        try { executableFile(filename, resolution); return filename } catch (error: any) {
+        try {
+          executableFile(filename, resolution)
+          if (windows) await newestCodexExecutable([filename], env, { ...context, cwd, validateCandidate: validateWindowsCandidate })
+          return filename
+        } catch (error: any) {
           reasons.push(`${filename}: ${error.code || error.message}`)
         }
       }
     }
     return undefined
   }
-  if (!executable) executable = select(directories)
+  if (!executable) executable = await select(directories)
   if (!executable || await missingNode(executable)) {
     const searchPath = [environmentValue(env, 'PATH', windows), ...directories].filter(Boolean).join(windows ? ';' : ':')
     const prefixes = await packageManagerDirectories(executableEnvironment(env, searchPath, windows), resolution, reasons)
     checkCancelled(context.signal)
     directories.push(...prefixes)
-    if (!executable) executable = select(prefixes)
+    if (!executable) executable = await select(prefixes)
   }
   if (!executable) {
     const applications = desktopDirectories(home, resolution)
     directories.push(...applications)
-    executable = select(applications)
+    executable = await select(applications)
   }
   if (!executable) {
     const extensions = await ideDirectories(home, resolution, reasons)
     directories.push(...extensions)
-    executable = select(extensions)
+    executable = await select(extensions)
   }
   if (!executable) {
-    throw new Error(`${originalError?.message}\n${reasons.join('\n')}\n补充安装目录: ${directories.join(', ')}；没有可用的 codex`)
+    throw Object.assign(new Error(`${originalError?.message}\n${reasons.join('\n')}\n补充安装目录: ${directories.join(', ')}；没有可用的 codex`),
+      (originalError as any)?.installationFailure || reasons.some(reason => /No complete Codex installation/.test(reason)) ? { installationFailure: true } : {})
   }
   let launch = launchEnvironment(executable, env, platform)
   if (await missingNode(executable)) {
@@ -343,5 +358,6 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
     }
   }
   checkCancelled(context.signal)
-  return launch
+  if (context.excludedExecutables?.has(executable)) throw new CodexInstallationError(executable, executable, 'rejected after a confirmed installation failure; configured CLI remains pinned')
+  return windows ? { ...launch, companions: companions.get(executable) } : launch
 }

@@ -736,3 +736,39 @@ test('delta reads inherit controlled-terminal default wait and preserve explicit
     tools.release(terminal)
   } finally { tools.ngOnDestroy() }
 })
+
+test('verified SSH attachment revalidates before each answer and retains ownership across transient failures', async t => {
+  const f = ownershipFixture('ssh')
+  const identity = { pid: 20, tty: 'pts/3', started: '123', executable: '/opt/codex' }
+  const calls = []
+  t.mock.method(f.tools, 'remoteProcess', async (tab, expected, previous) => { calls.push(previous); return identity })
+  try {
+    const tabId = (await f.tools.call('list_tabs', {}))[0].id
+    await f.tools.call('attach_process', { tabId, expectedProcess: 'codex', purpose: 'send the user message to this waiting Codex' }, f.context)
+    assert.deepEqual(f.terminal.sent, [])
+    await f.tools.call('send_input', { tabId, mode: 'stdin', text: 'the user request', submit: true }, f.context)
+    assert.deepEqual(calls, [undefined, identity])
+    assert.deepEqual(f.terminal.sent, ['the user request\r'])
+    t.mock.method(f.tools, 'remoteProcess', async () => null)
+    await assert.rejects(f.tools.call('send_keys', { tabId, key: 'Enter' }, f.context), /could not be revalidated/)
+    assert.equal(f.tools.controls$.value.length, 1)
+    assert.deepEqual(f.terminal.sent, ['the user request\r'])
+    await assert.rejects(f.tools.call('send_keys', { tabId, key: 'Enter' }, { owner: 'unrelated' }), /owned/)
+    await assert.rejects(f.tools.call('send_input', { tabId, mode: 'stdin', text: 'blocked' }, { ...f.context, readOnly: true }), /只读|read.only/i)
+  } finally { f.tools.ngOnDestroy() }
+})
+
+test('a reconnect or stop while SSH proof is pending cannot claim input or send a late answer', async t => {
+  const f = ownershipFixture('ssh'), controller = new AbortController()
+  let finish
+  t.mock.method(f.tools, 'remoteProcess', () => new Promise(resolve => { finish = resolve }))
+  try {
+    const tabId = (await f.tools.call('list_tabs', {}))[0].id
+    const pending = f.tools.call('attach_process', { tabId, expectedProcess: 'codex', purpose: 'supervise' }, { ...f.context, signal: controller.signal })
+    while (!finish) await new Promise(resolve => setImmediate(resolve))
+    controller.abort(); finish({ pid: 20, tty: 'pts/3', started: '123', executable: '/opt/codex' })
+    await assert.rejects(pending, /stopped/)
+    assert.equal(f.tools.controls$.value.length, 0)
+    assert.deepEqual(f.terminal.sent, [])
+  } finally { f.tools.ngOnDestroy() }
+})

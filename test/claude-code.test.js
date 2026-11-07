@@ -544,3 +544,66 @@ test('concurrent Claude connections share discovery, while replacement and close
   probes.at(-1).resolve(f.executable)
   await recovered
 })
+
+test('default Claude re-resolves an updated installation before a new invocation and preserves the native session without replay', async t => {
+  const f = await fixture(t), client = require('../src/claude-code-client.ts'), actual = client.runClaudeProcess, invoked = []
+  t.mock.method(client, 'runClaudeProcess', options => { if (options.args.includes('-p')) invoked.push(options.executable); return actual(options) })
+  const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') || 'PATH', previousPath = process.env[pathKey]
+  t.after(() => { if (previousPath === undefined) delete process.env[pathKey]; else process.env[pathKey] = previousPath })
+  process.env[pathKey] = f.root + path.delimiter + (previousPath || '')
+  f.settings.claudeExecutable = 'claude'
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  let finished = done(f.agent)
+  await f.agent.startTurn(id, 'First explicitly requested task', f.root, f.settings); assert.equal((await finished).status, 'completed')
+  const prior = (await f.store.load(id)).claudeSession
+  const directory = path.join(f.root, 'updated-install'); await fs.promises.mkdir(directory)
+  const replacement = path.join(directory, path.basename(f.executable))
+  const body = process.platform === 'win32' ? `@"${process.execPath}" "${path.join(f.root, 'cli.cjs')}" %*\r\n` : `#!${process.execPath}\nrequire(${JSON.stringify(path.join(f.root, 'cli.cjs'))})\n`
+  await fs.promises.writeFile(replacement, body, { mode: 0o700 })
+  await fs.promises.unlink(f.executable)
+  process.env[pathKey] = directory + path.delimiter + (previousPath || '')
+  finished = done(f.agent)
+  await f.agent.startTurn(id, 'Second explicitly requested task', f.root, f.settings); assert.equal((await finished).status, 'completed')
+  assert.deepEqual(invoked, [f.executable, replacement])
+  assert.equal(f.capture().args[f.capture().args.indexOf('--resume') + 1], prior.id)
+  assert.equal((await f.store.load(id)).claudeSession.id, prior.id)
+  assert.doesNotMatch(f.capture().input, /First explicitly requested task/)
+  assert.match(f.capture().input, /Second explicitly requested task/)
+})
+
+for (const changed of ['removed explicit entrypoint', 'removed CLI tool flag']) {
+  test(`Claude preflight blocks ${changed} without re-login, inference retry or loss of the previous native session`, async t => {
+    const f = await fixture(t), client = require('../src/claude-code-client.ts'), actual = client.runClaudeProcess, invocations = []
+    t.mock.method(client, 'runClaudeProcess', options => { if (options.args.includes('-p')) invocations.push(options); return actual(options) })
+    await f.agent.connect(f.settings)
+    const id = await f.agent.openThread(f.root, f.settings)
+    let finished = done(f.agent)
+    await f.agent.startTurn(id, 'Task already completed', f.root, f.settings); assert.equal((await finished).status, 'completed')
+    const prior = (await f.store.load(id)).claudeSession
+    if (changed === 'removed explicit entrypoint') await fs.promises.unlink(f.executable)
+    else await fs.promises.writeFile(path.join(f.root, 'scenario.json'), JSON.stringify({ missingFlag: '--tools' }))
+    finished = done(f.agent)
+    await f.agent.startTurn(id, 'A new task must wait for repair', f.root, f.settings)
+    const turn = await finished
+    assert.equal(turn.status, 'failed')
+    assert.equal(invocations.length, 1, 'the failed new task never reached a model process')
+    assert.equal((await f.store.load(id)).claudeSession.id, prior.id)
+    assert.equal(require('../src/cli-auth.ts').isNativeAuthenticationError(turn.error), false)
+  })
+}
+
+test('Claude launcher removal after help is an installation-stage failure rather than a login error', { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t), cp = require('node:child_process'), spawn = cp.spawn
+  t.mock.method(cp, 'spawn', (file, args, options) => {
+    if (file === f.executable && args[0] === 'auth') fs.unlinkSync(f.executable)
+    return spawn(file, args, options)
+  })
+  await assert.rejects(inspectClaudeCode(f.executable, f.root, new AbortController().signal), error => {
+    assert.match(error.message, /auth status probe failed/)
+    assert.ok(error.message.includes(f.executable))
+    assert.equal(require('../src/cli-auth.ts').isNativeAuthenticationError(error), false)
+    return true
+  })
+  assert.equal(fs.existsSync(path.join(f.root, 'capture.json')), false)
+})

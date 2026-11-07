@@ -294,10 +294,10 @@ export class CodexSettingsComponent implements OnDestroy {
     try {
       const space = this.selectedNativeSpace()
       await prepareSessionSpace(space)
-      const executable = space.engine === 'codex' ? (await resolveCodexLaunch(this.settings.executable || 'codex', { signal: controller.signal })).executable : resolveClaudeExecutable(this.settings.claudeExecutable || 'claude')
+      const executable = space.engine === 'codex' ? (await resolveCodexLaunch(this.settings.executable || 'codex', { signal: controller.signal, codeModeTools: false })).executable : resolveClaudeExecutable(this.settings.claudeExecutable || 'claude')
       if (loginCommand) { this.nativeCommand = nativeLoginCommand(space, executable); this.nativeNotice = 'Run this command in a local terminal, then check login here. The command targets this space only.' }
       else if (space.engine === 'codex') {
-        await client.connect(executable, space)
+        await client.connect(executable, space, { codeModeTools: false })
         const result = await client.request('account/read', { refreshToken: false })
         this.nativeNotice = result.account ? 'Selected space is logged in; model access is unverified.' : 'Selected space is not logged in. Generate its login command.'
       } else {

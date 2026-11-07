@@ -22,7 +22,9 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.9.1 界面示意（含 SSH 附件与原生 tab 进度、原生 Pi 供应商、离线模型目录、指令快照、独立 CLI 历史与连接草稿）：侧栏协调两个 SSH 终端，展示流程录制验收与已保存的 /pm1 别名、可折叠思考与工具过程、按需读屏、定时任务、Pi 内置运行时与压缩设置、连接列表、启动与语言设置，含自定义 OpenAI 兼容接口设置](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.9.2 界面示意：包含 Codex 安装恢复、Claude 调用前检查、Linux SSH Agent 身份核验，以及连接、任务日志、定时任务和设置；内容为示例](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**v0.9.2 修复：** Codex 检查已知 Windows 配套程序，允许在空闲边界恢复安装连接一次，不重放任务。Claude 本机登录在每次调用前重新检查配置的 CLI，并区分安装故障与未登录。Linux SSH 中已有原生 Agent 可经独立进程／PTY 核验接管。[发布说明与限制](docs/releases/0.9.2.md)。
 
 **v0.9.1 修复：** 流程空闲或关闭时，普通命令、stdin、Enter 与进程接管可正常执行；活动流程的预算和取消校验继续生效。Codex／Claude 独立空间可继承已有本机登录文件缓存，登录失效时可明确选择重新复制并重连，不重放任务；缺失 Codex 会话仅在没有可恢复上下文时替换。Pi 连续压缩回归为 Windows 预留更充足的测试时间。[发布说明](docs/releases/0.9.1.md)。
 
@@ -108,6 +110,8 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 自动查找覆盖 standalone 安装（含 `CODEX_INSTALL_DIR` 和 `CODEX_HOME/packages/standalone/current/bin`）、Homebrew/npm 全局 prefix，并以 VS Code 扩展中的兼容 Codex 作为最后兜底。macOS 检查 `/Applications` 和 `~/Applications` 下的 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` 及旧 `Contents/Resources/codex` 入口，也兼容原 `Codex.app` 名称。其他位置可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写完整路径。[查看完整发现矩阵](docs/guide.md#cli-自动发现与启动排查)。
 
 Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalone 和已知 npm 安装的实际版本，选择已发现的最新 CLI，每次新连接重新扫描。明确填写文件路径可固定版本；填写稳定的 `OpenAI\Codex\bin` 目录则只比较这套安装。[查看路径查找说明](docs/guide.md#cli-自动发现与启动排查)。
+
+原生 CLI 安装检查保留显式选择范围及现有会话历史。见[恢复行为与限制](docs/codex-installation-recovery.md)。
 
 ## 用自然语言编排任务
 

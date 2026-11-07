@@ -175,3 +175,15 @@ test('a superseded startup cannot report failure or schedule retries after recov
   assert.equal(env.notifications.length, 0)
   assert.equal(env.timers.size, 0)
 })
+
+test('confirmed installation failure stops background reconnect timers and reports a complete-installation action', async t => {
+  const env = setup(t)
+  env.codex.connect = async () => { throw Object.assign(new Error('missing codex-code-mode-host.exe'), { installationFailure: true }) }
+  env.runtime.start(); env.ready()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(env.timers.size, 0)
+  assert.match(env.notifications[0][1], /恢复已停止/)
+  env.client.installationRecoveryStopped = true
+  env.client.emit('disconnected', new Error('installation recovery exhausted'))
+  assert.equal(env.timers.size, 0)
+})

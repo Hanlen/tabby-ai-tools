@@ -199,3 +199,8 @@ The scoped russh event-buffer retention adapter is adapted from [tabby-ai-worksp
 ## Terminal streams and task logs
 
 `terminal-stream.ts` owns stateful control filtering and scoped opaque tokens. `terminal-output.service.ts` rotates stream identity on session changes and publishes only privacy-filtered chunks. `terminal-log-store.ts` writes bounded private text segments with atomic manifests; `tab-tools.ts` owns capture lifecycle and read/search routing. Panel and scheduled bridges supply session-space/run-scoped identities. Continuation cursors pin the committed log boundary; reads do not execute or verify commands. See [terminal logs](terminal-logs.md) for limits and retention timing.
+
+
+### v0.9.2 Codex installation and SSH identity maintenance (2026-11-07)
+
+See [installation recovery and SSH process identity](codex-installation-recovery.md) for the fault boundaries, known Windows version/layout rule and loading a local build. Regression sources are `test/client.test.js`, `codex-version.test.js`, `installations.test.js`, `thread-tools.test.js`, `remote-process.test.js`, `tab-tools.test.js`, `task-memory-panel.test.js` and `runtime.test.js`. The real Linux PTY probe is local; transport fixtures and Windows discovery simulations do not prove a real Windows desktop or user SSH session. Run the full suite on Node >=22.19 to include the bundled Pi integration checks. The repair does not add runtime dependencies or require a separate system Node installation for ordinary plugin use.

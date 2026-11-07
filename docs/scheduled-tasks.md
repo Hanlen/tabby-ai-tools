@@ -61,7 +61,7 @@ AI 需通过 `scheduled_task_finish` 提交有验证依据的完成结论或需�
 
 用户只需要给出任务目标。每次触发后，外层 AI 先读取被控 Agent 的最新输出、当前问题和选择状态，结合目标决定这一步该按什么键、回答什么或继续等待；每次操作后再读一次并重新判断。Agent 改变提示时，后续操作随之改变；流程中不预设按键或回答顺序。`read_tab` 除文字外，还返回光标、当前缓冲区和高亮片段，避免选项状态在纯文本里丢失。`send_keys(tabId,key="Left",shift=true)` 表示 Shift+左方向；另支持方向键、回车、Tab、Shift+Tab、Escape、Ctrl+字母等明确支持的组合。文本回答使用 `send_input(mode=stdin,text=...,submit=true)`。
 
-已经运行的 Agent 可通过 `attach_process(tabId,expectedProcess="codex",purpose=...)` 获取输入控制，不发送 Ctrl+C，也不重启进程。进程名称必须与当前检测结果匹配；每次向接管的 Agent 输入前再次检查进程、会话和所有权。Agent 退出后不继续向 Shell 发送回答。无法检测已有进程的远程终端暂不支持自动接管，可由本次任务启动目标 Agent 后操作。按键遵循 [xterm 键盘协议](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)，终端模式使用 [xterm.js 公开接口](https://xtermjs.org/docs/api/terminal/classes/terminal/)。不同 Agent 的具体快捷键仍以实际界面反馈为准。
+已经运行的 Agent 可通过 `attach_process(tabId,expectedProcess="codex",purpose=...)` 获取输入控制，不发送 Ctrl+C，也不重启进程。进程名称必须与当前检测结果匹配；每次向接管的 Agent 输入前再次检查进程、会话和所有权。Agent 退出后不继续向 Shell 发送回答。原生 Linux SSH 可通过独立 exec 查询同一账户的前台原生进程，使用 PID、启动时间、前台组及随机 PTY 输出标记确认目标窗口；每次输入前重新验证。探针不向 Agent 输入、不发送 Ctrl+C、不重启它。缺少独立 exec、`/proc`、PTY 写权限，或嵌套 SSH／tmux 等无法建立直接对应时保留 Agent 并说明限制，不凭进程名或屏幕文字放行。按键遵循 [xterm 键盘协议](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)，终端模式使用 [xterm.js 公开接口](https://xtermjs.org/docs/api/terminal/classes/terminal/)。不同 Agent 的具体快捷键仍以实际界面反馈为准。
 
 终端里被控制 Agent 的常规提问可以按用户任务自动回答；这是终端操作的一部分。外层 AI 后端通过 `requestUserInput` 请求决策时，插件会用本次实际模型开启独立的只读决策会话，结合任务目标、最近记录与选项选择最优答案；信息不足时先查询终端、配置、连接或文档。不机械选择第一个选项。答案与依据写入执行记录后回传原会话，继续本次执行，不弹提问。每次决策最多 3 回合、20 次只读查询、60 秒，每次运行最多自动回答 8 次；用量计入本次预算。需要秘密信息、额外授权、查询后仍无法判断或达到限制时停止留档。决策会话不能操作终端或修改配置，定时执行也不扩大原沙箱范围。执行记录包含每次按键的名称、修饰键、回答文本、读屏结果和最终结论。
 
