@@ -55,3 +55,14 @@ sequenceDiagram
 Offline tests use a real child process and authenticated HTTP MCP, with simulated Claude events. They cover streaming, native resume, migration, approvals, read-only mode, durable intent, cancellation, malformed/truncated output, failed results, token accounting/budgets, connection selection, and the scheduler's model probe. They make no model requests.
 
 A real subscription end-to-end run still requires an installed CLI, an eligible user's official login, and real Tabby desktop testing. Passing the offline tests does not establish actual subscription entitlement, model quality, or Windows/macOS execution results.
+
+
+## v0.9.2 update-path review — 2026-11-07
+
+Claude local has a related cached-entrypoint risk, but this repository does not establish that its distributions use the same companion EXEs as Codex. Connection-time help/auth checks previously resolved one absolute path and later invocations reused it. A removed version directory could therefore break the next invocation.
+
+Each native invocation now re-resolves the original configured selector and rechecks the required CLI flags and selected-space auth status before inference, including native goal continuations. Default `claude` follows a changed installation/PATH target; explicit files and custom command names keep their original discovery scope. An invocation already submitted to the CLI is never retried after failure or timeout. Preflight failure leaves the last successful native session reference intact. Private spaces, cwd, selected model, instruction snapshot, tool bridge and authorization are preserved.
+
+A launcher disappearing between `--help` and `auth status`, malformed status JSON or a changed status schema now produces a CLI/protocol diagnostic rather than a fabricated logged-out result. Valid `loggedIn=false` remains an authentication failure, including the CLI's exit-1 JSON response. This does not inspect credential files or change login/permission settings.
+
+The review/test evidence covers simulated official CLI processes, MCP tool round trips, updated default entrypoints, pinned-path failure, changed tool flags, native session retention and no inference replay. Real Claude account/desktop and vendor layouts remain unverified. The resolver retains existing discovery priority; this is not a claim that every third-party/npm layout is repaired automatically.

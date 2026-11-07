@@ -52,6 +52,7 @@ export class CodexService {
   private readonly activeTurns = new Set<string>()
   private readonly threadCwds = new Map<string, string>()
   private readonly sessionLocks = new Map<string, () => Promise<void>>()
+  private readonly threadGenerations = new Map<string, number>()
 
   constructor () {
     this.client.on('event', event => {
@@ -70,7 +71,7 @@ export class CodexService {
       this.activeTurns.clear()
       const releases = [...this.sessionLocks.values()]
       this.sessionLocks.clear()
-      if (releases.length) void this.client.close().then(() => Promise.all(releases.map(release => release()))).catch(() => this.client.emit('diagnostic', 'Inspect native session locks after process cleanup failure'))
+      if (releases.length) void this.client.waitForCleanup().then(() => Promise.all(releases.map(release => release()))).catch(() => this.client.emit('diagnostic', 'Inspect native session locks after process cleanup failure'))
     })
   }
   setContextStore (store: AgentStore): void { this.contextStore = store }
@@ -135,6 +136,7 @@ export class CodexService {
   }
 
   private rememberThreadConfiguration (result: any, settings: AgentSettings): void {
+    this.threadGenerations.set(result.thread.id, this.client.generation)
     this.threadConfigurations.set(result.thread.id, {
       model: result.model || result.thread.model || settings.model || null,
       reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort ?? settings.reasoningEffort ?? null,
@@ -142,7 +144,10 @@ export class CodexService {
   }
 
   async connect (settings: AgentSettings): Promise<void> {
-    await this.client.connect(settings.executable.trim() || 'codex', this.sessionSpace)
+    await this.client.connect(settings.executable.trim() || 'codex', this.sessionSpace, {
+      ...(settings.decisionOnly ? { codeModeTools: false } : {}),
+      ...(process.platform === 'win32' && !settings.decisionOnly && settings.sandbox !== 'danger-full-access' ? { sandboxedExecution: true } : {}),
+    })
   }
 
   async openThread (cwd: string, settings: AgentSettings, savedId?: string): Promise<string> {
@@ -281,6 +286,11 @@ export class CodexService {
 
   async startTurn (threadId: string, text: string, cwd: string, settings: AgentSettings, terminalOutput = ''): Promise<string> {
     await this.checkOwnership(threadId, cwd)
+    await this.client.waitUntilReady()
+    if (this.threadGenerations.has(threadId) && this.threadGenerations.get(threadId) !== this.client.generation) {
+      const resumed = await this.resumeThread(threadId, cwd, settings)
+      if (resumed !== threadId) throw new Error('Recovered history has a new session ID; select it before sending a new message. No task was sent.')
+    }
     const sandboxPolicy = settings.sandbox === 'danger-full-access'
       ? { type: 'dangerFullAccess' }
       : settings.sandbox === 'read-only'

@@ -7,9 +7,10 @@ export interface VersionContext {
   signal?: AbortSignal
   versionTimeoutMs?: number
   cwd?: string
+  validateCandidate?: (executable: string, version: Version | undefined) => void
 }
 
-interface Version { core: number[]; prerelease?: string[] }
+export interface Version { core: number[]; prerelease?: string[] }
 
 function parseVersion (output: string): Version | undefined {
   const match = /^codex(?:-cli)?\s+(\d+)\.(\d+)\.(\d+)(?:-([\da-z.-]+))?(?:\+[\da-z.-]+)?$/i.exec(output.trim())
@@ -19,7 +20,7 @@ function parseVersion (output: string): Version | undefined {
   return { core, prerelease: match[4]?.split('.') }
 }
 
-function compareVersions (a: Version, b: Version): number {
+export function compareVersions (a: Version, b: Version): number {
   for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i]
   if (!a.prerelease || !b.prerelease) return a.prerelease ? -1 : b.prerelease ? 1 : 0
   for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
@@ -36,7 +37,7 @@ function compareVersions (a: Version, b: Version): number {
 }
 
 /** Read-only --version probe. Never starts a model or runs an installer. */
-async function version (executable: string, env: NodeJS.ProcessEnv, context: VersionContext): Promise<Version | undefined> {
+export async function codexVersion (executable: string, env: NodeJS.ProcessEnv, context: VersionContext = {}): Promise<Version | undefined> {
   return new Promise(resolve => {
     const launch = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable) ? spawnWindowsLauncher : spawn
     let child: ChildProcessWithoutNullStreams
@@ -92,13 +93,16 @@ export async function newestCodexExecutable (candidates: string[], env: NodeJS.P
   await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => {
     while (cursor < unique.length && !context.signal?.aborted) {
       const index = cursor++
-      versions[index] = await version(unique[index], env, context)
+      versions[index] = await codexVersion(unique[index], env, context)
     }
   }))
   if (context.signal?.aborted) throw new Error('Codex app-server was closed during CLI discovery')
-  let best = 0
+  let best: number | undefined
+  const rejected: string[] = []
   for (let i = 0; i < unique.length; i++) {
-    if (versions[i] && (!versions[best] || compareVersions(versions[i]!, versions[best]!) > 0)) best = i
+    try { context.validateCandidate?.(unique[i], versions[i]) } catch (error: any) { rejected.push(error.message); continue }
+    if (best === undefined || versions[i] && (!versions[best] || compareVersions(versions[i]!, versions[best]!) > 0)) best = i
   }
+  if (best === undefined) throw Object.assign(new Error(`No complete Codex installation is available.\n${rejected.join('\n')}`), { installationFailure: true })
   return unique[best]
 }

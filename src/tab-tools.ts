@@ -16,6 +16,7 @@ import { matchesProcess, terminalKeySequence, terminalInteractionState } from '.
 import { AttachmentTransferService } from './attachment-transfer.service'
 import { TransferTarget } from './attachment-transport'
 import { runAttachmentPty } from './attachment-pty'
+import { RemoteProcessIdentity, verifyRemoteProcess } from './remote-process'
 
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
 export interface TabToolContext {
@@ -37,6 +38,7 @@ interface ControlState extends ControlledTab {
   automaticCompletion: boolean
   subscriptions: Subscription
   expectedProcess?: string
+  remoteProcess?: RemoteProcessIdentity
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -254,12 +256,18 @@ export class TabbyTabToolsService implements OnDestroy {
     const state = this.controlled.get(tab)
     if (!state || state.owner !== owner) throw new Error('Interactive input requires a process owned by this task; launch it or use attach_process first')
     if (state.expectedProcess) {
-      const processes = await this.processes(tab)
-      checkStopped()
-      if (processes === null) throw new Error('Process inspection is unavailable; interactive input was not sent. Retry inspection or release the tab.')
-      if (!matchesProcess(processes, state.expectedProcess)) {
-        this.release(tab)
-        throw new Error('The attached agent exited or process inspection failed; interactive input was not sent')
+      if (state.remoteProcess) {
+        const identity = await this.remoteProcess(tab, state.expectedProcess, state.remoteProcess)
+        checkStopped()
+        if (!identity) throw new Error('Remote foreground process identity could not be revalidated; input was not sent. Read the terminal and retry inspection, or release control.')
+      } else {
+        const processes = await this.processes(tab)
+        checkStopped()
+        if (processes === null) throw new Error('Process inspection is unavailable; interactive input was not sent. Retry inspection or release the tab.')
+        if (!matchesProcess(processes, state.expectedProcess)) {
+          this.release(tab)
+          throw new Error('The attached agent exited or process inspection failed; interactive input was not sent')
+        }
       }
     }
     checkStopped()
@@ -297,6 +305,13 @@ export class TabbyTabToolsService implements OnDestroy {
       if (!Array.isArray(children) || !children.length && this.alternateScreen(tab)) return null
       return children.map(child => String(child.command || `PID ${child.pid}`))
     } catch { return null }
+  }
+
+  private async remoteProcess (tab: BaseTerminalTabComponent<any>, expected: string, previous?: RemoteProcessIdentity): Promise<RemoteProcessIdentity | null> {
+    const ssh = (tab as any).sshSession, session = tab.session
+    if (tab.profile?.type !== 'ssh' || !ssh?.open || !session?.open) return null
+    return verifyRemoteProcess({ tabId: this.id(tab), title: tab.title, tab, ssh, session,
+      valid: () => this.allTabs().includes(tab) && tab.session === session && (tab as any).sshSession === ssh && !!session.open && !!ssh.open }, expected, previous)
   }
 
   private alternateScreen (tab: BaseTerminalTabComponent<any>): boolean {
@@ -755,11 +770,14 @@ export class TabbyTabToolsService implements OnDestroy {
       const session = tab.session
       const processes = await this.processes(tab)
       checkStopped()
-      if (processes === null) throw new Error('Cannot verify the existing agent process in this terminal; ask the user to launch it under this task or verify the connection')
-      if (!matchesProcess(processes, args.expectedProcess)) throw new Error('The expected agent process is not running; inspect the terminal again')
+      const remote = processes === null ? await this.remoteProcess(tab, args.expectedProcess) : null
+      checkStopped()
+      if (processes === null && !remote) throw new Error('Cannot verify the existing agent process in this terminal: independent SSH exec, Linux /proc and an exact foreground PTY identity are required. Input was not sent; the agent was preserved. Inspect the connection capabilities; do not restart it merely because it is waiting for input.')
+      if (processes !== null && !matchesProcess(processes, args.expectedProcess)) throw new Error('The expected agent process is not running; inspect the terminal again')
       if (tab.session !== session || !session.open || this.controlled.has(tab)) throw new Error('The terminal changed while inspecting the process')
       const state = this.lock(tab, context.owner, `交互：${args.expectedProcess}`)
       state.expectedProcess = args.expectedProcess
+      state.remoteProcess = remote || undefined
       state.observedProcess = true
       return { attached: true, tabId: args.tabId, expectedProcess: args.expectedProcess, userInputLocked: true, note: 'Existing process preserved; use send_keys or send_input(mode=stdin), then read_tab to verify.' }
     }

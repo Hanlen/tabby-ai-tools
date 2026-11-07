@@ -528,3 +528,19 @@ test('a follow-up waits for the completed recording to finish archiving before s
   assert.equal(f.replies.at(-1)[1].success, true)
   assert.equal((await f.library.store.read()).workflows[0].successes, 1)
 })
+
+test('installation recovery retains the conversation and draft without sending or continuing the goal', async t => {
+  const { panel, sent, goals } = await setup(t)
+  panel.prompt = 'Unsent draft'
+  panel.entries = [{ id: 'history', kind: 'user', text: 'Previously submitted request' }]
+  const thread = panel.threadId
+  panel.connected = false
+  panel.onRecovered()
+  assert.equal(panel.connected, true)
+  assert.equal(panel.threadId, thread)
+  assert.equal(panel.prompt, 'Unsent draft')
+  assert.equal(panel.entries[0].id, 'history')
+  assert.match(panel.status, /未重发任务/)
+  assert.deepEqual(sent, [])
+  assert.deepEqual(goals, [])
+})

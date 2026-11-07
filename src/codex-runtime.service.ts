@@ -5,6 +5,7 @@ import { AgentSettings } from './config'
 import { CodexService } from './codex.service'
 import { translate } from './i18n'
 import { sessionSpaceConfig } from './session-space'
+import { installationFailure } from './codex-installation'
 
 /** Owns the shared app-server for the entire plugin lifetime, including hidden panels. */
 @Injectable()
@@ -60,11 +61,12 @@ export class CodexRuntimeService implements OnDestroy {
       await this.codex.connect(this.config.store.codexAgent as AgentSettings)
     } catch (error: any) {
       if (this.stopped || attempt !== this.connectionAttempt || executable !== this.configuredExecutable) return
+      const stopped = installationFailure(error) || this.codex.client.installationRecoveryStopped
       if (!this.errorReported) {
         this.errorReported = true
-        this.notifications.error(translate('Codex 后台服务启动失败'), translate(`${error.message}。请检查 Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable），插件会自动重试。`))
+        this.notifications.error(translate('Codex 后台服务启动失败'), translate(`${error.message}。请检查 Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable）。${stopped ? '安装恢复已停止；选择完整安装后重新连接。' : '插件会自动重试。'}`))
       }
-      this.scheduleRetry()
+      if (!stopped) this.scheduleRetry()
     }
   }
 
@@ -75,7 +77,9 @@ export class CodexRuntimeService implements OnDestroy {
     this.errorReported = false
   }
 
-  private readonly onDisconnected = (): void => this.scheduleRetry()
+  private readonly onDisconnected = (error: Error): void => {
+    if (!installationFailure(error) && !this.codex.client.installationRecoveryStopped) this.scheduleRetry()
+  }
 
   private scheduleRetry (): void {
     if (this.stopped || !this.configReady || this.retryTimer) return

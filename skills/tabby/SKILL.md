@@ -77,3 +77,6 @@ On Windows, leave the Codex CLI executable blank or set it to codex for automati
 Attachment transfer actions are not reusable workflow steps. Perform the transfer before /remember or a saved alias, and verify its resulting path as an explicit workflow prerequisite.
 
 Use `read_tab(mode=delta)` with its unchanged nextCursor for new stream text, or waitFor=output/completion/either for bounded waiting. Drain hasMore pages before waiting. Delta is not a screen: take a fresh snapshot before interactive input. On cursor_expired, inspect the screen and saved logs; never replay a command to recover output. `list_logs`, `read_log` and `search_log` expose only this session scope. Follow pagination and partial search cursors. Logs can be incomplete, sensitive, expired or unavailable; saving and command success are independent.
+
+
+For existing native agents in Linux SSH panes, `attach_process` can verify the foreground PID and PTY using independent exec and an output-only random proof. Read again after attachment and each input; never restart a waiting agent to bypass an identity failure. Consult the operation reference for unsupported topologies and Codex installation recovery boundaries.

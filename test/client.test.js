@@ -336,3 +336,166 @@ rl.on('line', line => {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+const discovery = require('../src/codex-discovery.ts')
+const helperError = 'failed to spawn code-mode host: codex-code-mode-host.exe: The system cannot find the file specified. (os error 2)'
+
+function recoveryFixture (t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-install-recovery-'))
+  const log = path.join(dir, 'requests.jsonl')
+  const body = String.raw`
+const fs = require('fs'), log = LOG_PATH
+const rl = require('readline').createInterface({ input: process.stdin })
+rl.on('line', line => {
+  const m = JSON.parse(line)
+  fs.appendFileSync(log, JSON.stringify({ method: m.method, params: m.params, cli: process.argv[1] }) + '\n')
+  if (m.method === 'initialize') process.stdout.write(JSON.stringify({ id: m.id, result: {} }) + '\n')
+  else if (m.method === 'turn/start') {
+    process.stdout.write(JSON.stringify({ method: 'turn/started', params: { threadId: m.params.threadId } }) + '\n')
+    process.stdout.write(JSON.stringify({ id: m.id, result: { turn: { id: 'turn-original' } } }) + '\n')
+  } else if (m.method === 'fault') {
+    process.stdout.write(JSON.stringify({ id: m.id, result: {} }) + '\n')
+    process.stdout.write(JSON.stringify({ method: 'error', params: { threadId: m.params.threadId, error: { message: HELPER_ERROR } } }) + '\n')
+  } else if (m.method === 'finish') {
+    process.stdout.write(JSON.stringify({ id: m.id, result: {} }) + '\n')
+    process.stdout.write(JSON.stringify({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: 'turn-original', status: 'failed', error: { message: HELPER_ERROR } } } }) + '\n')
+  } else if (m.method === 'tool') {
+    process.stdout.write(JSON.stringify({ id: m.id, result: {} }) + '\n')
+    process.stdout.write(JSON.stringify({ id: 100, method: 'item/tool/call', params: { threadId: m.params.threadId } }) + '\n')
+  } else if (m.id !== 100) process.stdout.write(JSON.stringify({ id: m.id, result: {} }) + '\n')
+})
+`.replace('LOG_PATH', JSON.stringify(log)).replaceAll('HELPER_ERROR', JSON.stringify(helperError))
+  const first = mockServer(dir, 'old-install', body), second = mockServer(dir, 'complete-install', body)
+  const client = new CodexClient(), scans = []
+  t.mock.method(discovery, 'resolveCodexLaunch', async (configured, context = {}) => {
+    scans.push({ configured, excluded: [...(context.excludedExecutables || [])] })
+    return { executable: scans.length === 1 ? first : second, env: process.env }
+  })
+  t.after(async () => { await client.close(); fs.rmSync(dir, { recursive: true, force: true }) })
+  const requests = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  return { client, scans, first, second, dir, requests }
+}
+
+test('tool-host failure waits for all concurrent turns and pending tool replies; single recovery never replays operations', async t => {
+  const f = recoveryFixture(t), c = f.client
+  await c.connect('codex')
+  await c.request('turn/start', { threadId: 'original', cwd: f.dir, input: [{ type: 'text', text: 'modify once' }] })
+  await c.request('turn/start', { threadId: 'unrelated' })
+  const failed = waitForEvent(c, 'error')
+  await c.request('fault', { threadId: 'original' }); await failed
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.scans.length, 1)
+  assert.equal(c.isConnected, true, 'another panel is still running')
+  await assert.rejects(c.request('turn/start', { threadId: 'blocked' }), /no new task was sent/)
+  const completed = waitForEvent(c, 'turn/completed')
+  await c.request('finish', { threadId: 'original' }); await completed
+  assert.equal(f.scans.length, 1)
+  const tool = waitForEvent(c, 'item/tool/call')
+  await c.request('tool', { threadId: 'unrelated' }); await tool
+  const completedOther = waitForEvent(c, 'turn/completed')
+  await c.request('finish', { threadId: 'unrelated' }); await completedOther
+  assert.equal(f.scans.length, 1, 'a pending server request is not an idle boundary')
+  c.respond(100, { success: true })
+  // The actual app-server confirms server request resolution.
+  const recovered = once(c, 'recovered')
+  c.receive(JSON.stringify({ method: 'serverRequest/resolved', params: { requestId: 100 } }))
+  c.receive(JSON.stringify({ method: 'error', params: { error: { message: helperError } } }))
+  await recovered
+  assert.equal(f.scans.length, 2)
+  assert.deepEqual(f.scans[1].excluded, [f.first])
+  assert.equal(c.isConnected, true)
+  assert.equal(c.generation, 2)
+  const calls = f.requests()
+  assert.equal(calls.filter(x => x.method === 'initialize').length, 2)
+  assert.equal(calls.filter(x => x.method === 'turn/start').length, 2, 'only the two explicit original submissions were sent')
+  assert.equal(calls.filter(x => /turn\/steer|thread\/resume/.test(x.method)).length, 0, 'recovery starts no inference and does not implicitly resume active goals')
+  const exhausted = once(c, 'recoveryFailed')
+  c.receive(JSON.stringify({ method: 'error', params: { error: { message: helperError } } }))
+  assert.match((await exhausted)[0].message, /exhausted/)
+  assert.equal(f.scans.length, 2)
+  await assert.rejects(c.request('turn/start', { threadId: 'again' }), /no new task/)
+})
+
+test('no alternative complete installation stops after one rescan with paths and recovery details', async t => {
+  const f = recoveryFixture(t), c = f.client
+  await c.connect('codex')
+  t.mock.method(discovery, 'resolveCodexLaunch', async () => { f.scans.push({}); throw new Error('No complete Codex installation is available') })
+  const stopped = once(c, 'recoveryFailed')
+  c.receive(JSON.stringify({ method: 'error', params: { error: { message: helperError } } }))
+  const error = (await stopped)[0]
+  assert.match(error.message, /one rescan/); assert.ok(error.message.includes(f.first))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.scans.length, 2)
+  assert.equal(c.isConnected, false)
+  assert.equal(c.installationRecoveryStopped, true)
+})
+
+test('removal after successful preflight but before spawn is recovered once without a model request', async t => {
+  const f = recoveryFixture(t), cp = require('node:child_process'), original = cp.spawn
+  let removed = false
+  t.mock.method(cp, 'spawn', (file, ...args) => {
+    if (file === f.first && !removed) { removed = true; fs.unlinkSync(file) }
+    return original(file, ...args)
+  })
+  await f.client.connect('codex')
+  assert.equal(removed, true)
+  assert.equal(f.client.isConnected, true)
+  assert.equal(f.scans.length, 2)
+  assert.deepEqual(f.scans[1].excluded, [f.first])
+  assert.equal(f.requests().filter(x => x.method === 'turn/start').length, 0)
+})
+
+test('transport loss with an admitted turn leaves its state unknown and does not automatically restart or resend', async t => {
+  const f = recoveryFixture(t), c = f.client
+  await c.connect('codex')
+  await c.request('turn/start', { threadId: 'unknown' })
+  c.recordInstallationFault(new Error(helperError))
+  c.disconnect(new Error('observation timed out'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.scans.length, 1)
+  assert.equal(f.requests().filter(x => x.method === 'turn/start').length, 1)
+})
+
+test('reusing a connected server revalidates a deleted cached entrypoint and discovers its replacement', async t => {
+  const f = recoveryFixture(t), c = f.client
+  await c.connect('codex')
+  fs.unlinkSync(f.first)
+  const recovered = once(c, 'recovered')
+  await Promise.all([c.connect('codex'), c.connect('codex')])
+  await recovered
+  assert.equal(c.isConnected, true)
+  assert.equal(f.scans.length, 2)
+  assert.deepEqual(f.scans[1].excluded, [f.first])
+  assert.equal(f.requests().filter(x => x.method === 'turn/start').length, 0)
+})
+
+test('a helper removed between preflight and startup is detected in owned child stderr and replaced once', async t => {
+  const f = recoveryFixture(t), helper = path.join(f.dir, 'codex-code-mode-host.exe')
+  fs.writeFileSync(helper, 'fixture', { mode: 0o755 })
+  const old = mockServer(f.dir, 'helper-race', `if (!require('fs').existsSync(${JSON.stringify(helper)})) { process.stderr.write(${JSON.stringify(helperError)}, () => process.exit(1)); } else {\n${echoServer}\n}`)
+  t.mock.method(discovery, 'resolveCodexLaunch', async (configured, context) => {
+    const file = f.scans.length === 0 ? old : f.second
+    f.scans.push({ configured, excluded: [...context.excludedExecutables] })
+    return { executable: file, companions: file === old ? [helper] : [], env: process.env }
+  })
+  const cp = require('node:child_process'), original = cp.spawn
+  t.mock.method(cp, 'spawn', (file, ...args) => { if (file === old) fs.unlinkSync(helper); return original(file, ...args) })
+  await f.client.connect('codex')
+  assert.equal(f.client.isConnected, true)
+  assert.equal(f.scans.length, 2)
+  assert.deepEqual(f.scans[1].excluded, [old])
+})
+
+test('an active resumed thread is accounted for before an RPC reply can open a recovery boundary', async t => {
+  const f = recoveryFixture(t), c = f.client
+  await c.connect('codex')
+  const pending = c.request('thread/read', { threadId: 'resumed' })
+  await Promise.resolve()
+  // Insert the protocol reply synchronously before the fake child can answer it.
+  c.receive(JSON.stringify({ id: c.nextId, result: { thread: { id: 'resumed', status: { type: 'active' } } } }))
+  await pending
+  c.recordInstallationFault(new Error(helperError))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.scans.length, 1)
+  assert.ok(c.activeTurns.has('resumed'))
+})

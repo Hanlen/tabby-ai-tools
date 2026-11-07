@@ -22,7 +22,9 @@
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
-![Tabby AI Tools v0.9.1 interface illustration with SSH attachments, native tab progress, native Pi providers, offline model catalog, instruction snapshots, private CLI history and connection drafts: the assistant coordinates two SSH terminals, with verified workflow recording and a saved /pm1 alias, collapsed thinking and tool activity, on-demand terminal reads, scheduled tasks, Pi built-in runtime and compaction settings, provider connections, automatic startup and language settings](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools v0.9.2 interface illustration with Codex installation recovery, Claude invocation checks and verified Linux SSH agent attachment, alongside provider connections, task logs, scheduled tasks and settings; example content](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**Fixed in v0.9.2:** Codex checks known Windows companion files and permits one idle-boundary installation recovery without replaying tasks. Claude local rechecks its configured CLI before each invocation and distinguishes installation faults from logout. Existing native Linux SSH agents can be attached after independent process/PTY verification. [Release notes and limits](docs/releases/0.9.2.md).
 
 **Fixed in v0.9.1:** ordinary commands, stdin, Enter and process attachment work when workflows are idle or disabled. Active workflow budgets and cancellation checks remain enforced. Private Codex/Claude spaces inherit available local login caches; an expired login offers explicit cache recovery and reconnect without replaying tasks. Missing Codex rollouts recover only when no saved context is available. Pi repeated-compaction tests allow more time on Windows. [Release notes](docs/releases/0.9.1.md).
 
@@ -108,6 +110,8 @@ Only your computer needs this Codex installation and login. The assistant can th
 Automatic discovery covers standalone installations (including `CODEX_INSTALL_DIR` and `CODEX_HOME/packages/standalone/current/bin`), Homebrew and npm global prefixes, and compatible Codex binaries in VS Code extensions as a final fallback. On macOS, it checks `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` and the older `Contents/Resources/codex` entry under `/Applications` and `~/Applications`, including the former `Codex.app` name. For other locations, set the full path in **Settings → AI Tools → Codex CLI executable**. See the [discovery matrix (中文)](docs/guide.md#cli-自动发现与启动排查).
 
 On Windows, leave the Codex CLI executable blank (or `codex`) to compare actual versions across PATH, desktop, standalone and known npm installations and select the newest discovered CLI. Upgrades are rescanned on each new connection. Explicit file paths keep a fixed version; a stable `OpenAI\Codex\bin` directory limits comparison to that installation. See the [discovery guide](docs/guide.md#cli-自动发现与启动排查).
+
+Native CLI installation checks preserve explicit selector scope and existing session history. See [recovery behavior and limits](docs/codex-installation-recovery.md).
 
 ## Orchestrate tasks in natural language
 

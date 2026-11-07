@@ -208,3 +208,48 @@ test('resuming a pre-capabilities thread preserves context and upgrades tools wi
   assert.match(start.params.developerInstructions, /Keep the server running/)
   assert.equal(calls.find(c => c.method === 'thread/goal/set').params.status, 'paused')
 })
+
+test('recovered process resumes the same private thread only for a new explicit turn, preserving model, cwd, instructions and permissions', async () => {
+  const service = new CodexService(), calls = []
+  service.sessionSpace = { key: 'private:test', native: '/private/codex', engine: 'codex' }
+  service.setContextStore({
+    loadNativeSession: async () => ({ spaceKey: 'private:test', cwd: '/project', instructions: { version: 1, source: 'connection:inline', hash: require('node:crypto').createHash('sha256').update('Retain this restriction').digest('hex'), text: 'Retain this restriction', createdAt: Date.now() } }),
+    loadCodexContext: async () => ({ messages: [{ role: 'user', content: 'Prior commands have already run' }] }),
+    loadCodexContextRecord: async () => undefined,
+    lockNativeSession: async () => async () => {},
+  })
+  service.client.request = async (method, params) => {
+    calls.push({ method, params })
+    return method === 'turn/start' ? { turn: { id: 'explicit-new-turn' } } : { thread: { id: 'original', status: { type: 'idle' } } }
+  }
+  const settings = { model: 'chosen-model', reasoningEffort: 'high', approvalPolicy: 'on-request', sandbox: 'read-only', tabToolVersions: { original: 6 } }
+  service.client.generation = 1
+  await service.resumeThread('original', '/project', settings)
+  calls.length = 0
+  service.client.generation = 2
+  service.client.emit('recovered')
+  assert.deepEqual(calls, [], 'connection recovery must not start or resume model work')
+  await service.startTurn('original', 'Now inspect the actual terminal before proceeding', '/project', settings)
+  assert.deepEqual(calls.map(x => x.method), ['thread/resume', 'turn/start'])
+  assert.equal(calls[0].params.threadId, 'original')
+  assert.equal(calls[0].params.cwd, '/project')
+  assert.equal(calls[0].params.model, 'chosen-model')
+  assert.equal(calls[0].params.sandbox, 'read-only')
+  assert.equal(calls[0].params.approvalPolicy, 'on-request')
+  assert.match(calls[0].params.developerInstructions, /Retain this restriction/)
+  assert.match(calls[0].params.developerInstructions, /Prior commands have already run/)
+  assert.equal(calls[1].params.sandboxPolicy.type, 'readOnly')
+  assert.deepEqual(calls[1].params.input, [{ type: 'text', text: 'Now inspect the actual terminal before proceeding' }])
+  assert.equal(service.sessionSpace.native, '/private/codex')
+  service.client.emit('event', { method: 'turn/completed', params: { threadId: 'original' } })
+})
+
+test('disconnect cleanup releases private locks without cancelling the managed recovery controller', async () => {
+  const service = new CodexService(), calls = []
+  service.sessionLocks.set('active-before-failure', async () => { calls.push('release') })
+  service.client.waitForCleanup = async () => { calls.push('cleanup') }
+  service.client.close = async () => { assert.fail('disconnect must not abort an ongoing installation recovery') }
+  service.client.emit('disconnected', new Error('recovering installation'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(calls, ['cleanup', 'release'])
+})

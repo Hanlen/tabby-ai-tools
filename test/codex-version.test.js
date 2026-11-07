@@ -119,3 +119,50 @@ test('a synchronous Windows spawn failure cannot abandon other version candidate
   t.after(() => { cp.spawn = original })
   assert.equal(await newestCodexExecutable([broken, valid], process.env), valid)
 })
+
+const { codexCompanions, checkCodexInstallation, codexHelperFailure } = require('../src/codex-installation.ts')
+
+test('companion contract is platform, native layout, version and capability specific', () => {
+  const current = { core: [0, 167, 0], prerelease: ['alpha', '3', '2'] }
+  const context = { platform: 'win32', paths: path }
+  const cli = path.join('install', 'codex.exe')
+  assert.deepEqual(codexCompanions(cli, { core: [0, 110, 0] }, context), [])
+  assert.deepEqual(codexCompanions(cli, undefined, context), [])
+  assert.deepEqual(codexCompanions(cli, current, { ...context, platform: 'linux' }), [])
+  assert.deepEqual(codexCompanions('codex.cmd', current, context), [])
+  assert.deepEqual(codexCompanions(cli, current, { ...context, codeModeTools: false }), [])
+  assert.deepEqual(codexCompanions(cli, current, { ...context, sandboxedExecution: true }), [path.join('install', 'codex-code-mode-host.exe'), path.join('install', 'codex-command-runner.exe')])
+  assert.equal(codexHelperFailure('failed to spawn code-mode host: The system cannot find the file specified. (os error 2)'), true)
+  for (const error of ['not logged in', 'ENOENT /workspace/file', 'code-mode host observation timed out', 'code-mode host: permission denied']) assert.equal(codexHelperFailure(error), false)
+})
+
+test('a successful --version cannot select an incomplete native installation, including a single candidate', { skip: process.platform === 'win32' }, async t => {
+  const f = fixture(t)
+  const incomplete = f.desktop('old-hash', 'codex-cli 0.167.0-alpha.3.2')
+  f.context.env.PATH = path.dirname(incomplete)
+  await assert.rejects(resolveCodexLaunch('codex', f.context), /No complete.*\n[\s\S]*codex-code-mode-host.exe/)
+  const complete = f.desktop('new-hash', 'codex-cli 0.167.0-alpha.3.3')
+  fs.writeFileSync(path.join(path.dirname(complete), 'codex-code-mode-host.exe'), 'fixture')
+  assert.equal((await resolveCodexLaunch('codex', f.context)).executable, complete)
+  assert.equal((await resolveCodexLaunch(f.bin, f.context)).executable, complete)
+  await assert.rejects(resolveCodexLaunch(incomplete, f.context), /incomplete/)
+  assert.equal((await resolveCodexLaunch(incomplete, { ...f.context, codeModeTools: false })).executable, incomplete, 'account inspection needs no tool host')
+  const custom = f.cli('custom/mycodex', 'codex-cli 0.167.0-alpha.3.2')
+  f.context.env.PATH += ';' + path.dirname(custom)
+  await assert.rejects(resolveCodexLaunch('mycodex', f.context), /incomplete/, 'custom commands cannot escape to another install')
+  fs.unlinkSync(complete)
+  await assert.rejects(resolveCodexLaunch('codex', f.context), /No complete/, 'a previously discovered path is never cached')
+})
+
+test('helper removed after discovery fails a fresh health check and rescan excludes the failed install', { skip: process.platform === 'win32' }, async t => {
+  const f = fixture(t)
+  const cli = f.desktop('hash', 'codex-cli 0.167.0-alpha.3.2')
+  const helper = path.join(path.dirname(cli), 'codex-code-mode-host.exe')
+  fs.writeFileSync(helper, 'fixture')
+  const launch = await resolveCodexLaunch('codex', f.context)
+  checkCodexInstallation(launch.executable, launch.companions, f.context)
+  fs.unlinkSync(helper)
+  assert.throws(() => checkCodexInstallation(launch.executable, launch.companions, f.context), /codex-code-mode-host.exe/)
+  fs.writeFileSync(helper, 'fixture')
+  await assert.rejects(resolveCodexLaunch('codex', { ...f.context, excludedExecutables: new Set([cli]) }), /confirmed installation failure/)
+})
