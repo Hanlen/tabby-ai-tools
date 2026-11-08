@@ -22,7 +22,9 @@
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
-![Tabby AI Tools v0.9.2 界面示意：包含 Codex 安装恢复、Claude 调用前检查、Linux SSH Agent 身份核验，以及连接、任务日志、定时任务和设置；内容为示例](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+![Tabby AI Tools 界面示意：展示Markdown 表格和语法高亮代码块，以及连接、任务日志、定时任务和设置；内容为示例](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
+
+**Markdown 回复。** 助手消息和定时任务 AI 说明支持表格、标题、列表、引用、链接和代码块。宽表格与代码在消息内滚动，带语言标记的代码块支持语法高亮和单独复制，整条消息复制保留原始 Markdown；流式输出与恢复的历史消息使用同一套排版。[说明](docs/releases/unreleased.md)。
 
 **v0.9.2 修复：** Codex 检查已知 Windows 配套程序，允许在空闲边界恢复安装连接一次，不重放任务。Claude 本机登录在每次调用前重新检查配置的 CLI，并区分安装故障与未登录。Linux SSH 中已有原生 Agent 可经独立进程／PTY 核验接管。[发布说明与限制](docs/releases/0.9.2.md)。
 
@@ -121,7 +123,7 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 
 支持按执行结果决定下一步，也可以操作终端中的其他交互式 Agent。用 `/remember 任务描述` 开始录制，任务成功结束后可在侧栏或直接告诉助手设置别名（如 `task1`），下次发送 `/task1` 即执行该流程，并重新核对当前环境。各步骤保存服务器 IP、持久连接／服务器 ID、操作路径及验收条件；多服务器按顺序执行，前一步通过结果验收后才放行下一步。助手可用 `workflow_status` / `workflow_set_alias` 查询录制、归档状态并保存别名；checkpoint 成功不等于归档成功，无法归档时显示原因。普通任务不录制，也不能事后补存。含 sudo 的流程会提前提示在各执行终端运行 `sudo -v` 或 `sudo ls`，任务期间保持认证有效。[查看编排与复用方法](docs/guide.md#任务编排与多服务器协作)。
 
-交互式 `/remember` 流程可保存 stdin、按键、进程接管和侧栏提问的条件规则与回答意图。运行器本地处理已保存的 if/else，不确定交互交给当前连接的可选辅助模型，再从当前步骤继续。在 **AI Tools → 任务流程与偏好 → 交互辅助模型** 配置；辅助用量计入任务预算，缺少机器验收时仍由主模型核对。[条件与交互流程](docs/task-workflows.md#条件与交互流程)。
+交互式 `/remember` 流程可保存 stdin、按键、进程接管和侧栏提问的条件规则与回答意图。运行器本地处理已保存的 if/else，不确定交互交给当前连接的可选辅助模型，再从当前步骤继续。在 **AI Tools → 任务流程与偏好 → 交互辅助模型** 配置；辅助用量计入任务预算，缺少机器验收时仍由主模型核对。[条件与交互流程](docs/task-workflows.md#条件与交互流程)。 更新：命令和多行脚本可按终端上限完整录制最多 10000 字符；固定步骤通过机器验收推进，需现场判断的步骤用 `policy.decision` 在执行前交回主 AI，处理后继续脚本流程。
 
 ## 定时任务：到点检查、判断、执行与验证
 

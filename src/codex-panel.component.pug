@@ -150,7 +150,8 @@
           .codex-entry-header(*ngIf='entry.kind !== "tool" && entry.kind !== "thinking"')
             .codex-role {{entry.kind === 'user' ? t("你") : entry.kind === 'tool' ? t("工具输出") : entry.kind === 'system' ? t("系统") : t("助手")}}
             button.btn.btn-link.btn-sm.codex-copy(type='button', (click)='copyEntry(entry)', [attr.aria-label]='t("复制{0}", [entry.kind === \'user\' ? t("你的消息") : t("Codex 消息")])') {{copiedEntryId === entry.id ? t("已复制") : t("复制")}}
-          .codex-text(*ngIf='entry.kind !== "tool" && entry.kind !== "thinking"', dir='auto') {{entry.kind === "system" ? t(entry.text) : entry.text}}
+          codex-markdown(*ngIf='entry.kind === "agent"', [text]='entry.text')
+          .codex-text(*ngIf='entry.kind === "user" || entry.kind === "system"', dir='auto') {{entry.kind === "system" ? t(entry.text) : entry.text}}
     button.codex-jump-latest(type='button', *ngIf='showJumpToLatest', (click)='jumpToLatest()', [attr.aria-label]='t("回到最新消息并恢复自动滚动")', [attr.title]='t("回到底部并恢复自动滚动")')
       span(aria-hidden='true') ↓
       span {{t("回到最新消息")}}
@@ -216,7 +217,8 @@
               ng-container(*ngIf='runDetails.open')
                 .codex-run-entry(*ngFor='let entry of run.entries')
                   small {{t(scheduleTime(entry.at))}} · {{t(scheduledEntryLabel(entry.kind))}}
-                  pre(dir='auto') {{entry.text}}
+                  codex-markdown(*ngIf='entry.kind === "assistant"', [text]='entry.text')
+                  pre(*ngIf='entry.kind !== "assistant"', dir='auto') {{entry.text}}
     .codex-workflows(*ngIf='workflowPanelOpen')
       .codex-detail-heading
         strong {{t("当前目录的任务流程")}}

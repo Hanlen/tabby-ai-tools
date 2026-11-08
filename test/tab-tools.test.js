@@ -95,6 +95,21 @@ test('Codex dynamic tool definitions contain the Tabby operations', () => {
   assert.equal(names.length, new Set(names).size)
 })
 
+test('terminal transport sends a 10000-character command intact and rejects larger input before writing', async () => {
+  const terminal = new FakeTerminal('Install', [])
+  const app = { tabs: [terminal], activeTab: terminal, tabsChanged$: new Subject(), activeTabChange$: new Subject() }
+  const output = { watch () {}, unwatch () {}, cursor: () => 0, readSince: () => ({ text: '', truncated: false }) }
+  const tools = new TabbyTabToolsService(app, output)
+  try {
+    const [{ id: tabId }] = await tools.call('list_tabs', {})
+    const command = 'install-app ' + 'x'.repeat(10000 - 'install-app '.length)
+    assert.equal((await tools.call('send_input', { tabId, text: command, submit: true })).submitted, true)
+    assert.deepEqual(terminal.sent, [command + '\r'])
+    await assert.rejects(tools.call('send_input', { tabId, text: command + 'x', submit: true }), /10,000/)
+    assert.deepEqual(terminal.sent, [command + '\r'])
+  } finally { tools.ngOnDestroy() }
+})
+
 test('stopping an API turn while process detection is pending prevents a late terminal command', async () => {
   const terminal = new FakeTerminal('Local', [])
   let finishDetection

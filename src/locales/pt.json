@@ -1002,5 +1002,8 @@
   "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "Nenhum cache de login local reutilizável. Faça login primeiro na CLI original; logins apenas no chaveiro exigem login no espaço selecionado.",
   "登录已失效，请重新复制本机登录并重连。": "Login expirado. Copie novamente o login local e reconecte.",
   "登录已失效，请在本机重新登录后重连。": "Login expirado. Faça login novamente localmente e reconecte.",
-  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Salvo. Um espaço privado da CLI sem login reutiliza o cache de login local. Reconecte quando estiver ocioso; as sessões originais são mantidas."
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Salvo. Um espaço privado da CLI sem login reutiliza o cache de login local. Reconecte quando estiver ocioso; as sessões originais são mantidas.",
+  "表格": "Tabela",
+  "复制代码": "Copiar código",
+  "复制失败": "Falha ao copiar"
 }

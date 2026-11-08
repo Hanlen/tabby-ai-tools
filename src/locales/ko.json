@@ -1002,5 +1002,8 @@
   "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "재사용할 로컬 로그인 캐시가 없습니다. 원래 CLI에서 먼저 로그인하세요. 키체인에만 저장된 로그인은 선택한 공간에서 다시 로그인해야 합니다.",
   "登录已失效，请重新复制本机登录并重连。": "로그인이 만료되었습니다. 로컬 로그인을 다시 복사하고 연결하세요.",
   "登录已失效，请在本机重新登录后重连。": "로그인이 만료되었습니다. 로컬에서 다시 로그인한 뒤 연결하세요.",
-  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "저장했습니다. 로그인이 없는 CLI 전용 공간은 로컬 로그인 캐시를 재사용합니다. 유휴 상태일 때 다시 연결하세요. 기존 세션은 유지됩니다."
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "저장했습니다. 로그인이 없는 CLI 전용 공간은 로컬 로그인 캐시를 재사용합니다. 유휴 상태일 때 다시 연결하세요. 기존 세션은 유지됩니다.",
+  "表格": "표",
+  "复制代码": "코드 복사",
+  "复制失败": "복사 실패"
 }

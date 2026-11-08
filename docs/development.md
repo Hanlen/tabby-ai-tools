@@ -12,6 +12,18 @@ v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions 
 
 ## 本地开发
 
+### Markdown 输出
+
+`markdown.ts` 使用固定版本的 `markdown-it` 解析正文，禁用原始 HTML。表格的列对齐转为 CSS class，以保留 Angular 15 清理后的排版；图片转为文字链接，外部 URL 只允许 HTTP、HTTPS 和 mailto。原文留在 `ChatEntry.text`，不把渲染 HTML 写入历史或模型上下文。
+
+`MarkdownComponent` 以动画帧合并文本变化，按顶层块绑定经过 Angular 清理的 HTML；未变化的块保留 DOM，更新时恢复表格／代码横向位置。HTML 后代不会获得 Angular 的模拟样式属性，因此样式使用 `ViewEncapsulation.None`，每条规则均限定在 `.codex-markdown` 内。复制按钮是清理后由 `Renderer2` 创建的固定控件，不编译模型 HTML、不绕过清理；嵌套代码同样可复制。复制和链接打开复用 Tabby `PlatformService`，组件卸载时取消帧、反馈计时器和语言监听。
+
+语法高亮使用固定版本 `highlight.js/lib/common` 加 PowerShell／Dockerfile 语法，只对显式语言及别名着色；不自动猜测语言。HTML 中仅增加 token span/class，仍经过 Angular 清理。单块超过 20,000 字符或语法不可用时退回安全转义，最多缓存 32 个代码结果以避免流式追加时反复着色完整块。代码区使用固定深色背景和限定在 `.codex-markdown pre` 的配色，避免宿主深浅主题或全局高亮样式影响可读性。
+
+Markdown 解析器与高亮器随 webpack 主包打包，仅为构建依赖，不给终端用户增加 Node.js 或安装脚本要求；升级解析器或相关依赖时同步 [第三方声明](markdown-third-party-notices.md)。使用 `node --test test/markdown.test.js test/chat-scroll.test.js test/i18n.test.js` 验证解析、流式片段、安全边界、复制、销毁与语言切换。浏览器检查应覆盖 Angular 实际清理和样式、320／480／800 px、深浅主题、嵌套代码复制、宽表格／代码滚动、历史恢复和暂停／恢复自动跟随。真实桌面和跨平台结果需另行记录。
+
+### 对话与终端输出
+
 对话过程展示由 `chat-activity.ts` 统一转换实时条目与历史条目。思考摘要／文本增量与工具开始、完成事件更新同一记录；原生 `details/summary` 默认折叠，正文按需挂载，`trackBy` 保留展开状态。API、Claude Code 和 Pi 仅转发服务提供的可展示文本，不渲染加密载荷；展示记录与模型原生历史分开保存。终端读取以 OSC 133 的 C→D→A 完成序列提前唤醒，保留 50 ms 渲染缓冲和原等待上限；新命令、会话更换或结束会清除旧完成记录。多行批次不因中间提示符提前返回。
 
 2026-11-01 本地 Linux 验证：Node 22.19.0 下完整测试 771 项通过、6 项平台相关跳过；类型检查和生产构建通过。新增夹具覆盖完成前／完成后读屏提前返回、伪提示符与多行批次不提前返回、取消订阅清理、工具结果未到时的过程显示、思考展示上限和历史恢复。当前默认 Node 20 会导致两项 Pi 夹具在运行时版本检查处失败，完整验证使用临时 Node 22.19.0。未调用收费模型，也未验证真实 Tabby 桌面或本次提交的跨平台 CI。
@@ -157,6 +169,8 @@ Tests cover default host selection without node on PATH, main-process bridge sel
 Stable GitHub Releases trigger `.github/workflows/publish.yml`. After exact-commit branch/tag CI verification, the workflow publishes the reviewed release attachment through GitHub OIDC, without a stored npm token or rebuilding the tarball. npm performs a one-time trusted publisher binding to `Hanlen/tabby-ai-tools` and `publish.yml`; direct publishing must be allowed. Create Releases as drafts, attach the verified tarball and checksum, then publish. The workflow waits for registry processing and verifies downloaded bytes. See [release setup and recovery](../.github/RELEASING.md).
 
 ## Conditional workflow runtime
+
+`terminal-limits.ts` shares the 10,000-character input cap across terminal transport, tool schema, recording, verification policies and uncertain-action receipts. Accepted commands retain their complete text, including multiline scripts; redaction must not silently change executable content. `policy.decision` marks a required main-model judgment before an operation: the runner returns `needs_model` before sending, the main model submits the current logical step, and the runner resumes its verification and successors. Missing machine checks also count as model-assisted automation. Fixed steps should record independent positive checks instead of requiring AI verification on every run.
 
 `workflow-policy.ts` defines bounded declarative predicates and response policies; `task-memory.ts` records intents and maintains ordered identity/result gates. `workflow-runner.ts` interprets conditional steps and independent verification, and `workflow-session.ts` binds calls to the current connection, Goal budget and cancellation. `workflow-decision.ts` uses isolated tool-free decision sessions; the backend factory applies model overrides to Codex, Claude Code, API and Pi without mutating the foreground profile. Temporary auxiliary transcripts are removed after disposal. v2 libraries retain v1 compatibility; separate minimal run journals omit raw observations, replies and live tab IDs. Offline fixtures in `test/workflow.test.js` cover rule execution, helper fallback, stale decisions, duplicate input, unknown results, restart/rebind and budget attribution. General TUI interpretation and missing shell completion still require the main model.
 

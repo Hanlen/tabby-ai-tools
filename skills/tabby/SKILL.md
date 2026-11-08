@@ -7,7 +7,7 @@ description: Use Tabby AI Tools for terminal work, local and remote server coord
 
 You are operating the user's running Tabby window through the `tabby_tabs` tools. This skill is bundled with Tabby AI Tools and applies to Codex, local Claude Code, and all supported API providers.
 
-Conditional recordings can preserve interactive decisions as rules or helper-model nodes. For alias execution use `workflow_run` / `workflow_interact` after live identity binding; configure observed steps with `workflow_configure`. Consult the conditional-workflow protocol in the operation reference before using these tools.
+Conditional recordings can preserve interactive decisions as rules or helper-model nodes. Prefer scripted fixed steps with recorded independent machine checks. Full commands and multiline scripts up to 10,000 characters are retained. Set `policy.decision` on steps needing main-AI judgment before execution; handle `needs_model` at that step and resume without replaying predecessors. For alias execution use `workflow_run` / `workflow_interact` after live identity binding; configure observed steps with `workflow_configure`. Consult the conditional-workflow protocol in the operation reference before using these tools.
 
 ## Feature entry points
 

@@ -5,6 +5,7 @@ import { isIP } from 'net'
 import { WorkflowPolicy, WorkflowObservation, WorkflowQuestion, validPolicy, matchesConditions } from './workflow-policy'
 import type { UserQuestion } from './user-input'
 import { createHash } from 'crypto'
+import { TERMINAL_INPUT_MAX_LENGTH } from './terminal-limits'
 
 export interface WorkflowTarget {
   type: string; profileId: string; serverId: string; host: string; ip: string; port: number; username: string; cwd: string
@@ -39,6 +40,7 @@ export interface WorkflowRuntimeState {
 }
 
 export const WORKFLOW_HINT = `任务流程执行协议：
+固定操作尽量脚本化：同一逻辑步骤可提交完整多行脚本（最多 10000 字符，不截断），独立执行验证命令并用 workflow_configure 保存 verify/expect，交由运行器自动推进。需 AI 判断的步骤设置 policy.decision 为具体决策意图：运行器在执行前返回 needs_model，主模型读取当前现场后决定并用 send_input 提交该逻辑步骤，再继续 workflow_run；不得重发前序操作。跨服务器、依赖验收和必要决策仍拆成独立步骤。
 交互也应固化：stdin、按键、接管进程会录制为步骤内交互节点，不保存原始回答或按键历史。用 workflow_configure 为已观察步骤保存 policy：when 条件为真执行、否则跳过；verify 是独立验证命令与结果条件；interactions 保存目标意图、明确条件下的回答规则及 model/manual 兜底。未走过的规则标记 observed=false，不声称已验证。不能仅由一次回答推导普遍规则。每次交互后必须重新读取同一终端；发出回答不等于该步骤完成。敏感交互保存 manual 节点，不保存凭据。
 执行别名时优先 workflow_run(tabId)：运行器推进该目标的已保存条件、命令、交互规则和验收，未知交互调用当前连接的辅助模型；返回 needs_model/needs_attention/awaiting_verification 时从当前节点处理，不重放已经提交的命令。跨服务器返回需要绑定的下一目标，重新核对后继续 workflow_run。无可靠完成状态或机器验收规则时仍由主模型现场验收。workflow_interact 可处理当前未验收步骤的交互；相同观察不能重复回答。辅助调用计入本次目标预算。
 checkpoint 成功仅表示目标绑定或步骤验收，不代表流程已归档。先用 workflow_status 查询录制模式、归档资格和失败原因；用户要求设置别名时，核对最近录制的 objective，再用 workflow_set_alias 保存，并以 saved=true 和回读别名确认。未录制的普通任务不能事后归档；明确说明限制和 /remember 后续路径，不反复检查设置或重跑已完成操作。
@@ -246,7 +248,7 @@ export class TaskMemory {
     const step = run.steps[stepNumber - 1]
     if (!step || !validPolicy(policy)) throw new Error('步骤或条件/交互策略格式无效')
     const serialized = JSON.stringify(policy)
-    if (serialized.length > 20000 || redactMemory(serialized, 20000) !== serialized) throw new Error('策略不能包含凭据或超出长度限制')
+    if (serialized.length > 100000 || redactMemory(serialized, 100000) !== serialized) throw new Error('策略不能包含凭据或超出长度限制')
     if (policy.verify && !step.verificationCommands?.includes(policy.verify.command)) throw new Error('自动验收只能使用本次已执行过的验证命令；先执行验证并读取结果')
     const previousInteractions = step.policy?.interactions || []
     step.policy = JSON.parse(serialized)
@@ -255,7 +257,8 @@ export class TaskMemory {
   }
   private automation (steps: TaskStep[], questions: WorkflowQuestion[] = []): string {
     const interactions = steps.flatMap(s => s.policy?.interactions || [])
-    return [...interactions, ...questions].some(i => i.mode === 'manual') ? 'manual_required' : interactions.length || questions.length ? 'model_assisted' : 'automatic'
+    return [...interactions, ...questions].some(i => i.mode === 'manual') ? 'manual_required'
+      : interactions.length || questions.length || steps.some(s => s.policy?.decision || !s.policy?.verify) ? 'model_assisted' : 'automatic'
   }
   recordQuestions (owner: string, questions: UserQuestion[], answers: Record<string, { answers: string[] }>): void {
     const run = this.runs.get(owner)
@@ -308,7 +311,7 @@ export class TaskMemory {
   markAction (owner: string, token: string | undefined, tool: string, args: any): void {
     const run = this.runs.get(owner)
     if (run && run.token === token) run.uncertain = { tool, step: run.steps.length + (run.steps.length && !run.steps[run.steps.length - 1].verification && !run.steps[run.steps.length - 1].skipped ? 0 : 1),
-      ...(tool === 'send_input' && args.mode !== 'stdin' && args.verificationFor === undefined ? { command: redactMemory(args.text, 1200), purpose: redactMemory(args.purpose || run.objective, 180) } : {}) }
+      ...(tool === 'send_input' && args.mode !== 'stdin' && args.verificationFor === undefined ? { command: redactMemory(args.text, TERMINAL_INPUT_MAX_LENGTH), purpose: redactMemory(args.purpose || run.objective, 180) } : {}) }
   }
   clearAction (owner: string, token: string | undefined): void {
     const run = this.runs.get(owner)
@@ -351,6 +354,8 @@ export class TaskMemory {
   beforeTool (owner: string, token: string | undefined, name: string, args: any, fromRunner = false): void {
     const run = this.runs.get(owner)
     if (!run || run.token !== token) return
+    // Reject before journaling an action, so recovery never reconstructs a cut-off command.
+    if (name === 'send_input' && (typeof args?.text !== 'string' || args.text.length > TERMINAL_INPUT_MAX_LENGTH)) throw new Error(`text must be a string of at most ${TERMINAL_INPUT_MAX_LENGTH} characters`)
     if ((run.capture || run.expected) && ['attachment_upload', 'attachment_download'].includes(name)) throw new Error('Attachment transfers are not reusable workflow steps. Transfer the file before recording or invoking the workflow.')
     if (run.runnerBusy && !fromRunner && name !== 'read_tab') throw new Error('运行器正在处理当前节点；等待返回后再继续')
     if (run.uncertain && ['send_input', 'send_keys', 'attach_process'].includes(name)) throw new Error('上一动作结果未知；先读取现场并用 workflow_checkpoint(action=resolve_action) 核对，不能重发')
@@ -505,9 +510,10 @@ export class TaskMemory {
     if (args?.submit !== true || result?.submitted !== true || typeof args.text !== 'string') return
     run.lastCommand = run.serial
     if (args.verificationFor === 0) return
-    if (args.text.length > 1200) { cannotArchive('录制命令超过 1200 字符，不能保存为完整可复用流程'); return }
-    const command = redactMemory(args.text, 1200)
+    if (args.text.length > TERMINAL_INPUT_MAX_LENGTH) { cannotArchive(`录制命令超过 ${TERMINAL_INPUT_MAX_LENGTH} 字符的终端输入上限，不能保存为完整可复用流程`); return }
+    const command = redactMemory(args.text, TERMINAL_INPUT_MAX_LENGTH)
     if (command.includes('[已隐藏') || /(?:^|[\s/])(?:passwd|sshpass)\b|(?:^|\s)(?:read\s+-s|export\s+.*(?:KEY|TOKEN|SECRET))/i.test(command)) { cannotArchive('录制包含敏感命令或隐藏凭据，不能保存为完整可复用流程'); return }
+    if (command !== args.text) { cannotArchive('录制命令包含无法原样保存的控制字符，不能保存为完整可复用流程'); return }
     if (args.verificationFor !== undefined) {
       const step = run.steps[run.steps.length - 1]
       if (!step || args.verificationFor !== run.steps.length || run.stepTabs[run.steps.length - 1] !== args.tabId) { cannotArchive('验证命令未对应当前步骤及其终端，录制不完整'); return }
@@ -539,7 +545,7 @@ export class TaskMemory {
     if (!run.steps.length) return '尚无可归档的终端操作步骤'
     if (run.inFlight || !run.reads || run.verifiedSteps !== run.steps.length || run.steps.some(s => !s.verification)) return '流程步骤尚未全部验收'
     if (run.steps.some(s => targetError(s.server))) return '流程步骤缺少已核对的服务器身份或绝对操作路径'
-    if (run.steps.some(s => s.command.includes('[已隐藏') || redactMemory(s.command, 1200) !== s.command)) return '流程包含敏感或不完整命令，不能归档'
+    if (run.steps.some(s => [s.command, ...(s.verificationCommands || [])].some(command => command.includes('[已隐藏') || redactMemory(command, TERMINAL_INPUT_MAX_LENGTH) !== command))) return '流程包含敏感或不完整命令，不能归档'
     return ''
   }
   /** Current run or the most recent explicit recording, scoped to this session and workspace. */

@@ -1002,5 +1002,8 @@
   "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "No hay caché de inicio de sesión local reutilizable. Inicia sesión en la CLI original; si solo está en el llavero, inicia sesión en el espacio seleccionado.",
   "登录已失效，请重新复制本机登录并重连。": "Inicio de sesión caducado. Cópialo de nuevo y reconecta.",
   "登录已失效，请在本机重新登录后重连。": "Inicio de sesión caducado. Inicia sesión de nuevo localmente y reconecta.",
-  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Guardado. Un espacio privado de CLI sin sesión reutiliza la caché de inicio de sesión local. Reconecta cuando esté inactivo; se conservan las sesiones originales."
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Guardado. Un espacio privado de CLI sin sesión reutiliza la caché de inicio de sesión local. Reconecta cuando esté inactivo; se conservan las sesiones originales.",
+  "表格": "Tabla",
+  "复制代码": "Copiar código",
+  "复制失败": "No se pudo copiar"
 }

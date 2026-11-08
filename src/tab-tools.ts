@@ -17,6 +17,7 @@ import { AttachmentTransferService } from './attachment-transfer.service'
 import { TransferTarget } from './attachment-transport'
 import { runAttachmentPty } from './attachment-pty'
 import { RemoteProcessIdentity, verifyRemoteProcess } from './remote-process'
+import { TERMINAL_INPUT_MAX_LENGTH } from './terminal-limits'
 
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
 export interface TabToolContext {
@@ -703,7 +704,7 @@ export class TabbyTabToolsService implements OnDestroy {
       if (!(tab instanceof BaseTerminalTabComponent)) throw new Error('This tab is not a terminal')
       if (!tab.session?.open) throw new Error('The terminal session is closed')
       this.capture(tab, context)
-      if (typeof args.text !== 'string' || args.text.length > 10000) throw new Error('text must be a string of at most 10,000 characters')
+      if (typeof args.text !== 'string' || args.text.length > TERMINAL_INPUT_MAX_LENGTH) throw new Error('text must be a string of at most 10,000 characters')
       const owner = context?.owner || 'legacy'
       const existing = this.controlled.get(tab)
       if (existing && existing.owner !== owner) throw new Error(`Tab ${args.tabId} is controlled by another Codex session`)

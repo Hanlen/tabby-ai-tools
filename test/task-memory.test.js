@@ -97,9 +97,9 @@ test('blocked or merely typed commands do not enter a workflow; repeated polling
   assert.equal(workflow.steps[0].command, 'pnpm build')
 })
 
-test('interactive input, long commands, credentials and truncated workflows cannot produce incomplete reusable procedures', async t => {
+test('unverified interactions, oversized commands, credentials and truncated workflows cannot produce incomplete reusable procedures', async t => {
   const { memory, store } = await fixture(t)
-  for (const text of ['curl -H "Authorization: Bearer private-value" https://example.com', 'API_KEY="very-secret" deploy', 'sshpass -p password ssh remote', 'x'.repeat(1201)]) {
+  for (const text of ['curl -H "Authorization: Bearer private-value" https://example.com', 'API_KEY="very-secret" deploy', 'sshpass -p password ssh remote', 'x'.repeat(10001)]) {
     const token = await begin(memory)
     command(memory, token, text)
     command(memory, token)
@@ -136,6 +136,75 @@ test('preferences are explicitly scoped, editable, deduplicated and bounded in t
   await assert.rejects(memory.addPreference('token=private-value', ''), /不含密钥/)
   for (let i = 0; i < 10; i++) await memory.addPreference('偏好-' + i, '/project')
   assert.equal((await memory.prepare('thread', 'unmatched', '/project')).preferences.length, 8)
+})
+
+test('long multiline commands and independent checks survive archive, alias and restart without truncation', async t => {
+  const { memory, store, root } = await fixture(t)
+  for (const length of [1200, 1201, 10000]) {
+    const token = await begin(memory, `install script ${length}`)
+    const prefix = "cat <<'INSTALL'\n"
+    const suffix = '\n中文 $HOME \\ literal\nINSTALL'
+    const script = prefix + 'x'.repeat(length - prefix.length - suffix.length) + suffix
+    const check = 'check-install ' + 'x'.repeat(length - 'check-install '.length)
+    read(memory, token)
+    command(memory, token, script)
+    memory.record('thread', token, 'send_input', { tabId: 'ephemeral-tab-12', text: check, submit: true, verificationFor: 1 }, { sent: true, submitted: true })
+    read(memory, token)
+    memory.configure('thread', token, 1, { decision: '检查当前版本后选择安装参数', verify: { command: check, expect: [{ source: 'screen', op: 'contains', value: 'INSTALL_OK' }] } })
+    assert.equal(confirm(memory, token).archiveEligible, true)
+    const workflow = await memory.finish('thread', token, 'completed', 'complete', 'installed and checked')
+    await memory.assignWorkflowAlias('thread', '/project', `install${length}`)
+    const reopened = new TaskMemory(new TaskMemoryStore(root))
+    const saved = (await reopened.prepare('new', `/install${length}`, '/project')).workflow.steps[0]
+    assert.equal(saved.command, script)
+    assert.deepEqual(saved.verificationCommands, [check])
+    assert.equal(saved.policy.verify.command, check)
+    assert.equal(saved.policy.decision, '检查当前版本后选择安装参数')
+    assert.equal(workflow.steps.length, 1)
+  }
+  assert.equal((await store.read()).workflows.length, 3)
+})
+
+test('unknown long command receipts preserve the full command through restart without replay', async t => {
+  const { memory, root } = await fixture(t)
+  const token = await begin(memory)
+  const text = '# install\n' + 'x'.repeat(9990)
+  memory.markAction('thread', token, 'send_input', { text })
+  await memory.persistRun('thread')
+  const restored = new TaskMemory(new TaskMemoryStore(root))
+  await restored.restoreRun('thread', '/project')
+  const nextToken = restored.token('thread')
+  assert.equal(restored.runtime('thread', nextToken, '').uncertain.command, text)
+  assert.throws(() => restored.beforeTool('thread', nextToken, 'send_input', { text, submit: true }), /未知/)
+  read(restored, nextToken)
+  restored.checkpoint('thread', nextToken, { action: 'resolve_action', tabId: 'ephemeral-tab-12', outcome: 'sent', evidence: 'observed installed artifacts' })
+  assert.equal(restored.runtime('thread', nextToken, '').pending.command, text)
+  read(restored, nextToken)
+  confirm(restored, nextToken)
+  assert.equal((await restored.finish('thread', nextToken, 'completed', 'complete', 'verified')).steps[0].command, text)
+})
+
+test('oversized input is rejected before a workflow action or partial recovery receipt is reserved', async t => {
+  const { memory } = await fixture(t)
+  const token = await begin(memory)
+  read(memory, token)
+  assert.throws(() => memory.beforeTool('thread', token, 'send_input', { tabId: 'ephemeral-tab-12', text: 'x'.repeat(10001), submit: true }), /10000/)
+  assert.equal(memory.runtime('thread', token, '').uncertain, undefined)
+  assert.equal((await memory.workflowStatus('thread', '/project')).lifecycle, 'draft')
+  assert.doesNotThrow(() => memory.beforeTool('thread', token, 'send_input', { tabId: 'ephemeral-tab-12', text: 'install-app', submit: true }))
+})
+
+test('secrets beyond the former cutoff and commands altered by redaction cannot be archived', async t => {
+  const { memory, store } = await fixture(t)
+  for (const text of ['# ' + 'x'.repeat(2000) + '\nAPI_KEY=private-value install', '\u001b[31mecho install\u001b[0m']) {
+    const token = await begin(memory)
+    command(memory, token, text)
+    const status = await memory.workflowStatus('thread', '/project')
+    assert.equal(status.lifecycle, 'incomplete')
+    assert.equal(status.archiveEligible, false)
+    assert.equal(await memory.finish('thread', token, 'completed', 'complete', 'done'), undefined)
+  }
+  assert.deepEqual((await store.read()).workflows, [])
 })
 
 test('manual workflow edits and disablement survive automatic updates and deletion removes matching', async t => {
@@ -373,7 +442,7 @@ test('workflow status distinguishes recording, alias execution and an unrecorded
 
 test('successful checkpoints expose why an unsafe or incomplete recording cannot be archived', async t => {
   const { memory, store } = await fixture(t)
-  for (const [input, reason] of [['x'.repeat(1201), /1200/], ['API_KEY="private-value" deploy', /敏感命令/]]) {
+  for (const [input, reason] of [['x'.repeat(10001), /10000/], ['API_KEY="private-value" deploy', /敏感命令/]]) {
     const token = await begin(memory)
     command(memory, token, input)
     command(memory, token)

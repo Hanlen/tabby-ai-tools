@@ -107,6 +107,7 @@ export class WorkflowRunner {
               continue
             }
           }
+          if (expected.policy?.decision) return { status: 'needs_model', step: state.number, reason: `此步骤需要 AI 决策：${expected.policy.decision}。请根据当前现场判断并用 send_input 提交本逻辑步骤，再从当前节点继续 workflow_run；不要重放前序操作。`, observation }
           if (!expected.command) return { status: 'needs_model', step: state.number, reason: '此节点需要接管现有进程；先现场核对并 attach_process' }
           await ports.persist?.()
           const sent = await ports.call('send_input', { tabId, text: expected.command, submit: true, purpose: expected.purpose, foregroundTaskNeeded: true })

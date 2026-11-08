@@ -1002,5 +1002,8 @@
   "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "Kein wiederverwendbarer lokaler Anmeldecache. Melden Sie sich zuerst in der ursprünglichen CLI an; reine Schlüsselbund-Anmeldungen erfordern eine Anmeldung im ausgewählten Bereich.",
   "登录已失效，请重新复制本机登录并重连。": "Anmeldung abgelaufen. Kopieren Sie die lokale Anmeldung erneut und verbinden Sie sich neu.",
   "登录已失效，请在本机重新登录后重连。": "Anmeldung abgelaufen. Melden Sie sich lokal erneut an und verbinden Sie sich neu.",
-  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Gespeichert. Ein privater CLI-Bereich ohne Anmeldung verwendet den lokalen Anmeldecache. Verbinden Sie sich im Leerlauf erneut; die ursprünglichen Sitzungen bleiben erhalten."
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Gespeichert. Ein privater CLI-Bereich ohne Anmeldung verwendet den lokalen Anmeldecache. Verbinden Sie sich im Leerlauf erneut; die ursprünglichen Sitzungen bleiben erhalten.",
+  "表格": "Tabelle",
+  "复制代码": "Code kopieren",
+  "复制失败": "Kopieren fehlgeschlagen"
 }

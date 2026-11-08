@@ -1,0 +1,36 @@
+.codex-markdown{--codex-code-bg:#0d1117;--codex-code-fg:#e6edf3;--codex-code-keyword:#ff7b72;--codex-code-string:#a5d6ff;--codex-code-number:#79c0ff;--codex-code-title:#d2a8ff;--codex-code-comment:#8b949e;--codex-code-attr:#7ee787;display:block;min-width:0;max-width:100%;font:inherit;line-height:1.6;white-space:normal;overflow-wrap:anywhere;color:inherit;user-select:text;-webkit-user-select:text;-webkit-app-region:no-drag}
+.codex-markdown .codex-md-block+.codex-md-block{margin-block-start:.8em}
+.codex-markdown p,.codex-markdown blockquote,.codex-markdown ul,.codex-markdown ol{margin:0 0 .65em}
+.codex-markdown .codex-md-block>:last-child,.codex-markdown li>:last-child,.codex-markdown blockquote>:last-child{margin-block-end:0}
+.codex-markdown h1,.codex-markdown h2,.codex-markdown h3,.codex-markdown h4,.codex-markdown h5,.codex-markdown h6{font-family:inherit;font-weight:600;line-height:1.35;margin:0 0 .5em;color:inherit}
+.codex-markdown h1{font-size:1.4em}.codex-markdown h2{font-size:1.25em}.codex-markdown h3{font-size:1.1em}
+.codex-markdown h4,.codex-markdown h5,.codex-markdown h6{font-size:1em}
+.codex-markdown ul,.codex-markdown ol{padding-inline-start:1.6em}
+.codex-markdown li+li{margin-block-start:.25em}
+.codex-markdown li>ul,.codex-markdown li>ol{margin-block-start:.3em}
+.codex-markdown blockquote{padding-inline-start:.8em;border-inline-start:3px solid rgba(127,127,127,.5)}
+.codex-markdown a[href]{color:var(--link-color,inherit);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.codex-markdown hr{border:0;border-block-start:1px solid rgba(127,127,127,.35);margin:.8em 0}
+.codex-markdown code{font-family:var(--terminal-font-family,monospace);font-size:.92em;color:inherit;background:rgba(127,127,127,.12);padding:.1em .3em;border-radius:3px;white-space:break-spaces}
+.codex-markdown .codex-md-code{min-width:0;max-width:100%;border:1px solid rgba(127,127,127,.35);border-radius:6px;overflow:hidden;margin-block:.5em;background:rgba(127,127,127,.06)}
+.codex-markdown .codex-md-code-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px;padding:2px 8px;background:rgba(127,127,127,.1);font-size:.85em}
+.codex-markdown .codex-md-code-heading>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.codex-markdown .codex-md-copy{flex:none;min-height:26px;padding:2px 6px;border:1px solid transparent;border-radius:4px;font:inherit;color:inherit;background:transparent;cursor:pointer}
+.codex-markdown .codex-md-copy:hover{background:rgba(127,127,127,.16);border-color:rgba(127,127,127,.4)}
+.codex-markdown pre{display:block;min-width:0;max-width:100%;max-height:none;margin:0;padding:10px;overflow:auto;white-space:pre;overflow-wrap:normal;word-break:normal;font-family:var(--terminal-font-family,monospace);font-size:.92em;line-height:1.5;color:var(--codex-code-fg);background:var(--codex-code-bg);direction:ltr;text-align:left;user-select:text}
+.codex-markdown pre code{display:block;width:max-content;min-width:100%;margin:0;padding:0;border:0;border-radius:0;white-space:pre;overflow-wrap:normal;font:inherit;color:inherit;background:transparent}
+.codex-markdown pre .hljs-keyword,.codex-markdown pre .hljs-selector-tag,.codex-markdown pre .hljs-deletion{color:var(--codex-code-keyword)}
+.codex-markdown pre .hljs-string,.codex-markdown pre .hljs-regexp,.codex-markdown pre .hljs-doctag{color:var(--codex-code-string)}
+.codex-markdown pre .hljs-number,.codex-markdown pre .hljs-literal,.codex-markdown pre .hljs-built_in,.codex-markdown pre .hljs-type,.codex-markdown pre .hljs-meta,.codex-markdown pre .hljs-symbol,.codex-markdown pre .hljs-bullet,.codex-markdown pre .hljs-link{color:var(--codex-code-number)}
+.codex-markdown pre .hljs-title,.codex-markdown pre .hljs-section,.codex-markdown pre .hljs-selector-class{color:var(--codex-code-title)}
+.codex-markdown pre .hljs-comment,.codex-markdown pre .hljs-quote{color:var(--codex-code-comment);font-style:italic}
+.codex-markdown pre .hljs-attr,.codex-markdown pre .hljs-attribute,.codex-markdown pre .hljs-name,.codex-markdown pre .hljs-selector-id,.codex-markdown pre .hljs-addition{color:var(--codex-code-attr)}
+.codex-markdown pre .hljs-emphasis{font-style:italic}.codex-markdown pre .hljs-strong{font-weight:700}
+.codex-markdown .codex-md-table{max-width:100%;overflow-x:auto;margin-block:.5em;border:1px solid rgba(127,127,127,.35);border-radius:5px}
+.codex-markdown table{width:max-content;min-width:100%;border-collapse:collapse;font:inherit;color:inherit}
+.codex-markdown th,.codex-markdown td{min-width:7ch;max-width:32ch;padding:7px 10px;border:1px solid rgba(127,127,127,.25);vertical-align:top;text-align:start;white-space:normal}
+.codex-markdown th{font-weight:600;background:rgba(127,127,127,.12)}
+.codex-markdown tbody tr:nth-child(even){background:rgba(127,127,127,.04)}
+.codex-markdown .codex-md-align-left{text-align:left}.codex-markdown .codex-md-align-center{text-align:center}.codex-markdown .codex-md-align-right{text-align:right}
+.codex-markdown .codex-md-plain{white-space:pre-wrap}
+.codex-markdown :focus-visible{outline:1px solid currentColor;outline-offset:-2px}

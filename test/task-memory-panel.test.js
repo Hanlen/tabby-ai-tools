@@ -462,7 +462,7 @@ test('recording rejection is visible after task completion and remains queryable
   f.panel.prompt = '/remember build frontend'
   await f.panel.send()
   await f.tool('read_tab', { tabId: 'repo' })
-  await f.tool('send_input', { tabId: 'repo', text: 'x'.repeat(1201), submit: true })
+  await f.tool('send_input', { tabId: 'repo', text: 'API_KEY=private-value deploy', submit: true })
   await f.tool('send_input', { tabId: 'repo', text: 'build', submit: true })
   await f.tool('read_tab', { tabId: 'repo' })
   await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'verified', evidence: 'fresh output checked' })
@@ -471,10 +471,27 @@ test('recording rejection is visible after task completion and remains queryable
   assert.equal(result.archiveEligible, false)
   await f.finish()
   assert.equal(f.panel.goalStatus, 'complete')
-  assert.match(f.panel.memoryNotice, /1200/)
+  assert.match(f.panel.memoryNotice, /敏感命令/)
   assert.equal(f.panel.pendingWorkflow, undefined)
   await f.tool('workflow_status', {})
   assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).state, 'unavailable')
+})
+
+test('a long installation command completes recording and offers its intact workflow for an alias', async t => {
+  const f = await setup(t)
+  f.panel.prompt = '/remember install frontend'
+  await f.panel.send()
+  const command = 'install-app ' + 'x'.repeat(3000)
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('send_input', { tabId: 'repo', text: command, submit: true })
+  await f.tool('read_tab', { tabId: 'repo' })
+  await f.tool('workflow_checkpoint', { action: 'confirm_step', tabId: 'repo', step: 1, criteria: 'verified', evidence: 'fresh output checked' })
+  assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).archiveEligible, true)
+  await f.finish()
+  assert.equal(f.panel.goalStatus, 'complete')
+  assert.equal(f.panel.pendingWorkflow.steps[0].command, command)
+  await f.tool('workflow_status', {})
+  assert.equal(JSON.parse(f.replies.at(-1)[1].contentItems[0].text).state, 'archived')
 })
 
 test('an archive write failure is visible and alias tool retries the verified recording', async t => {

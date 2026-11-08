@@ -1,3 +1,5 @@
+import { TERMINAL_INPUT_MAX_LENGTH } from './terminal-limits'
+
 /** Small declarative predicates; never execute expressions supplied by a model. */
 export interface WorkflowCondition {
   source: 'prompt' | 'screen' | 'commandState'
@@ -14,6 +16,8 @@ export interface WorkflowInteraction {
   observed: boolean
 }
 export interface WorkflowPolicy {
+  /** Hand control to the main model before this operation; resume after it submits the step. */
+  decision?: string
   when?: WorkflowCondition[]
   verify?: { command: string; expect: WorkflowCondition[] }
   interactions?: WorkflowInteraction[]
@@ -32,9 +36,10 @@ export function validResponse (v: any): v is WorkflowResponse {
       ['shift', 'alt', 'ctrl'].every(k => v[k] === undefined || typeof v[k] === 'boolean'))
 }
 export function validPolicy (v: any): v is WorkflowPolicy {
-  return !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every(k => ['when', 'verify', 'interactions'].includes(k)) &&
+  return !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every(k => ['decision', 'when', 'verify', 'interactions'].includes(k)) &&
+    (v.decision === undefined || bounded(v.decision, 600)) &&
     (v.when === undefined || validConditions(v.when)) &&
-    (v.verify === undefined || bounded(v.verify?.command, 1200) && validConditions(v.verify.expect) && v.verify.expect.some((c: WorkflowCondition) => c.source !== 'commandState' && c.op !== 'not_contains')) &&
+    (v.verify === undefined || bounded(v.verify?.command, TERMINAL_INPUT_MAX_LENGTH) && validConditions(v.verify.expect) && v.verify.expect.some((c: WorkflowCondition) => c.source !== 'commandState' && c.op !== 'not_contains')) &&
     (v.interactions === undefined || Array.isArray(v.interactions) && v.interactions.length <= 32 &&
       new Set(v.interactions.map((i: any) => i?.id)).size === v.interactions.length && v.interactions.every((i: any) => i &&
         /^[a-zA-Z0-9_-]{1,64}$/.test(i.id) && bounded(i.intent, 600) && ['model', 'manual'].includes(i.mode) && typeof i.observed === 'boolean' &&
@@ -65,9 +70,10 @@ const responseSchema = {
 export const WORKFLOW_POLICY_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
+    decision: { type: 'string', maxLength: 600, description: 'Required AI judgment before this step. The runner returns needs_model without sending the command; the main model observes the live target, decides and submits this logical step through send_input, then resumes workflow_run.' },
     when: conditionsSchema,
     verify: { type: 'object', additionalProperties: false,
-      properties: { command: { type: 'string', maxLength: 1200 }, expect: conditionsSchema }, required: ['command', 'expect'] },
+      properties: { command: { type: 'string', maxLength: TERMINAL_INPUT_MAX_LENGTH }, expect: conditionsSchema }, required: ['command', 'expect'] },
     interactions: { type: 'array', maxItems: 32, items: { type: 'object', additionalProperties: false,
       properties: { id: { type: 'string' }, intent: { type: 'string', maxLength: 600 }, mode: { type: 'string', enum: ['model', 'manual'] }, expectedProcess: { type: 'string' }, observed: { type: 'boolean' },
         rules: { type: 'array', maxItems: 12, items: { type: 'object', additionalProperties: false,

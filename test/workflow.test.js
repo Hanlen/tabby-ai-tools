@@ -146,6 +146,52 @@ test('duplicate interaction observations and unknown-result commands cannot be r
   await assert.rejects(p.call('send_input', { tabId: 'tab', text: 'configure-app', submit: true }), /结果未知/)
 })
 
+test('scripted steps yield at an explicit AI decision and resume without replaying prior operations', async t => {
+  const command = 'install-app ' + 'x'.repeat(3000)
+  const check = 'check-install ' + 'x'.repeat(3000)
+  const automatic = (command, verify, value, extra = {}) => step({ command, verificationCommands: [verify], policy: { verify: { command: verify, expect: [condition(value, 'screen')] }, ...extra } })
+  const f = await fixture(t, [automatic(command, check, 'INSTALL_OK'),
+    automatic('configure-app', 'check-config', 'CONFIG_OK', { decision: '根据当前版本选择配置参数' }), automatic('start-app', 'check-health', 'HEALTHY')])
+  const p = ports(f.memory, f.token, [screen('initial'), screen('initial'), screen('install done\nshell$'),
+    screen('install done\nshell$ check\nINSTALL_OK\nshell$'), screen('current version 2\nshell$'),
+    screen('configured\nshell$'), screen('configured\nshell$ check-config\nCONFIG_OK\nshell$'), screen('ready\nshell$'),
+    screen('started\nshell$'), screen('started\nshell$ check-health\nHEALTHY\nshell$')])
+  const result = await f.runner.run('owner', f.token, 'tab', p)
+  assert.equal(result.status, 'needs_model')
+  assert.equal(result.step, 2)
+  assert.match(result.reason, /根据当前版本选择配置参数/)
+  assert.deepEqual(p.calls.filter(c => c.name === 'send_input').map(c => c.args.text), [command, check])
+  assert.equal(f.memory.runtime('owner', f.token, 'tab').number, 2)
+  // The main model makes the decision using live output and submits this step.
+  await p.call('send_input', { tabId: 'tab', text: 'configure-app --keep', submit: true })
+  assert.equal((await f.runner.run('owner', f.token, 'tab', p)).status, 'complete')
+  assert.deepEqual(p.calls.filter(c => c.name === 'send_input').map(c => c.args.text), [command, check, 'configure-app --keep', 'check-config', 'start-app', 'check-health'])
+  assert.equal(p.decisions.length, 0, 'fixed operations and explicit main-model decisions do not spend helper calls')
+  assert.equal(f.memory.completionIssue('owner', f.token), '')
+})
+
+test('a skipped conditional step does not request its AI decision', async t => {
+  const f = await fixture(t, [step({ policy: { when: [condition('missing-version')], decision: '选择升级策略' } })])
+  const p = ports(f.memory, f.token, [screen('initial'), screen('current version\nshell$')])
+  assert.equal((await f.runner.run('owner', f.token, 'tab', p)).status, 'complete')
+  assert.equal(p.calls.filter(c => c.name !== 'read_tab').length, 0)
+  assert.equal(f.memory.runtime('owner', f.token, 'tab').complete, true)
+})
+
+test('automation status includes AI decisions and steps without machine checks', async t => {
+  for (const [policy, expected] of [[{}, 'model_assisted'], [{ decision: '选择配置' }, 'model_assisted'],
+    [{ verify: { command: 'health-check', expect: [condition('HEALTHY')] } }, 'automatic']]) {
+    const f = await fixture(t)
+    const p = ports(f.memory, f.token, [screen('initial')])
+    await p.call('read_tab', { tabId: 'tab' })
+    await p.call('send_input', { tabId: 'tab', text: 'configure-app', submit: true })
+    await p.call('send_input', { tabId: 'tab', text: 'health-check', submit: true, verificationFor: 1 })
+    f.memory.configure('owner', f.token, 1, policy)
+    assert.equal((await f.memory.workflowStatus('owner', '/project')).automation, expected)
+  }
+  for (const decision of ['', 'x'.repeat(601), {}, false]) assert.equal(validPolicy({ decision }), false)
+})
+
 test('durable resume keeps steps and unknown actions, drops raw observations, and rebinds the pending terminal', async t => {
   const f = await fixture(t, [step()])
   const p = ports(f.memory, f.token, [screen('initial'), screen('initial'), screen('private terminal data', true)])

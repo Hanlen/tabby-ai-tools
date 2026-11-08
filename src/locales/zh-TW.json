@@ -1002,5 +1002,8 @@
   "本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。": "本機沒有可重用的登入快取，請先在原始 CLI 登入；僅存於鑰匙圈的登入需要在所選空間重新登入。",
   "登录已失效，请重新复制本机登录并重连。": "登入已失效，請重新複製本機登入並重新連線。",
   "登录已失效，请在本机重新登录后重连。": "登入已失效，請在本機重新登入後重新連線。",
-  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "已儲存。尚未登入的 CLI 私有空間會重用本機登入快取。請在閒置時重新連線；原工作階段會保留。"
+  "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "已儲存。尚未登入的 CLI 私有空間會重用本機登入快取。請在閒置時重新連線；原工作階段會保留。",
+  "表格": "表格",
+  "复制代码": "複製程式碼",
+  "复制失败": "複製失敗"
 }
