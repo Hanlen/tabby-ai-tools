@@ -1005,5 +1005,15 @@
   "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Gespeichert. Ein privater CLI-Bereich ohne Anmeldung verwendet den lokalen Anmeldecache. Verbinden Sie sich im Leerlauf erneut; die ursprünglichen Sitzungen bleiben erhalten.",
   "表格": "Tabelle",
   "复制代码": "Code kopieren",
-  "复制失败": "Kopieren fehlgeschlagen"
+  "复制失败": "Kopieren fehlgeschlagen",
+  "问题目录": "Fragennavigation",
+  "任务结果未知": "Aufgabenergebnis unbekannt",
+  "执行失败": "Ausführung fehlgeschlagen",
+  "向上滚动问题目录": "Fragenindex nach oben scrollen",
+  "向下滚动问题目录": "Fragenindex nach unten scrollen",
+  "本次执行已完成": "Diese Ausführung ist abgeschlossen",
+  "用户已停止": "Vom Benutzer gestoppt",
+  "任务尚未完成": "Aufgabe unvollständig",
+  "达到执行上限，任务未完成": "Ausführungslimit erreicht; Aufgabe unvollständig",
+  "等待外部条件": "Warten auf externe Voraussetzung"
 }

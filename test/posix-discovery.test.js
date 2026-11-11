@@ -351,3 +351,48 @@ test('malformed Shell environment is rejected without echoing its values in diag
     return true
   })
 })
+
+test('unavailable saved selectors clear once and discover automatically, preserving valid explicit selectors', posix, async t => {
+  const f = fixture(t)
+  const target = f.file('.local/bin/codex', '#!/bin/sh\nexit 0\n')
+  for (const configured of [path.join(f.root, 'deleted/codex'), 'removed-custom-command']) {
+    const resets = []
+    const launch = await resolveCodexLaunch(configured, { ...f.context, onInvalidExecutable: value => resets.push(value) })
+    assert.equal(launch.executable, target)
+    assert.deepEqual(resets, [configured])
+  }
+  const explicit = f.file('pinned/codex', '#!/bin/sh\nexit 0\n')
+  const resets = []
+  assert.equal((await resolveCodexLaunch(explicit, { ...f.context, onInvalidExecutable: value => resets.push(value) })).executable, explicit)
+  assert.deepEqual(resets, [])
+  assert.equal((await resolveCodexLaunch('codex', f.context)).executable, (await resolveCodexLaunch('', f.context)).executable)
+})
+
+test('failed automatic recovery clears only once and cancellation never clears a selector', posix, async t => {
+  const f = fixture(t), resets = []
+  const configured = path.join(f.root, 'deleted/codex')
+  await assert.rejects(resolveCodexLaunch(configured, { ...f.context, onInvalidExecutable: value => resets.push(value) }), /找不到 Codex/)
+  assert.deepEqual(resets, [configured])
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(resolveCodexLaunch(configured, { ...f.context, signal: controller.signal, onInvalidExecutable: () => assert.fail('cancelled discovery cleared setting') }), /closed/)
+})
+
+test('actual client recovers a deleted configured CLI once and reuses the resulting server without replay', posix, async t => {
+  const f = fixture(t)
+  const executable = f.file('.local/bin/codex', server.replace('#!/usr/bin/env node', '#!' + process.execPath))
+  inheritFixture(t, f.context.env)
+  const client = new CodexClient(), resets = []
+  client.on('invalidExecutable', value => resets.push(value))
+  t.after(async () => { await client.close(); await client.waitForCleanup() })
+  const deleted = path.join(f.root, 'old-version/codex')
+  await client.connect(deleted)
+  const generation = client.generation
+  assert.deepEqual(resets, [deleted])
+  const result = await client.request('test/inspect', {})
+  assert.equal(client.launch.executable, executable)
+  assert.deepEqual(result.args, ['app-server', '--listen', 'stdio://'])
+  await client.connect('codex')
+  assert.equal(client.generation, generation)
+  assert.equal(client.pending.size, 0)
+})

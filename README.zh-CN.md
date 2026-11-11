@@ -18,13 +18,15 @@
 
 </div>
 
+**v0.9.4：会话内问题导航与更安全的 CLI 恢复。** 通用 Agent 面板在右侧滚动条区域提供问题索引：悬停或聚焦预览原问题，点击跳转，回到最新消息恢复流式跟随。居中的紧凑 1px 短线不附加符号，与聊天滚动滑块共用右侧 18px 窄区域，去掉左侧占位；预览向左展开，过多时使用主题一致的 ↑ / ↓ 按钮翻动。绿色表示确认完成，淡绿色表示没有用户 Stop 证据的普通中断，蓝色表示执行中或等待外部条件，红色表示确认主动 Stop、任务未完成便终止或达到执行上限。回合结束后等待 Goal 确认，自动续行恢复蓝色；证据不足的历史保持灰色。
+
 <br>
 
 Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI 助手插件。它可以读取终端输出、发送命令，并根据执行结果继续分析和操作。你在侧栏描述目标，在终端查看过程，也可以随时取回输入控制。
 
 ![Tabby AI Tools 界面示意：展示Markdown 表格和语法高亮代码块，以及连接、任务日志、定时任务和设置；内容为示例](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
-**Markdown 回复。** 助手消息和定时任务 AI 说明支持表格、标题、列表、引用、链接和代码块。宽表格与代码在消息内滚动，带语言标记的代码块支持语法高亮和单独复制，整条消息复制保留原始 Markdown；流式输出与恢复的历史消息使用同一套排版。[说明](docs/releases/unreleased.md)。
+**Markdown 回复。** 助手消息和定时任务 AI 说明支持表格、标题、列表、引用、链接和代码块。宽表格与代码在消息内滚动，带语言标记的代码块支持语法高亮和单独复制，整条消息复制保留原始 Markdown；流式输出与恢复的历史消息使用同一套排版。[v0.9.4 说明](docs/releases/0.9.4.md)。
 
 **v0.9.2 修复：** Codex 检查已知 Windows 配套程序，允许在空闲边界恢复安装连接一次，不重放任务。Claude 本机登录在每次调用前重新检查配置的 CLI，并区分安装故障与未登录。Linux SSH 中已有原生 Agent 可经独立进程／PTY 核验接管。[发布说明与限制](docs/releases/0.9.2.md)。
 
@@ -144,3 +146,5 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 插件自带一个供模型使用的 [Tabby skill](skills/tabby/SKILL.md)，保留全部功能入口。构建时自动内嵌，随插件安装并提供给 Codex 和 API 模型，无需另行安装。
 
 [开发与验证](docs/development.md) · [验证范围](VALIDATION.md) · [问题反馈](https://github.com/Hanlen/tabby-ai-tools/issues) · [MIT](LICENSE)
+
+v0.9.4 起，Codex CLI 默认留空自动查找，填写 `codex` 效果相同。已保存的路径或命令确认不可用时，自动清空并保存，再查找可用安装；有效显式入口保留优先级。登录、模型及工具协议错误不会触发清空，也不会重发任务。

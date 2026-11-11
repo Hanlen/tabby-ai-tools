@@ -62,7 +62,7 @@ const emit = value => process.stdout.write(JSON.stringify(value) + '\n')
   emit({ type: 'stream_event', event: { delta: { type: 'text_delta', text: 'Verified ' } } })
   emit({ type: 'stream_event', event: { delta: { type: 'text_delta', text: 'result' } } })
   if (scenario.noResult) { process.exit(0) }
-  emit({ type: 'result', subtype: scenario.resultError ? 'error_during_execution' : 'success', is_error: !!scenario.resultError,
+  emit({ type: 'result', subtype: scenario.resultSubtype || (scenario.resultError ? 'error_during_execution' : 'success'), is_error: !!scenario.resultError,
     result: scenario.resultError ? 'Usage limit reached' : 'Verified result', usage,
     session_id: scenario.wrongSession ? '00000000-0000-0000-0000-000000000000' : flag(args.includes('--resume') ? '--resume' : '--session-id') })
 })().catch(error => { console.error(error.message); process.exitCode = 1 })

@@ -4,7 +4,7 @@
 
 本文是完整配置与使用入口；README 只介绍主要使用场景。
 
-[安装与首次使用](#安装与首次使用) · [Markdown 输出](#markdown-输出待发布) · [基础配置](#基础配置) · [API 连接](#api-密钥与切换模型) · [内网与 sudo](#内网服务器与-sudo-临时认证) · [任务编排](#任务编排与多服务器协作) · [定时任务](#定时-ai-流程) · [全部功能入口](#全部功能入口) · [启动排查](#cli-自动发现与启动排查)
+[安装与首次使用](#安装与首次使用) · [Markdown 输出](#markdown-输出) · [基础配置](#基础配置) · [API 连接](#api-密钥与切换模型) · [内网与 sudo](#内网服务器与-sudo-临时认证) · [任务编排](#任务编排与多服务器协作) · [定时任务](#定时-ai-流程) · [全部功能入口](#全部功能入口) · [启动排查](#cli-自动发现与启动排查)
 
 v0.9.1 修复流程库空闲时普通终端工具被误拦截的问题。普通任务无需先录制或运行流程，即可发送命令、stdin、Enter 或接管进程；终端只读、所有权、进程核验及活动流程预算限制仍然生效。见 [发布说明](releases/0.9.1.md)。
 
@@ -51,7 +51,7 @@ npm run install:tabby -- "<Tabby 插件目录路径>"
 
 侧栏顶部的连接（Provider）与模型（Model）并排显示；长名称可悬停查看。状态详情等面板只滚动内容区，标题栏与关闭按钮始终保留在顶部。
 
-## Markdown 输出（待发布）
+## Markdown 输出
 
 助手回复、恢复的历史回复和定时任务执行记录中的 AI 说明默认渲染 Markdown，包括表格、标题、粗体／斜体／删除线、嵌套列表、引用、链接、行内代码与代码块。沿用 Tabby 的字体和主题；宽表格与代码块各自横向滚动，不撑宽侧栏。聚焦表格或代码区后可用键盘滚动。
 
@@ -68,7 +68,7 @@ HTTP、HTTPS 和邮件链接经宿主交给外部应用打开；相对文件路�
 | 配置 | 设置方法与作用 |
 | --- | --- |
 | 默认连接 | 选择本机 Codex、Claude Code 或已添加的 API 连接；也可在侧栏顶部切换，保留当前对话。 |
-| Codex CLI 可执行文件 | 默认 `codex`，也可留空自动发现；指定时只填路径或命令名，不附参数。找不到时见[启动排查](#cli-自动发现与启动排查)。 |
+| Codex CLI 可执行文件 | 默认留空自动发现；`codex` 使用相同查找逻辑；指定时只填路径或命令名，不附参数。找不到时见[启动排查](#cli-自动发现与启动排查)。 |
 | Claude Code CLI／模型 | 在连接列表选择 Claude Code，填写 CLI 路径（默认 `claude`）和模型别名／ID（默认 `sonnet`）。订阅登录通过官方 CLI 完成；推理强度可选。 |
 | 固定工作目录 | 留空时读取当前本地终端目录，读取不到则使用用户主目录；可指定本机目录。远程终端目录不会自动成为本机工作目录。 |
 | 模型与推理强度 | Codex 模型留空时沿用 CLI 默认；侧栏点击模型摘要或使用 `/model` 选择，下一回合生效。API 与 Claude Code 同样先选模型，再选推理强度；两项一起应用。 |
@@ -300,11 +300,13 @@ Goal 通过证据检查和持续执行降低过早结束的概率，但无法数
 
 ## CLI 自动发现与启动排查
 
+v0.9.4 起，保存 Codex／Claude Code CLI 路径后，空闲侧栏会自动重新检查并恢复原会话；清空路径使用自动发现，无需发送消息刷新。启动中或执行中修改时等待空闲边界，正在等待审批／回答时先处理当前请求。恢复成功立即清除旧连接告警；实际启动失败仍显示诊断，不重发任务或工具调用。
+
 `codexAgent.executable` 留空或保持默认 `codex` 时，**Windows 会收集并比较已发现安装的实际 CLI 版本**：Tabby 进程 PATH 的所有匹配项、`CODEX_INSTALL_DIR`、`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`、`CODEX_HOME` 下的 standalone 入口、`%LOCALAPPDATA%\OpenAI\Codex\bin\<目录>\codex.exe`、用户 `.local\bin` 及 npm 常见目录和全局 prefix。不会命中第一个 PATH 旧版就停止。多个候选使用不消耗模型额度的 `--version` 查询，按语义版本选择较新者；稳定版优先于同版本预发布版，版本相同时保留发现顺序。哈希名及文件修改时间不作为版本新旧依据。单项查询限时 1.5 秒、输出最多 16 KiB，最多四项并发；失败或无法解析的候选不压过有有效版本号的候选。所有版本均未知时保留原发现顺序（桌面子目录内部以程序修改时间排序），此时不能保证最新。每次新连接重新扫描，不缓存版本结果；已有连接复用当前进程。Linux/macOS 仍先检查 PATH，再检查 `CODEX_INSTALL_DIR` 和下文的补充来源。
 
 Linux/macOS 在默认命令模式下会异步启动 `$SHELL -ilc` 补全环境，即使桌面 PATH 已经包含 Codex，也会读取用户 Shell 中的 Codex 配置。未设置 SHELL 时，Linux 使用 `/bin/bash`，macOS 使用 `/bin/zsh`；支持 bash/zsh/sh/dash/ksh/fish。探测限时 3 秒，通过独立管道读取最多 64 KiB，忽略 Shell 启动输出。仅导入 PATH、CODEX_HOME / CODEX_SQLITE_HOME / CODEX_INSTALL_DIR、NVM_DIR、HOMEBREW_PREFIX、NPM_CONFIG_PREFIX / npm_config_prefix、代理、证书及 OPENAI_API_KEY / CODEX_API_KEY / CODEX_ACCESS_TOKEN；其中非 PATH 变量以父进程已有值（包括空值）为准，不导入 Shell 的 NODE_OPTIONS 等运行时钩子，也不把环境变量内容写入诊断。
 
-默认 Codex 仍未找到时，按下表补充安装来源。POSIX 先恢复用户 Shell 环境，再检查 standalone、配置的 prefix、NVM 和常见系统目录；Windows 已在上面的候选比较中检查独立安装、桌面安装和 npm 等目录。尚未找到时才查询包管理器 prefix，随后检查 macOS 桌面包，最后才扫描 IDE 扩展。Linux/macOS 已通过 PATH 选定的 Codex、各平台明确设置的文件路径或自定义命令不会被另一安装替换。
+默认 Codex 仍未找到时，按下表补充安装来源。POSIX 先恢复用户 Shell 环境，再检查 standalone、配置的 prefix、NVM 和常见系统目录；Windows 已在上面的候选比较中检查独立安装、桌面安装和 npm 等目录。尚未找到时才查询包管理器 prefix，随后检查 macOS 桌面包，最后才扫描 IDE 扩展。Linux/macOS 已通过 PATH 选定的 Codex、各平台有效的显式文件路径或自定义命令保留优先级。
 
 | 来源 | macOS / Linux | Windows |
 | --- | --- | --- |
@@ -334,9 +336,9 @@ Windows 桌面版升级可能更换或清理版本目录。要持续使用这套
 C:\Users\用户名\AppData\Local\OpenAI\Codex\bin
 ```
 
-此目录配置每次新连接都扫描直属子目录，并比较 `codex.exe --version` 选择较新版本；仅限此目录，不比较 PATH 中的其他安装。默认留空同样会比较桌面安装与 PATH 版本，普通用户无需指定目录。无需在每次升级后手动填写哈希。若之前填写的是该桌面目录下的 `<目录>\codex.exe` 且文件已被移除，会在同一 `OpenAI\Codex\bin` 内恢复查找；若文件仍存在，保留显式固定版本。目录内没有可用程序时报错，不切换到另一安装。输入实际完整路径，不使用 `%LOCALAPPDATA%` 占位符。
+此目录配置每次新连接都扫描直属子目录，并比较 `codex.exe --version` 选择较新版本；仅限此目录，不比较 PATH 中的其他安装。默认留空同样会比较桌面安装与 PATH 版本，普通用户无需指定目录。无需在每次升级后手动填写哈希。若之前填写的是该桌面目录下的 `<目录>\codex.exe` 且文件已被移除，会在同一 `OpenAI\Codex\bin` 内恢复查找；若文件仍存在，保留显式固定版本。v0.9.4 起，目录内没有可用入口时清空保存的配置并自动查找。输入实际完整路径，不使用 `%LOCALAPPDATA%` 占位符。
 
-显式配置的绝对路径、相对路径或 `~/` 路径优先（可带一对外层引号），会验证真实文件存在；除上述已移除的 Windows 桌面版本路径外，无效立即报错，**不会自动降级到另一安装**。自定义命令名（如 `my-codex`、`codex.cmd`）仅按 PATH / Windows PATHEXT 查找，保留命令名配置兼容性；未找到也不会改用桌面安装。Windows 支持原生 exe/com 和 cmd/bat 启动器，含空格、中文路径可用。原生程序使用绝对路径、参数数组和 `shell:false`；cmd/bat 由 cross-spawn 负责 cmd.exe 转义，stdin/stdout JSONL 及 stderr 均保留为管道。只填写文件路径或命令名，不附加参数。
+显式配置的绝对路径、相对路径或 `~/` 路径优先（可带一对外层引号），会验证真实文件存在；v0.9.4 起，入口文件缺失、断链或文件类型无效时，自动清空保存的配置并查找一次；权限访问拒绝保留配置并报告错误。自定义命令名（如 `my-codex`、`codex.cmd`）仅按 PATH / Windows PATHEXT 查找，保留命令名配置兼容性；未找到时清空保存的命令并自动查找。Windows 支持原生 exe/com 和 cmd/bat 启动器，含空格、中文路径可用。原生程序使用绝对路径、参数数组和 `shell:false`；cmd/bat 由 cross-spawn 负责 cmd.exe 转义，stdin/stdout JSONL 及 stderr 均保留为管道。只填写文件路径或命令名，不附加参数。
 
 子进程环境会移除所有大小写形式的 `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`，初始化始终使用插件自己的 `clientInfo.name = tabby_codex_agent`，父进程环境不变。定位失败会给出 PATH 检查情况、Windows 安装扫描路径或 LOCALAPPDATA 缺失、Linux/macOS 的 Shell 探测结果及补充安装目录、候选拒绝原因，以及 **Settings → AI Tools → Codex CLI 可执行文件（`codexAgent.executable`）** 设置入口。
 
@@ -387,3 +389,8 @@ Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与
 自动选择排除已确认不完整的安装并保留原语义版本排序；显式文件／自定义命令不跳到其他安装。稳定 desktop bin 路径及已删除 desktop codex.exe 的同安装恢复范围保持不变。每次启动重扫，复用连接和提交新回合前检查文件；检查后文件才被删除的竞态由运行期错误识别处理。
 
 同一连接生命周期最多自动重新扫描一次，等待所有已知回合、RPC 和工具回复结束后才更换服务；其他面板仍运行时不重启。连接恢复不自动恢复推理、不重发任务、终端命令或工具调用；原会话在下一次明确的新消息时恢复。执行结果未知或仅观察超时时不自动重启任务。恢复失败给出文件／安装路径及已尝试的扫描，选择完整安装后手动重连；重新登录、改权限或 PATH 不能直接补齐缺失文件。详见 [实现和验证边界](codex-installation-recovery.md)。
+
+
+## 会话内问题导航
+
+所有 Agent 后端共享右侧问题索引，与聊天滚动条整合为 18px 窄区域，不再占用左侧留白。滚动滑块支持拖动、滚轮和键盘 Home/End、PageUp/PageDown；问题预览向左展开。悬停或键盘聚焦查看原问题，点击定位；方向键切换问题，Enter 跳转，Esc 关闭预览。“回到最新消息”恢复自动跟随。点击后加长线保持对应所选问题，即使内容较短或滚动到底部无法顶端对齐；手动滚动聊天后继续按视口更新。索引使用居中的紧凑短线（1px），不附加符号，不显示独立的目录滚动条；问题过多时使用与主题一致的 ↑ / ↓ 按钮翻动，也可滚轮浏览。绿色表示确认完成；淡绿色表示没有用户 Stop 证据的普通 interrupted。蓝色表示执行中、自动续行或等待外部条件（如重启 Tabby、认证或补充资料）；红色仅表示确认的主动 Stop、目标仍 active 却结束执行，或轮数／token／预算上限导致未完成。单凭 failed 不标红，未知原因保持灰色。点击 Stop 后先等待真实中断，停止请求失败不标红。导航不发送消息或重放工具；结果快照按本地会话空间、连接、目录和会话隔离保存，最多保留最近 1000 个回合状态，不另存问题原文。completed 回合先等待 Goal 检查：无 Goal 的普通问答／Goal complete 为绿色，blocked／paused 为蓝色，active 为未完成红色，检查失败为灰色。自动续行重新变蓝，最终结果同步到本次已关联的问题；较早 Goal 读取不会覆盖较新回合。新版按停止原因保存快照，旧 failed 缺少原因降为灰色，旧 interrupted 为淡绿色，不猜测主动 Stop。

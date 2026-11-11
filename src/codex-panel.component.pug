@@ -135,10 +135,11 @@
       button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sessionCursor && !historyLoading', (click)='loadSessions()', [disabled]='!canBrowseHistory') {{t("加载更多")}}
   .codex-output-note(*ngIf='historyNotice') {{t(historyNotice)}}
   .codex-output-note(*ngIf='outputNotice') {{t(outputNotice)}}
-  .codex-feed-container
+  .codex-feed-container([class.agent-navigation-enabled]='entries.length > 0')
+    agent-conversation-navigation([entries]='entries', [feed]='chatFeed', (navigate)='navigateQuestion($event)')
     .codex-feed(#chatFeed='', tabindex='0', [attr.aria-label]='t("对话消息")')
       .codex-feed-content(#chatContent='')
-        .codex-entry(*ngFor='let entry of entries; trackBy: trackEntry', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"', [class.codex-activity]='entry.kind === "tool" || entry.kind === "thinking"')
+        .codex-entry(*ngFor='let entry of entries; trackBy: trackEntry', [attr.data-agent-question]='entry.kind === "user" ? entry.id : null', [class.codex-user]='entry.kind === "user"', [class.codex-tool]='entry.kind === "tool"', [class.codex-activity]='entry.kind === "tool" || entry.kind === "thinking"')
           details.codex-activity-details(*ngIf='entry.kind === "tool" || entry.kind === "thinking"', (toggle)='entry.expanded = $any($event.target).open')
             summary([attr.aria-busy]='entry.running ? "true" : null')
               span.codex-activity-label {{t(entry.kind === "thinking" ? "思考过程" : "工具调用")}}

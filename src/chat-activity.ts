@@ -1,5 +1,8 @@
 /** Display records are separate from the provider's native model context. */
 export interface ChatEntry {
+  navigationTurnIds?: string[]
+  turnId?: string
+  outcome?: import('./agent-conversation-state').ConversationOutcome
   id: string
   kind: 'user' | 'agent' | 'tool' | 'system' | 'thinking'
   text: string

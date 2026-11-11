@@ -503,3 +503,16 @@ The first branch CI passed Linux/macOS but exposed two Windows race-test fixture
 - Claude local review: existing native/npm discovery, original-selector re-resolution before invocation, flags/auth error classification, loopback MCP, stop, session preservation and no-replay fixtures passed separately. No shared Codex helper layout is assumed. Real Claude login/keychain, desktop and platform behavior remain pending.
 - No paid-model smoke, real account/desktop/SSH test, remote CI, commit, tag, deployment or publication was performed. The prior published v0.9.2 remains separate from these local changes; previously discarded recording commands cannot be reconstructed from this fix alone.
 - Logs: `/tmp/tabby-workflow-20261108-{tests,typecheck,build}.log`; documentation evidence: `/tmp/tabby-workflow-20261108/docs-evidence.json`.
+
+
+## v0.9.4 question navigation outcomes — 2026-11-10
+
+Node 22.23.4: 997 tests, 991 passed, six platform skips, no failures. Typecheck, production build, skill bundle/check and diff checks passed. Actual Angular navigation in Chromium passed light/dark themes, 320/480/800 widths and 100/125/150% zoom: 1px normal/current lines, distinct outcome colors, preserved hit areas, hover/click and keyboard navigation. Local evidence: `/tmp/tabby-nav-semantics/`.
+
+Regressions cover confirmed user Stop versus ordinary interruption, Stop failure, unfinished/blocked/limited goals, automatic continuation, legacy snapshots, saved causes, and late goal/turn observations. Local HTTP API and native Claude CLI fixtures verify round/repetition limits and native max-turn cause propagation without inference replay. Default Codex discovery/installation recovery and Claude per-invocation discovery, MCP, stop and session-preservation fixtures pass in the full suite; these do not establish real default-account or desktop end-to-end usability. Real Tabby, account, Windows/macOS and user SSH checks remain pending. No paid model smoke, package installation or publication was performed.
+
+### v0.9.4 release candidate — 2026-11-11
+
+Node 22.23.4 release checks pass: skill bundle/check, typecheck, 997 tests (991 passed, six platform skips, zero failures), production webpack/Pi build and `git diff --check`. A separate 91-test Codex/Claude CLI and runtime selection covers default discovery, removed selectors, update paths, authenticated loopback MCP, stop, session retention and no replay with zero failures. Chromium rendered both READMEs, verified the animated robot and reduced-motion fallback, and regenerated the 1800×2250 overview PNG from the synchronized SVG without text overflow; the final image was visually inspected.
+
+The exact release tarball is checked for package identity, entrypoints, `dist`, docs, bilingual README, assets, bundled skill and private-file exclusions, then installed with lifecycle scripts enabled and no `node` on `PATH`. Release-script state, logs, tarball path and its final SHA-256 remain outside the repository under `/tmp/tabby-release-0.9.4-20261111/`; the GitHub Release records the immutable artifact digest. No paid-model inference or new real-account request was run. Real Tabby desktop, Windows/macOS desktop, user SSH and OS-keychain-only Claude login remain pending; Linux/macOS/Windows CI is tracked separately before tag and publication.

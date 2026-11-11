@@ -7,6 +7,7 @@ import { CodexConfigProvider } from './config'
 import { CodexService } from './codex.service'
 import { CodexRuntimeService } from './codex-runtime.service'
 import { CodexPanelComponent } from './codex-panel.component'
+import { AgentConversationNavigationComponent } from './agent-conversation-navigation'
 import { MarkdownComponent } from './markdown.component'
 import { CodexToolbarButtonProvider } from './button'
 import { CodexSettingsComponent, CodexSettingsTabProvider } from './settings'
@@ -23,7 +24,7 @@ import { AttachmentTransferService } from './attachment-transfer.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
-  declarations: [CodexPanelComponent, CodexSettingsComponent, MarkdownComponent],
+  declarations: [CodexPanelComponent, CodexSettingsComponent, MarkdownComponent, AgentConversationNavigationComponent],
   entryComponents: [CodexPanelComponent, CodexSettingsComponent],
   providers: [
     AttachmentTransferService,

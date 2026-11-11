@@ -170,3 +170,22 @@ test('destroy disconnects observers, listeners and pending animation frames', t 
   s.move(400)
   assert.deepEqual(s.visibility, [])
 })
+
+test('question navigation cancels a pending stream follow until latest is requested', t => {
+  const s = setup(t)
+  s.feed.getBoundingClientRect = () => ({ top: 0 })
+  s.flush()
+  s.feed.scrollHeight = 1800
+  s.change()
+  s.scroll.navigateTo({ getBoundingClientRect: () => ({ top: -500 }) })
+  const position = s.feed.scrollTop
+  s.flush()
+  assert.equal(s.feed.scrollTop, position)
+  s.feed.scrollHeight = 2200
+  s.change()
+  s.flush()
+  assert.equal(s.feed.scrollTop, position)
+  s.scroll.jumpToLatest()
+  s.flush()
+  assert.equal(s.feed.scrollTop, 2000)
+})

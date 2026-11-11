@@ -17,6 +17,7 @@ export function profileFingerprint (p: ApiProfile): string {
   return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
 }
 export interface ApiTurn {
+  terminationReason?: import('./agent-conversation-state').NavigationTermination
   id: string
   status: 'inProgress' | 'completed' | 'interrupted' | 'failed'
   items: any[]

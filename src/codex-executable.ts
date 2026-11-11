@@ -3,6 +3,8 @@ import * as os from 'os'
 import * as path from 'path'
 
 const SETTING_HELP = '请在 Tabby Settings → AI Tools → Codex CLI 可执行文件（codexAgent.executable）中设置有效文件路径或命令名。'
+export class CliSelectorUnavailableError extends Error {}
+
 const WINDOWS_EXTENSIONS = ['.exe', '.com', '.cmd', '.bat']
 
 export interface ExecutableContext {
@@ -32,9 +34,9 @@ export function executableFile (filename: string, context: ExecutableContext = {
   const windows = (context.platform || process.platform) === 'win32'
   const paths = context.paths || (windows ? path.win32 : path.posix)
   const stat = fs.statSync(filename)
-  if (!stat.isFile()) throw new Error('不是普通文件')
+  if (!stat.isFile()) throw new CliSelectorUnavailableError('不是普通文件')
   if (windows && !WINDOWS_EXTENSIONS.includes(paths.extname(filename).toLowerCase())) {
-    throw new Error('Windows 仅支持 .exe / .com / .cmd / .bat 文件')
+    throw new CliSelectorUnavailableError('Windows 仅支持 .exe / .com / .cmd / .bat 文件')
   }
   fs.accessSync(filename, windows ? fs.constants.R_OK : fs.constants.X_OK)
   return stat
@@ -70,13 +72,17 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
   const automatic = !value || value === 'codex'
   const reasons: string[] = []
   const validFile = (filename: string): fs.Stats => executableFile(filename, context)
-  const fail = (message: string): never => { throw new Error(`${message}\n${reasons.join('\n')}\n${SETTING_HELP}`) }
+  const fail = (message: string, unavailable = false): never => {
+    const ErrorType = unavailable ? CliSelectorUnavailableError : Error
+    throw new ErrorType(`${message}\n${reasons.join('\n')}\n${SETTING_HELP}`)
+  }
   const select = (filename: string): string | undefined => {
     validFile(filename)
     if (!candidates) return filename
     candidates.push(filename)
     return undefined
   }
+  let desktopAccessDenied = false
   const desktopExecutable = (root: string): string | undefined => {
     const desktopCandidates: { filename: string; mtime: number }[] = []
     try {
@@ -86,7 +92,10 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
         try {
           if (!fs.statSync(folder).isDirectory()) continue
           desktopCandidates.push({ filename, mtime: validFile(filename).mtimeMs })
-        } catch (error: any) { reasons.push(`${filename}: ${error.code || error.message}`) }
+        } catch (error: any) {
+          if (['EACCES', 'EPERM'].includes(error.code)) desktopAccessDenied = true
+          reasons.push(`${filename}: ${error.code || error.message}`)
+        }
       }
       // Directory names are opaque hashes, never semantic versions. Stable path
       // ordering is only a tie breaker when executable modification times match.
@@ -96,7 +105,10 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
         return desktopCandidates[0].filename
       }
       reasons.push(`${root}: 没有可用的 <目录>/codex.exe`)
-    } catch (error: any) { reasons.push(`${root}: ${error.code || error.message}`) }
+    } catch (error: any) {
+      if (['EACCES', 'EPERM'].includes(error.code)) desktopAccessDenied = true
+      reasons.push(`${root}: ${error.code || error.message}`)
+    }
     return undefined
   }
   if (value && (paths.isAbsolute(value) || /[/\\]/.test(value) || (windows && /^[a-z]:/i.test(value)))) {
@@ -109,7 +121,7 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
     if (windows && desktopRoot(filename)) {
       const selected = desktopExecutable(filename)
       if (selected) return selected
-      return fail('找不到 Codex CLI。')
+      return fail('找不到 Codex CLI。', !desktopAccessDenied)
     }
     try { validFile(filename) } catch (error: any) {
       reasons.push(`${filename}: ${error.code || error.message}`)
@@ -121,7 +133,7 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
         const selected = desktopExecutable(root)
         if (selected) return selected
       }
-      return fail('显式配置的 Codex CLI 路径无效；未尝试自动查找。')
+      return fail('显式配置的 Codex CLI 路径无效；未尝试自动查找。', error instanceof CliSelectorUnavailableError || ['ENOENT', 'ENOTDIR'].includes(error.code))
     }
     return filename
   }
@@ -133,18 +145,20 @@ function resolveExecutable (configured: string, context: ExecutableContext, cand
     ? (environmentValue(env, 'PATHEXT', true) || '.COM;.EXE;.BAT;.CMD').split(';')
       .map(ext => ext.toLowerCase()).filter(ext => WINDOWS_EXTENSIONS.includes(ext))
     : ['']
+  let accessDenied = false
   const entries = (pathValue || '').split(windows ? ';' : ':').filter(entry => entry.trim())
   for (const entry of entries) {
     const directory = normalizeExecutable(entry)
     for (const extension of extensions) {
       const filename = paths.resolve(cwd, directory, command + extension)
       try { const selected = select(filename); if (selected) return selected } catch (error: any) {
+        if (['EACCES', 'EPERM'].includes(error.code)) accessDenied = true
         if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') reasons.push(`${filename}: ${error.code || error.message}`)
       }
     }
   }
   reasons.unshift(`PATH: ${pathValue ? `已检查 ${entries.length} 个目录，没有可用的 ${command}` : '未设置或为空'}${windows ? `；PATHEXT=${extensions.join(';')}` : ''}`)
-  if (!automatic) return fail(`配置的 Codex CLI 命令 ${command} 无法从 PATH 定位；未尝试其他安装。`)
+  if (!automatic) return fail(`配置的 Codex CLI 命令 ${command} 无法从 PATH 定位；未尝试其他安装。`, !accessDenied)
 
   const installDir = environmentValue(env, 'CODEX_INSTALL_DIR', windows)
   if (installDir) {

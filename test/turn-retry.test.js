@@ -43,7 +43,7 @@ function fixture (t) {
     steer: async (...args) => steered.push(args), interrupt: async (...args) => interrupted.push(args),
   }
   const controls$ = new BehaviorSubject([])
-  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, backend, { run: fn => fn() }, output,
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} }, changed$: new Subject() }, backend, { run: fn => fn() }, output,
     { controls$, releaseOwner: id => released.push(id) })
   Object.assign(panel, { threadId: 'thread', cwd: '/project', connected: true, loading: false, sourceTerminal: terminal })
   panel.reconnect = async () => true

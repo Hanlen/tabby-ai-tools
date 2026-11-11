@@ -218,3 +218,7 @@ The scoped russh event-buffer retention adapter is adapted from [tabby-ai-worksp
 ### v0.9.2 Codex installation and SSH identity maintenance (2026-11-07)
 
 See [installation recovery and SSH process identity](codex-installation-recovery.md) for the fault boundaries, known Windows version/layout rule and loading a local build. Regression sources are `test/client.test.js`, `codex-version.test.js`, `installations.test.js`, `thread-tools.test.js`, `remote-process.test.js`, `tab-tools.test.js`, `task-memory-panel.test.js` and `runtime.test.js`. The real Linux PTY probe is local; transport fixtures and Windows discovery simulations do not prove a real Windows desktop or user SSH session. Run the full suite on Node >=22.19 to include the bundled Pi integration checks. The repair does not add runtime dependencies or require a separate system Node installation for ordinary plugin use.
+
+### v0.9.4 navigation outcomes
+
+`agent-conversation-state.ts` resolves task evidence separately from transport status. Ordinary interruptions are pale green; only confirmed user Stop, unfinished goals and execution limits are red. Completed turns await goal observation; external blockers are blue. API turns retain typed termination causes; Claude native result subtypes identify execution limits. Snapshots use v2 storage with v1 fallback, downgrading unclassified legacy failures. Goal reads are guarded against later turns and goal events; navigation does not invoke providers or replay tools.

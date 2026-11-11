@@ -1005,5 +1005,15 @@
   "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.": "Saved. An empty private CLI space reuses the local login cache. Reconnect when idle; original sessions are retained.",
   "表格": "Table",
   "复制代码": "Copy code",
-  "复制失败": "Copy failed"
+  "复制失败": "Copy failed",
+  "问题目录": "Question navigation",
+  "任务结果未知": "Task outcome unknown",
+  "执行失败": "Execution failed",
+  "向上滚动问题目录": "Scroll question index up",
+  "向下滚动问题目录": "Scroll question index down",
+  "本次执行已完成": "This execution completed",
+  "用户已停止": "Stopped by user",
+  "任务尚未完成": "Task unfinished",
+  "达到执行上限，任务未完成": "Execution limit reached; task unfinished",
+  "等待外部条件": "Waiting for an external prerequisite"
 }

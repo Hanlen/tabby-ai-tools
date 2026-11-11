@@ -18,13 +18,15 @@
 
 </div>
 
+**v0.9.4: conversation navigation and safer CLI recovery.** The shared Agent panel has a question index in the right scrollbar strip: hover or focus to preview a question, click to jump, and use “latest” to resume streaming follow. The centered, compact 1px lines share an 18px right strip with a draggable conversation scroll thumb, freeing the former left gutter. Previews open to the left; theme-aware ↑ / ↓ buttons appear when needed. Green means confirmed completion; pale green means an ordinary interruption without a user Stop. Blue means running or waiting for an external prerequisite. Red means a confirmed user Stop, unfinished task, or execution limit. Completed turns wait for goal confirmation; automatic continuation returns to blue. History with no known execution result remains neutral.
+
 <br>
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
 
 ![Tabby AI Tools interface illustration with Markdown tables and syntax-highlighted code blocks, alongside provider connections, task logs, scheduled tasks and settings; example content](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
 
-**Markdown replies.** Assistant messages and scheduled AI explanations render tables, headings, lists, quotes, links and code blocks. Wide tables and code scroll within the message; code blocks highlight labeled languages and have their own copy button, and message copy preserves the original Markdown. Formatting updates during streaming and applies to restored history. [Details](docs/releases/unreleased.md).
+**Markdown replies.** Assistant messages and scheduled AI explanations render tables, headings, lists, quotes, links and code blocks. Wide tables and code scroll within the message; code blocks highlight labeled languages and have their own copy button, and message copy preserves the original Markdown. Formatting updates during streaming and applies to restored history. [v0.9.4 details](docs/releases/0.9.4.md).
 
 **Fixed in v0.9.2:** Codex checks known Windows companion files and permits one idle-boundary installation recovery without replaying tasks. Claude local rechecks its configured CLI before each invocation and distinguishes installation faults from logout. Existing native Linux SSH agents can be attached after independent process/PTY verification. [Release notes and limits](docs/releases/0.9.2.md).
 
@@ -113,7 +115,7 @@ Automatic discovery covers standalone installations (including `CODEX_INSTALL_DI
 
 On Windows, leave the Codex CLI executable blank (or `codex`) to compare actual versions across PATH, desktop, standalone and known npm installations and select the newest discovered CLI. Upgrades are rescanned on each new connection. Explicit file paths keep a fixed version; a stable `OpenAI\Codex\bin` directory limits comparison to that installation. See the [discovery guide](docs/guide.md#cli-自动发现与启动排查).
 
-Native CLI installation checks preserve explicit selector scope and existing session history. See [recovery behavior and limits](docs/codex-installation-recovery.md).
+Valid explicit CLI selectors keep their priority. In v0.9.4, unavailable saved Codex paths or commands are cleared and saved, then automatic discovery runs once; existing session history is retained. New configurations leave the CLI field blank; `codex` has the same discovery behavior. See [recovery behavior and limits](docs/codex-installation-recovery.md).
 
 ## Orchestrate tasks in natural language
 
@@ -123,7 +125,7 @@ Describe the targets, order, conditions, and verification criteria. The assistan
 
 Workflows can branch based on observed results and interact with other terminal Agents. Start a recording with `/remember TASK`. After successful completion, give the workflow an alias such as `task1` (in the sidebar or by asking the assistant to save it); send `/task1` to execute it again with fresh environment checks. Each step retains the server IP, stable connection/server ID, operation path and completion checks. Multi-server steps follow their saved order; a result checkpoint must confirm the preceding step before the next operation. The assistant can query recording/archive status and save aliases with `workflow_status` / `workflow_set_alias`; checkpoint success alone does not guarantee archival, and rejection reasons are shown. Ordinary tasks are not recorded and cannot be saved retroactively. Workflows containing sudo ask you to authenticate with `sudo -v` or `sudo ls` in each execution terminal, then keep that terminal’s credentials refreshed during the task. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
 
-Interactive `/remember` workflows retain conditional rules and response intent for stdin, keys, process attachment and sidebar questions. The runtime handles saved if/else conditions locally, uses an optional helper model on the current connection for uncertain interactions, and resumes the pending step. Configure it in **AI Tools → Workflows & preferences → Interaction helper model**. Helper usage counts toward the task budget; missing machine checks return to the main model for verification. [Conditional workflow details (中文)](docs/task-workflows.md#条件与交互流程). Unreleased: recordings preserve complete commands and multiline scripts up to the terminal’s 10,000-character limit. Fixed steps use machine checks; `policy.decision` returns to the main AI before a step that requires live judgment, then scripted execution resumes.
+Interactive `/remember` workflows retain conditional rules and response intent for stdin, keys, process attachment and sidebar questions. The runtime handles saved if/else conditions locally, uses an optional helper model on the current connection for uncertain interactions, and resumes the pending step. Configure it in **AI Tools → Workflows & preferences → Interaction helper model**. Helper usage counts toward the task budget; missing machine checks return to the main model for verification. [Conditional workflow details (中文)](docs/task-workflows.md#条件与交互流程). In v0.9.4, recordings preserve complete commands and multiline scripts up to the terminal’s 10,000-character limit. Fixed steps use machine checks; `policy.decision` returns to the main AI before a step that requires live judgment, then scripted execution resumes.
 
 ## Schedule checks, decisions, actions, and verification
 

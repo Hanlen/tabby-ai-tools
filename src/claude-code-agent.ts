@@ -105,7 +105,10 @@ export class ClaudeCodeAdapter extends ApiProviderAdapter {
         onUsage?.(totalTokens)
       }
       if (fatal) throw fatal
-      if (!final || final.type !== 'result' || final.is_error || final.subtype !== 'success') throw new Error(redactMemory(String((Array.isArray(final?.errors) ? final.errors.join('\n') : '') || final?.result || 'Claude Code 流未正常完成；请检查登录、额度和 CLI 状态'), 2000))
+      if (!final || final.type !== 'result' || final.is_error || final.subtype !== 'success') {
+        const error = new Error(redactMemory(String((Array.isArray(final?.errors) ? final.errors.join('\n') : '') || final?.result || 'Claude Code 流未正常完成；请检查登录、额度和 CLI 状态'), 2000))
+        throw Object.assign(error, ['error_max_turns', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(final?.subtype) ? { terminationReason: 'execution_limit' } : {})
+      }
       if (final.session_id !== sessionId) throw new Error('Claude Code 返回了不匹配的会话 ID')
       if (typeof final.result === 'string') text = final.result
       recorded.push({ role: 'assistant', content: text })
@@ -133,7 +136,7 @@ export class ClaudeCodeAgent extends ApiAgent {
   private connecting?: { key: string; ready: Promise<void> }
   constructor (profile: ApiProfile, store: AgentStore, private configuredExecutable = 'claude', space?: NativeSessionSpace) { super(profile, store, async () => '', space) }
   async connect (settings: AgentSettings): Promise<void> {
-    const executable = normalizeExecutable(settings.claudeExecutable || this.configuredExecutable) || 'claude'
+    const executable = normalizeExecutable(settings.claudeExecutable ?? this.configuredExecutable) || 'claude'
     const cwd = settings.cwd || os.homedir()
     const key = JSON.stringify([executable, cwd, this.sessionSpace?.key, this.sessionSpace?.native])
     if (this.connecting?.key === key) return this.connecting.ready

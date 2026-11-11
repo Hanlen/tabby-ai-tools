@@ -208,19 +208,15 @@ test('bare CLI name resolves from PATH, including Windows .cmd extensions', asyn
   }
 })
 
-test('missing executable fails promptly with the attempted CLI path', async () => {
-  const client = new CodexClient()
+test('missing executable is classified as an unavailable selector before starting a process', () => {
+  const { resolveCodexExecutable, CliSelectorUnavailableError } = require('../src/codex-executable.ts')
   const executable = path.join(os.tmpdir(), `missing-codex-${process.pid}`, 'codex')
-  try {
-    await assert.rejects(client.connect(executable), error => {
-      assert.ok(error.message.includes(executable))
-      assert.match(error.message, /ENOENT/)
-      return true
-    })
-    assert.equal(client.pending.size, 0)
-  } finally {
-    client.close()
-  }
+  assert.throws(() => resolveCodexExecutable(executable), error => {
+    assert.ok(error instanceof CliSelectorUnavailableError)
+    assert.ok(error.message.includes(executable))
+    assert.match(error.message, /ENOENT/)
+    return true
+  })
 })
 
 test('switching executables during initialization rejects old calls and preserves the new connection', async () => {

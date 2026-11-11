@@ -25,6 +25,13 @@ export class ChatScroll {
     this.schedule()
   }
 
+  navigateTo (target: HTMLElement): void {
+    this.pause()
+    this.feed.scrollTop += target.getBoundingClientRect().top - this.feed.getBoundingClientRect().top - 12
+    this.lastTop = this.feed.scrollTop
+    this.updateJump()
+  }
+
   jumpToLatest (): void {
     this.following = true
     this.updateJump()

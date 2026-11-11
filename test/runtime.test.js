@@ -187,3 +187,45 @@ test('confirmed installation failure stops background reconnect timers and repor
   env.client.emit('disconnected', new Error('installation recovery exhausted'))
   assert.equal(env.timers.size, 0)
 })
+
+test('a panel connection invalidates a late background startup failure for the same selector', async t => {
+  const env = setup(t)
+  let rejectStartup
+  env.codex.connect = () => new Promise((resolve, reject) => { rejectStartup = reject })
+  env.runtime.start(); env.ready()
+  // A panel can replace the background startup without changing the setting.
+  env.client.emit('connected')
+  rejectStartup(new Error('old CLI path not found'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(env.notifications, [])
+  assert.equal(env.timers.size, 0)
+})
+
+test('invalid CLI setting is persisted without a second connection and newer edits are preserved', async t => {
+  const env = setup(t)
+  let saves = 0
+  env.config.save = async () => { saves++; env.config.changed$.next() }
+  env.config.store.codexAgent.executable = '/deleted/codex'
+  env.runtime.start(); env.ready()
+  env.client.emit('invalidExecutable', '/deleted/codex')
+  assert.equal(env.config.store.codexAgent.executable, '')
+  assert.equal(saves, 1)
+  assert.deepEqual(env.calls, ['/deleted/codex'])
+  env.config.store.codexAgent.executable = '/new/codex'
+  env.client.emit('invalidExecutable', '/deleted/codex')
+  assert.equal(env.config.store.codexAgent.executable, '/new/codex')
+  assert.equal(saves, 1)
+})
+
+test('failure to save a cleared CLI selector keeps automatic discovery and reports persistence failure', async t => {
+  const env = setup(t), diagnostics = []
+  env.config.save = async () => { throw new Error('disk unavailable') }
+  env.client.on('diagnostic', value => diagnostics.push(value))
+  env.config.store.codexAgent.executable = '/deleted/codex'
+  env.runtime.start(); env.ready()
+  env.client.emit('invalidExecutable', '/deleted/codex')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(env.config.store.codexAgent.executable, '')
+  assert.equal(env.calls.length, 1)
+  assert.match(diagnostics.join(''), /Unable to save/)
+})

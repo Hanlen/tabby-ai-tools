@@ -187,3 +187,6 @@
 .codex-auth-warning-actions button { min-height: 40px; white-space: normal; }
 .codex-auth-warning button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 @container (max-width:360px) { .codex-compose-toolbar { flex-wrap: wrap; } .codex-compose-actions { margin-inline-start: auto; flex-wrap: wrap; } }
+
+.agent-navigation-enabled .codex-feed{box-sizing:border-box;padding-right:18px;scrollbar-width:none}
+.agent-navigation-enabled .codex-feed::-webkit-scrollbar{width:0;height:0}

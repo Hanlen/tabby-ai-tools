@@ -268,6 +268,7 @@ test('failed turns explain context and budget limits even without a separate err
   const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, { client: {} }, { run: callback => callback() }, {}, fakeTabTools)
   panel.threadId = 'current'
   for (const [info, expected] of [['contextWindowExceeded', /上下文.*\/new/], ['sessionBudgetExceeded', /预算上限/], ['other', /Specific backend failure/]]) {
+    panel.handleEvent({ method: 'turn/started', params: { threadId: 'current', turn: { id: info } } })
     panel.handleEvent({ method: 'turn/completed', params: { threadId: 'current', turn: {
       id: info, status: 'failed', error: { message: 'Specific backend failure', codexErrorInfo: info },
     } } })
@@ -421,6 +422,142 @@ test('connection stays pending until the thread and history are ready', async ()
   assert.equal(panel.loading, false)
   assert.equal(panel.connected, true)
   assert.equal(panel.threadId, 'thread-1')
+})
+
+test('reconnect renders recovered CLI status and real failures without waiting for a message', async () => {
+  const settings = { executable: '', cwd: '/project', threads: { '/project': 'saved-thread' } }
+  let failure
+  const rendered = []
+  const backend = {
+    client: { isConnected: true },
+    connect: async () => { if (failure) throw failure },
+    openThread: async (cwd, config, saved) => { assert.equal(saved, 'saved-thread'); return saved },
+    getGoal: async () => null,
+  }
+  const panel = new CodexPanelComponent({ store: { codexAgent: settings }, save: async () => {} }, backend,
+    { run: callback => callback() }, {}, fakeTabTools, undefined,
+    { detectChanges: () => rendered.push([panel.loading, panel.connected, panel.connectionError, panel.status]) })
+  panel.connectionError = 'old CLI not found'
+  panel.loadHistory = async () => {}
+  await panel.reconnect()
+  assert.deepEqual(rendered.at(-1), [false, true, '', '就绪'])
+  failure = new Error('current CLI not found')
+  await panel.reconnect()
+  assert.equal(rendered.at(-1)[1], false)
+  assert.match(rendered.at(-1)[2], /current CLI not found/)
+})
+
+test('installation recovery clears the old connection alert and renders immediately without replay', () => {
+  let renders = 0
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {}, { run: callback => callback() }, {}, fakeTabTools,
+    undefined, { detectChanges: () => { renders++ } })
+  panel.connectionError = 'Codex installation not found'
+  panel.threadId = 'keep-thread'
+  panel.prompt = 'keep draft'
+  panel.onRecovered()
+  assert.equal(panel.connectionError, '')
+  assert.equal(panel.connected, true)
+  assert.equal(panel.threadId, 'keep-thread')
+  assert.equal(panel.prompt, 'keep draft')
+  assert.equal(renders, 1)
+})
+
+function cliSettingsPanel (t, profile) {
+  const { Subject } = require('rxjs')
+  const { EventEmitter } = require('node:events')
+  const settings = { executable: '/removed/codex', claudeExecutable: '/removed/claude', cwd: '/project', threads: { '/project': 'saved-thread' }, claudeThreads: { '/project': 'saved-thread' } }
+  const config = { store: { codexAgent: settings }, changed$: new Subject(), save: async () => { config.changed$.next() } }
+  const connections = []
+  const restored = []
+  const backend = { profile, sessionSpace: { native: true }, client: Object.assign(new EventEmitter(), { close: () => {} }),
+    connect: async config => {
+      const executable = profile?.runtime === 'claude-code' ? config.claudeExecutable : config.executable
+      connections.push(executable)
+      if (executable?.startsWith('/removed')) throw new Error('CLI not found: ' + executable)
+    },
+    openThread: async (cwd, config, saved) => { restored.push(saved); return saved },
+    getGoal: async () => null,
+  }
+  const panel = new CodexPanelComponent(config, backend, { run: fn => fn() }, {},
+    { ...fakeTabTools, controls$: new Subject() }, undefined, { detectChanges: () => {} })
+  panel.profileId = profile?.id || ''
+  panel.cwd = '/project'
+  panel.loadHistory = async () => {}
+  t.after(() => panel.ngOnDestroy())
+  return { panel, settings, config, connections, restored, backend }
+}
+
+for (const profile of [undefined, { id: 'claude-code', runtime: 'claude-code' }]) {
+  test(`${profile ? 'Claude local' : 'private Codex'}: saving automatic discovery recovers a failed panel without a user message`, async t => {
+    const f = cliSettingsPanel(t, profile)
+    await f.panel.ngOnInit()
+    assert.match(f.panel.connectionError, /CLI not found/)
+    f.panel.prompt = 'keep draft'
+    f.settings[profile ? 'claudeExecutable' : 'executable'] = ''
+    f.config.changed$.next()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(f.connections, [profile ? '/removed/claude' : '/removed/codex', ''])
+    assert.deepEqual(f.restored, ['saved-thread'])
+    assert.equal(f.panel.connectionError, '')
+    assert.equal(f.panel.connected, true)
+    assert.equal(f.panel.prompt, 'keep draft')
+    f.config.changed$.next()
+    assert.equal(f.connections.length, 2, 'unrelated saves must not reconnect')
+    f.panel.ngOnDestroy()
+    f.settings[profile ? 'claudeExecutable' : 'executable'] = '/another/cli'
+    f.config.changed$.next()
+    assert.equal(f.connections.length, 2, 'destroy unsubscribes configuration changes')
+  })
+}
+
+test('a CLI setting saved during startup is checked when startup settles', async t => {
+  const f = cliSettingsPanel(t)
+  let rejectStartup
+  f.backend.connect = config => {
+    f.connections.push(config.executable)
+    return config.executable ? new Promise((resolve, reject) => { rejectStartup = reject }) : Promise.resolve()
+  }
+  const startup = f.panel.ngOnInit()
+  f.settings.executable = ''
+  f.config.changed$.next()
+  assert.equal(f.connections.length, 1, 'do not replace an in-flight connection')
+  rejectStartup(new Error('old path missing'))
+  await startup
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.connections, ['/removed/codex', ''])
+  assert.equal(f.panel.connected, true)
+  assert.equal(f.panel.connectionError, '')
+})
+
+test('CLI settings do not interrupt a live turn; refresh at the idle event boundary', async t => {
+  const f = cliSettingsPanel(t)
+  f.settings.executable = 'codex'
+  await f.panel.ngOnInit()
+  f.panel.busy = true
+  f.panel.turnId = 'live-turn'
+  f.settings.executable = '/new/codex'
+  f.config.changed$.next()
+  assert.equal(f.connections.length, 1)
+  assert.equal(f.panel.turnId, 'live-turn')
+  f.panel.onEvent({ method: 'turn/completed', params: { threadId: 'saved-thread', turn: { id: 'live-turn', status: 'interrupted' } } })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.connections, ['codex', '/new/codex'])
+  assert.equal(f.panel.threadId, 'saved-thread')
+})
+
+test('equivalent automatic selectors and API panels do not reconnect on CLI settings saves', async t => {
+  const f = cliSettingsPanel(t)
+  f.settings.executable = 'codex'
+  await f.panel.ngOnInit()
+  f.settings.executable = '  '
+  f.config.changed$.next()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.connections, ['codex'])
+  f.backend.profile = { id: 'api', threads: { '/project': 'api-thread' } }
+  f.panel.profileId = 'api'
+  f.settings.executable = '/new/codex'
+  f.config.changed$.next()
+  assert.deepEqual(f.connections, ['codex'])
 })
 
 test('unsupported turn history does not mark a usable session disconnected', async () => {
@@ -1022,4 +1159,161 @@ test('summary release only releases terminals owned by this panel session', () =
   panel.threadId = 'thread-1'
   panel.releaseControlledTabs()
   assert.deepEqual(controls, [{ owner: 'thread-2', tabId: 'two' }])
+})
+
+test('returning to Codex after a missing Claude CLI dismisses only the failed switch without reconnect or replay', async () => {
+  const { EventEmitter } = require('node:events')
+  const closed = []
+  let connects = 0, imports = 0
+  const original = { client: Object.assign(new EventEmitter(), { close: () => closed.push('codex') }),
+    exportContext: async () => ({ messages: [{ role: 'user', content: 'Keep my work' }] }) }
+  const claude = { profile: { id: 'claude-code', runtime: 'claude-code', threads: {} },
+    client: Object.assign(new EventEmitter(), { close: () => closed.push('claude') }),
+    connect: async () => { connects++; throw new Error('Claude Code CLI not found') },
+    importContext: async () => { imports++; return 'must-not-import' } }
+  const factory = { defaultProfileId: '', create: id => id === 'claude-code' ? claude : original }
+  const panel = new CodexPanelComponent({ store: { codexAgent: { threads: {} } } }, original, { run: fn => fn() }, {}, fakeTabTools, factory)
+  Object.assign(panel, { loading: false, connected: true, cwd: '/project', threadId: 'codex-session', status: 'Ready',
+    entries: [{ id: 'question', kind: 'user', text: 'Keep my work' }] })
+  let reconnects = 0
+  panel.reconnect = async () => { reconnects++; throw new Error('must not reconnect active Codex') }
+  const entries = panel.entries
+  await panel.selectConnection('claude-code')
+  assert.match(panel.connectionError, /Claude Code CLI not found/)
+  assert.equal(panel.profileId, '')
+  assert.equal(panel.codex, original)
+  await panel.selectConnection('')
+  assert.equal(panel.connectionError, '')
+  assert.equal(panel.threadId, 'codex-session')
+  assert.equal(panel.entries, entries)
+  assert.equal(panel.connected, true)
+  assert.equal(panel.status, 'Ready')
+  assert.equal(reconnects, 0)
+  assert.equal(connects, 1)
+  assert.equal(imports, 0)
+  assert.deepEqual(closed, ['claude'])
+  await panel.selectConnection('claude-code')
+  assert.match(panel.connectionError, /Claude Code CLI not found/)
+  panel.connectionError = 'Current Codex connection failed'
+  await panel.selectConnection('')
+  assert.equal(panel.connectionError, 'Current Codex connection failed', 'do not dismiss errors belonging to the active backend')
+})
+
+function navigationPanel (getGoal = async () => null) {
+  const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, { client: {}, getGoal },
+    { run: callback => callback() }, {}, fakeTabTools)
+  panel.threadId = 'current'; panel.turnId = 'turn-1'; panel.busy = true
+  panel.entries = [{ id: 'q', kind: 'user', text: 'question', turnId: 'turn-1', outcome: 'running' }]
+  return panel
+}
+const finishNavigationTurn = (panel, status, extra = {}) => panel.handleEvent({ method: 'turn/completed',
+  params: { threadId: 'current', turn: { id: panel.turnId, status, ...extra } } })
+const flushNavigation = () => new Promise(resolve => setImmediate(resolve))
+
+test('question index waits for goal observation and distinguishes unfinished, blocked and completed tasks', async () => {
+  for (const [goal, expected] of [[null, 'complete'], [{ status: 'active' }, 'incomplete'], [{ status: 'complete' }, 'complete'],
+    [{ status: 'blocked', evidence: 'Tabby restart required' }, 'blocked'], [{ status: 'paused' }, 'blocked'],
+    [{ status: 'budgetLimited' }, 'limited'], [new Error('offline'), 'unknown']]) {
+    let resolveGoal
+    const pending = new Promise((resolve, reject) => { resolveGoal = () => goal instanceof Error ? reject(goal) : resolve(goal) })
+    const panel = navigationPanel(() => pending)
+    finishNavigationTurn(panel, 'completed')
+    assert.equal(panel.entries[0].outcome, 'running')
+    resolveGoal(); await flushNavigation()
+    assert.equal(panel.entries[0].outcome, expected)
+    assert.equal(panel.busy, false)
+  }
+})
+
+test('ordinary interruptions are separate from confirmed user stops and unclassified failures', () => {
+  for (const [status, stop, extra, expected] of [
+    ['interrupted', false, {}, 'interrupted'], ['interrupted', true, {}, 'stopped'],
+    ['failed', false, {}, 'unknown'], ['failed', false, { terminationReason: 'execution_limit' }, 'limited'],
+    ['failed', false, { terminationReason: 'unfinished' }, 'incomplete'],
+    ['failed', false, { terminationReason: 'external' }, 'blocked'],
+  ]) {
+    const panel = navigationPanel()
+    panel.goalStatus = 'complete'
+    if (stop) panel.cancelledTurnId = 'turn-1'
+    finishNavigationTurn(panel, status, extra)
+    assert.equal(panel.entries[0].outcome, expected)
+  }
+})
+
+test('clicking Stop stays running until interruption is observed, and a failed Stop does not mark red', async () => {
+  const panel = navigationPanel()
+  let rejectStop
+  panel.codex.interrupt = () => new Promise((resolve, reject) => { rejectStop = reject })
+  const stopping = panel.stop()
+  assert.equal(panel.entries[0].outcome, 'running')
+  rejectStop(new Error('stop rejected')); await stopping
+  assert.equal(panel.cancelledTurnId, '')
+  finishNavigationTurn(panel, 'interrupted')
+  assert.equal(panel.entries[0].outcome, 'interrupted')
+  const confirmed = navigationPanel()
+  confirmed.codex.interrupt = async () => { finishNavigationTurn(confirmed, 'interrupted') }
+  await confirmed.stop()
+  assert.equal(confirmed.entries[0].outcome, 'stopped')
+})
+
+test('automatic continuation stays blue and late goal reads cannot recolor a newer turn', async () => {
+  const reads = []
+  const panel = navigationPanel(() => new Promise(resolve => reads.push(resolve)))
+  panel.goalStatus = 'active'
+  finishNavigationTurn(panel, 'completed')
+  panel.handleEvent({ method: 'turn/started', params: { threadId: 'current', turn: { id: 'turn-2' } } })
+  assert.equal(panel.entries[0].outcome, 'running')
+  assert.equal(panel.entries[0].turnId, 'turn-2')
+  finishNavigationTurn(panel, 'completed')
+  reads[1]({ status: 'complete' }); await flushNavigation()
+  reads[0]({ status: 'active' }); await flushNavigation()
+  assert.equal(panel.entries[0].outcome, 'complete')
+  assert.equal(panel.goalStatus, 'complete')
+})
+
+test('history preserves new cause snapshots and ordinary interruption, migrating legacy failed to unknown', async () => {
+  const cases = [
+    ['completed', 'unknown', 'complete'], ['completed', undefined, 'complete'],
+    ['completed', 'interrupted', 'interrupted'], ['completed', 'failed', 'unknown'],
+    ['failed', 'complete', 'unknown'], ['interrupted', 'complete', 'interrupted'],
+    ['interrupted', 'stopped', 'stopped'], ['completed', 'incomplete', 'incomplete'],
+    ['completed', 'blocked', 'blocked'], ['failed', 'limited', 'limited'],
+    ['unexpected', undefined, 'unknown'], ['inProgress', 'complete', 'running'],
+  ]
+  for (const [status, saved, expected] of cases) {
+    const panel = navigationPanel()
+    panel.codex.client.request = async () => ({ thread: { turns: [{ id: 't', status, items: [
+      { id: 'q', type: 'userMessage', content: [{ type: 'text', text: 'question' }] },
+    ] }] } })
+    panel.savedOutcomes = () => saved ? { t: saved } : {}
+    const history = await panel.readHistory('current')
+    assert.equal(history.entries[0].outcome, expected, JSON.stringify({ status, saved }))
+  }
+})
+
+test('semantic snapshots persist across reload and include earlier automatic continuation turns', t => {
+  const previous = global.localStorage, values = new Map()
+  global.localStorage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value) }
+  t.after(() => { if (previous === undefined) delete global.localStorage; else global.localStorage = previous })
+  const panel = navigationPanel()
+  panel.entries[0].navigationTurnIds = ['turn-0']
+  panel.markNavigation('turn-1', 'stopped')
+  assert.deepEqual(panel.savedOutcomes(), { 'turn-0': 'stopped', 'turn-1': 'stopped' })
+  const legacyKey = panel.navigationKey().replace('agent-navigation-v2:', 'agent-navigation-v1:')
+  values.delete(panel.navigationKey()); values.set(legacyKey, JSON.stringify({ old: 'failed', interrupted: 'interrupted' }))
+  assert.deepEqual(panel.savedOutcomes(), { old: 'failed', interrupted: 'interrupted' })
+})
+
+
+test('a newer goal event wins over an older goal request and old turn events cannot repaint a new turn', async () => {
+  let resolveGoal
+  const panel = navigationPanel(() => new Promise(resolve => { resolveGoal = resolve }))
+  finishNavigationTurn(panel, 'completed')
+  panel.handleEvent({ method: 'thread/goal/updated', params: { threadId: 'current', goal: { status: 'complete' } } })
+  resolveGoal({ status: 'active' }); await flushNavigation()
+  assert.equal(panel.entries[0].outcome, 'complete')
+  assert.equal(panel.goalStatus, 'complete')
+  panel.handleEvent({ method: 'turn/completed', params: { threadId: 'current', turn: { id: 'old-turn', status: 'failed' } } })
+  assert.equal(panel.latestTurnStatus, 'completed')
+  assert.equal(panel.entries[0].outcome, 'complete')
 })

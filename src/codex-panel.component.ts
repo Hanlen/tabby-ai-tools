@@ -1,3 +1,4 @@
+import { conversationOutcome, restoredOutcome, ConversationOutcome } from './agent-conversation-state'
 import { isRateLimitError, retryDeadline, retryDuration } from './turn-retry'
 import { CLAUDE_CODE_ID } from './claude-code-profile'
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewChild } from '@angular/core'
@@ -25,6 +26,7 @@ import { formatDateTime, getLanguage, textDirection, translate } from './i18n'
 import { AttachmentTransferService } from './attachment-transfer.service'
 import { Attachment } from './attachments'
 import { isNativeAuthenticationError } from './cli-auth'
+import { normalizeExecutable } from './codex-executable'
 
 const INITIAL_OUTPUT_LIMIT = 6000
 
@@ -33,7 +35,7 @@ function outputMessage (text: string, truncated: boolean): string {
 }
 
 interface PendingRequest { id: number; method: string; title: string; translateTitle?: boolean; questions?: UserQuestion[]; answers: Record<string, string>; otherAnswers: Record<string, string>; local?: boolean; permissions?: any; url?: string }
-interface HistorySnapshot { entries: ChatEntry[]; busy: boolean; turnId: string; notice: string; tokenUsage?: any }
+interface HistorySnapshot { latestTurnStatus?: string; entries: ChatEntry[]; busy: boolean; turnId: string; notice: string; tokenUsage?: any }
 interface ThreadStatusSnapshot { threadId: string; model: string | null; reasoningEffort: string | null; state: string }
 interface RateLimitWindowSnapshot { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null }
 interface RateLimitSnapshot { primary: RateLimitWindowSnapshot | null; secondary: RateLimitWindowSnapshot | null }
@@ -51,6 +53,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   get languageCode (): string { return getLanguage() }
   private codex: AgentBackend
   profileId = ''
+  private connectionSwitchError?: { profileId: string; message: string }
   connectionError = ''
   authWarning = false
   authRecovering = false
@@ -321,11 +324,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.retryTimer.unref?.()
     }
   }
+  private navigationGoalRevision = 0
+  private navigationTurnId = ''
   private cancelledTurnId = ''
   private sourceBound = false
   private allowSourceRecovery = true
   private readonly onEvent = (event: RpcMessage) => this.zone.run(() => {
     this.handleEvent(event)
+    this.refreshCliConfiguration()
     // Node HTTP callbacks/async iterators can run outside Electron's patched tasks.
     // Flush streamed text without waiting for a click, scroll or the final response.
     this.changeDetector?.detectChanges()
@@ -336,8 +342,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   })
   private readonly onRecovered = () => this.zone.run(() => {
     this.connected = true
+    this.connectionError = ''
     this.status = 'Codex 安装故障已恢复连接；会话和输入已保留，未重发任务。继续前请读取终端，核对已提交操作的实际状态。'
     this.entries.push({ id: `installation-recovered-${Date.now()}`, kind: 'system', text: this.status })
+    this.changeDetector?.detectChanges()
   })
   private readonly onRecoveryFailed = (error: Error) => this.zone.run(() => {
     this.status = `Codex 安装恢复已停止：${error.message}`
@@ -882,9 +890,20 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async selectConnection (id: string, reload = false): Promise<void> {
-    if (!this.agents || this.loading || this.busy || this.request || (!reload && id === this.profileId)) return
+    if (!this.agents || this.loading || this.busy || this.request) return
+    // A failed switch rolls back to the previous backend. Selecting that backend
+    // again must dismiss the failed target's diagnostics without reconnecting it.
+    if (!reload && id === this.profileId) {
+      if (this.connectionSwitchError && this.connectionSwitchError.profileId !== id) {
+        if (this.connectionError === this.connectionSwitchError.message) this.connectionError = ''
+        this.connectionSwitchError = undefined
+      }
+      if (this.authWarning && this.authProfileId !== id) this.clearAuthWarning()
+      return
+    }
+    this.connectionSwitchError = undefined
     this.connectionError = ''
-    const previous = { codex: this.codex, profileId: this.profileId, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
+    const previous = { codex: this.codex, profileId: this.profileId, cliConfiguration: this.cliConfiguration, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
       entries: this.entries, goalStatus: this.goalStatus, latestTurnStatus: this.latestTurnStatus, sessions: this.sessions, models: this.models,
       historyOpen: this.historyOpen, modelPickerOpen: this.modelPickerOpen, connected: this.connected, busy: this.busy, status: this.status,
       threadStatus: this.threadStatus, statusRateLimits: this.statusRateLimits, ordinaryUsageAllowed: this.ordinaryUsageAllowed,
@@ -972,7 +991,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         await this.config.save().catch(() => undefined)
       } else if (indexesChanged) await this.config.save().catch(() => undefined)
       if (backend !== previous.codex && (backend?.profile || backend?.sessionSpace?.native)) backend.client.close()
-      this.zone.run(() => { this.connectionError = error.message })
+      this.zone.run(() => { this.connectionError = error.message; this.connectionSwitchError = { profileId: id, message: error.message } })
       this.warnAuthentication(error, backend || this.codex, id)
     } finally { this.zone.run(() => { this.loading = false; this.changeDetector?.detectChanges() }) }
   }
@@ -996,6 +1015,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async ngOnInit (): Promise<void> {
+    this.cliConfiguration = this.currentCliConfiguration
+    this.cliConfigurationSubscription = this.config.changed$.subscribe(() => this.zone.run(() => this.refreshCliConfiguration()))
     this.attachmentSubscription = this.attachments?.operations$.subscribe(() => this.zone.run(() => {
       this.refreshAttachments()
       this.changeDetector?.detectChanges()
@@ -1015,6 +1036,24 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.codex.client.on('recoveryFailed', this.onRecoveryFailed)
     this.codex.client.on('disconnected', this.onDisconnect)
     await this.reconnect()
+  }
+
+  private cliConfigurationSubscription?: Subscription
+  private cliConfiguration?: string
+  private panelDestroyed = false
+
+  private get currentCliConfiguration (): string | undefined {
+    if (this.apiMode && !this.claudeCodeMode) return undefined
+    const settings = this.settings
+    return JSON.stringify([this.profileId, normalizeExecutable(this.claudeCodeMode ? settings.claudeExecutable || '' : settings.executable) || (this.claudeCodeMode ? 'claude' : 'codex')])
+  }
+
+  private refreshCliConfiguration (): void {
+    if (this.panelDestroyed || this.loading || this.busy || this.request) return
+    const configured = this.currentCliConfiguration
+    // Each private panel owns its client; the shared runtime cannot refresh it.
+    // Only reconnect at an idle boundary. Never submit a turn to test readiness.
+    if (configured !== undefined && configured !== this.cliConfiguration) void this.reconnect()
   }
 
   bindSource (terminal: BaseTerminalTabComponent<any>): void {
@@ -1057,6 +1096,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async reconnect (preparedThreadId?: string): Promise<boolean> {
+    this.cliConfiguration = this.currentCliConfiguration
     this.statusRequest++
     this.statusLoading = false
     this.threadStatus = undefined
@@ -1080,6 +1120,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       await this.loadHistory(this.threadId !== previousThreadId)
       const goal = await this.codex.getGoal(this.threadId)
       this.goalStatus = goal?.status || ''
+      this.restoreNavigationGoal()
       this.connected = true
       this.connectionError = ''
       this.status = upgraded ? '已创建支持访问所有 Tabby 标签的新会话' : this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '就绪'
@@ -1092,7 +1133,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.warnAuthentication(error)
       return false
     } finally {
-      this.zone.run(() => { this.loading = false })
+      this.zone.run(() => {
+        this.loading = false
+        if (!this.panelDestroyed) {
+          this.refreshCliConfiguration()
+          this.changeDetector?.detectChanges()
+        }
+      })
     }
   }
 
@@ -1101,10 +1148,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const turns = [...(await this.codex.inheritedTurns?.(threadId) || []), ...history.turns]
     const notice = history.notice
     const entries: ChatEntry[] = []
+    const saved = this.savedOutcomes(threadId)
     for (const turn of turns) {
+      const outcome = restoredOutcome(turn.status, saved[turn.id], turn)
       for (const item of turn.items || []) {
         if (item.type === 'userMessage') {
-          entries.push({ id: item.id, kind: 'user', text: (item.content || []).filter((x: any) => x.type === 'text').map((x: any) => x.text).join('\n') })
+          entries.push({ id: item.id, kind: 'user', turnId: turn.id, outcome, text: (item.content || []).filter((x: any) => x.type === 'text').map((x: any) => x.text).join('\n') })
         } else if (item.type === 'agentMessage' && item.text) {
           entries.push({ id: item.id, kind: 'agent', text: item.text })
         } else {
@@ -1116,7 +1165,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const lastTurn = turns[turns.length - 1]
     const runtimeState = history.thread.status?.type
     const busy = lastTurn?.status === 'inProgress' && (!runtimeState || runtimeState === 'active')
-    return { entries, busy, turnId: busy ? lastTurn.id : '', notice, tokenUsage: history.thread.tokenUsage }
+    return { latestTurnStatus: lastTurn?.status, entries, busy, turnId: busy ? lastTurn.id : '', notice, tokenUsage: history.thread.tokenUsage }
   }
 
   private applyHistory (history: HistorySnapshot, resetScroll = false): void {
@@ -1124,6 +1173,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.resetPromptHistory()
     this.sendNotice = ''
     this.entries = history.entries
+    this.navigationTurnId = history.turnId || [...history.entries].reverse().find(entry => entry.kind === 'user')?.turnId || ''
+    this.latestTurnStatus = history.latestTurnStatus || ''
     this.busy = history.busy
     this.turnId = history.turnId
     this.historyNotice = history.notice
@@ -1205,7 +1256,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.clearTokenUsage()
       this.applyHistory(history, true)
       this.goalStatus = goal?.status || ''
-      this.latestTurnStatus = ''
+      this.restoreNavigationGoal()
       this.request = undefined
       this.pendingQuestionReply = ''
       this.questionInterrupting = false
@@ -1292,7 +1343,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }
     this.resetPromptHistory()
     this.prompt = ''
-    this.entries.push({ id: `user-${Date.now()}`, kind: 'user', text })
+    const navigationEntry: ChatEntry = { id: `user-${Date.now()}-${this.sendAttempt}`, kind: 'user', text, turnId: this.busy ? this.turnId : undefined, outcome: 'running' }
+    this.entries.push(navigationEntry)
     const steering = this.busy && !!this.turnId
     try {
       await this.ensureSource()
@@ -1339,8 +1391,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         const startedTurnId = await this.codex.startTurn(this.threadId, text, this.cwd, this.settings, [output.message, memoryContext].filter(Boolean).join('\n\n'))
         if (matchedWorkflow) void memory?.library.used(matchedWorkflow.id).catch(() => undefined)
         if (this.busy) this.turnId = startedTurnId
+        navigationEntry.turnId = startedTurnId
       } catch (error) { this.outputCursor = previousCursor; throw error }
     } catch (error: any) {
+      navigationEntry.outcome = 'unknown'
       this.showSendError(error, '发送失败', this.turnId, false, !steering)
       if (!this.prompt) this.prompt = text
     }
@@ -1613,13 +1667,25 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.applyTokenUsage(p.tokenUsage)
         break
       }
-      case 'turn/started':
+      case 'turn/started': {
+        this.navigationTurnId = p.turn.id
+        const previousTurn = [...this.entries].reverse().find(entry => entry.kind === 'user' && entry.turnId)?.turnId
+        const pendingInput = this.entries.some(entry => entry.kind === 'user' && entry.outcome === 'running' && !entry.turnId)
+        if (!pendingInput && previousTurn && this.goalStatus === 'active' && this.latestTurnStatus === 'completed') {
+          for (const entry of this.entries) if (entry.kind === 'user' && entry.turnId === previousTurn) {
+            entry.navigationTurnIds = [...new Set([...(entry.navigationTurnIds || []), previousTurn])]
+            entry.turnId = p.turn.id
+            entry.outcome = 'running'
+          }
+        }
         this.retryState = undefined
         this.cancelledTurnId = ''
         this.busy = true
         this.turnId = p.turn.id
+        for (const entry of this.entries) if (entry.kind === 'user' && entry.outcome === 'running' && !entry.turnId) entry.turnId = p.turn.id
         this.status = '正在执行任务…'
         break
+      }
       case 'item/agentMessage/delta':
         this.clearAuthWarning()
         this.finishThinking()
@@ -1689,11 +1755,18 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         if (p.item?.type === 'contextCompaction') this.entries.push({ id: p.item.id, kind: 'system', text: '上下文已压缩，仍保留当前会话。' })
         break
       case 'thread/goal/updated':
+        this.navigationGoalRevision++
         this.goalStatus = p.goal.status
+        if (!this.busy && this.latestTurnStatus === 'completed') {
+          const last = [...this.entries].reverse().find(entry => entry.kind === 'user')
+          if (last?.turnId && !['stopped', 'interrupted', 'limited'].includes(last.outcome || '')) this.markNavigation(last.turnId, conversationOutcome('completed', { goalStatus: this.goalStatus }))
+        }
         this.updateCompletion()
         break
       case 'turn/completed':
+        if (!this.turnId && this.navigationTurnId && p.turn.id && p.turn.id !== this.navigationTurnId) break
         if (this.turnId && p.turn.id && p.turn.id !== this.turnId) break
+        this.navigationTurnId = p.turn.id
         this.clearRetryState()
         this.finishActivities()
         this.cancelWorkflowOperations()
@@ -1702,6 +1775,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         this.turnId = ''
         this.questionInterrupting = false
         this.latestTurnStatus = p.turn.status
+        this.markNavigation(p.turn.id, conversationOutcome(p.turn.status, {
+          ...p.turn, stopRequested: this.cancelledTurnId === p.turn.id,
+          awaitingGoal: p.turn.status === 'completed',
+        }))
         if (this.pendingQuestionReply) {
           this.prompt = this.pendingQuestionReply
           this.pendingQuestionReply = ''
@@ -1718,7 +1795,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           else this.status = `任务未完成：${p.turn.status}`
         } else {
           this.sendNotice = ''
-          void this.refreshGoal()
+          void this.refreshGoal(p.turn.id)
         }
         if (p.turn.status === 'interrupted') this.status += '；已发送到终端的命令可能仍在运行，请检查终端'
         break
@@ -1739,7 +1816,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const message = String(error?.message || '未知错误')
     const info = error?.codexErrorInfo
     let hint = ''
-    if (this.warnAuthentication(error)) hint = this.canRecoverNativeAuth ? '登录已失效，请重新复制本机登录并重连。' : '登录已失效，请在本机重新登录后重连。'
+    const authenticationFailure = this.warnAuthentication(error)
+    if (authenticationFailure) hint = this.canRecoverNativeAuth ? '登录已失效，请重新复制本机登录并重连。' : '登录已失效，请在本机重新登录后重连。'
     else if (info === 'contextWindowExceeded' || /context.{0,20}(exceeded|limit|full|long)/i.test(message)) hint = '上下文已超出限制，请使用 /new 创建新会话后重试。'
     else if (info === 'sessionBudgetExceeded' || /budget.{0,20}(exceeded|limit)/i.test(message)) hint = '当前会话已达到预算上限，请调整预算或使用 /new 创建新会话。'
     else if (isRateLimitError(error)) {
@@ -1757,6 +1835,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.status = willRetry ? this.retryState?.rateLimited ? '请求限流，等待后台自动重试' : '等待后台自动重试' : hint || `${label}：${message}`
     this.replace(`send-error-${this.threadId}-${turnId || `start-${this.sendAttempt}`}`, 'system', this.sendNotice)
     if (!willRetry && endTurn) {
+      if (!this.entries.some(entry => entry.turnId === turnId && ['interrupted', 'stopped', 'limited', 'incomplete', 'blocked'].includes(entry.outcome || ''))) {
+        this.markNavigation(turnId, authenticationFailure ? 'blocked' : conversationOutcome('failed', { error }))
+      }
       this.finishActivities()
       this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(this.threadId)
@@ -1765,7 +1846,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private async refreshGoal (): Promise<void> {
+  private async refreshGoal (completedTurnId?: string): Promise<void> {
+    const navigationAttempt = this.sendAttempt
+    const goalRevision = this.navigationGoalRevision
     const backend = this.codex
     const threadId = this.threadId
     const memory = this.agents?.memory
@@ -1773,9 +1856,12 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     try {
       const goal = await backend.getGoal(threadId)
       this.zone.run(() => {
-        if (this.codex !== backend || this.threadId !== threadId) return
+        if (this.codex !== backend || this.threadId !== threadId || (completedTurnId && (this.busy || navigationAttempt !== this.sendAttempt || this.navigationTurnId !== completedTurnId || goalRevision !== this.navigationGoalRevision))) return
         const issue = goal?.status === 'complete' ? memory?.activeLibrary?.completionIssue(threadId, token) : ''
         this.goalStatus = issue ? 'active' : goal?.status || ''
+        if (completedTurnId && !this.entries.some(entry => entry.turnId === completedTurnId && ['stopped', 'limited'].includes(entry.outcome || ''))) {
+          this.markNavigation(completedTurnId, conversationOutcome('completed', { goalStatus: this.goalStatus }))
+        }
         this.updateCompletion()
         if (issue) { this.memoryNotice = issue; this.status = issue }
       })
@@ -1799,7 +1885,17 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         }
       }
     } catch (error: any) {
-      this.zone.run(() => { if (this.codex === backend && this.threadId === threadId) this.status = `无法确认完成状态：${error.message}` })
+      this.zone.run(() => { if (this.codex === backend && this.threadId === threadId && (!completedTurnId || !this.busy && navigationAttempt === this.sendAttempt && this.navigationTurnId === completedTurnId && goalRevision === this.navigationGoalRevision)) {
+        if (completedTurnId) this.markNavigation(completedTurnId, 'unknown')
+        this.status = `无法确认完成状态：${error.message}`
+      } })
+    }
+  }
+
+  private restoreNavigationGoal (): void {
+    const last = [...this.entries].reverse().find(entry => entry.kind === 'user')
+    if (!this.busy && this.latestTurnStatus === 'completed' && last?.turnId && ['complete', 'incomplete', 'blocked', 'running'].includes(last.outcome || '')) {
+      this.markNavigation(last.turnId, conversationOutcome('completed', { goalStatus: this.goalStatus }))
     }
   }
 
@@ -1837,6 +1933,37 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (!activity.text && entry.text) activity.text = entry.text
       Object.assign(entry, activity)
     } else this.entries.push(activity)
+  }
+
+  navigateQuestion (entry: ChatEntry): void {
+    const target = Array.from(this.chatFeed.nativeElement.querySelectorAll<HTMLElement>('[data-agent-question]'))
+      .find(node => node.getAttribute('data-agent-question') === entry.id)
+    if (target) this.chatScroll?.navigateTo(target)
+  }
+
+  private navigationKey (threadId = this.threadId): string {
+    return `agent-navigation-v2:${JSON.stringify([this.codex.sessionSpace?.key, this.profileId, this.cwd, threadId])}`
+  }
+
+  private savedOutcomes (threadId = this.threadId): Record<string, ConversationOutcome> {
+    try {
+      const value = JSON.parse(localStorage.getItem(this.navigationKey(threadId)) || localStorage.getItem(this.navigationKey(threadId).replace('agent-navigation-v2:', 'agent-navigation-v1:')) || '{}')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+      return Object.fromEntries(Object.entries(value).filter(([, v]) => ['complete', 'interrupted', 'stopped', 'incomplete', 'limited', 'blocked', 'failed', 'unknown'].includes(String(v)))) as Record<string, ConversationOutcome>
+    } catch { return {} }
+  }
+
+  private markNavigation (turnId: string, outcome: ConversationOutcome): void {
+    for (const entry of this.entries) if (entry.kind === 'user' && entry.turnId === turnId) entry.outcome = outcome
+    if (!turnId || outcome === 'running') return
+    try {
+      const saved = this.savedOutcomes()
+      for (const entry of this.entries) if (entry.kind === 'user' && entry.turnId === turnId) {
+        for (const prior of entry.navigationTurnIds || []) saved[prior] = outcome
+      }
+      saved[turnId] = outcome
+      localStorage.setItem(this.navigationKey(), JSON.stringify(Object.fromEntries(Object.entries(saved).slice(-1000))))
+    } catch { /* Navigation metadata must never stop an agent task. */ }
   }
 
   trackEntry (_index: number, entry: ChatEntry): string { return entry.id }
@@ -1954,6 +2081,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy (): void {
+    this.panelDestroyed = true
+    this.cliConfigurationSubscription?.unsubscribe()
     this.attachmentsDestroyed = true
     this.closeAttachmentPreview()
     this.attachmentSubscription?.unsubscribe()

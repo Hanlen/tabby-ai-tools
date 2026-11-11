@@ -909,7 +909,9 @@ test('text-only goal stalls are detected without declaring success or imposing a
   await f.agent.setGoal(f.id, 'Unfinished task', 0)
   const completed = turnFinished(f.agent)
   await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
-  assert.match((await completed).error.message, /重复工具循环/)
+  const result = await completed
+  assert.match(result.error.message, /重复工具循环/)
+  assert.equal(result.terminationReason, 'unfinished')
   assert.equal(f.requests.length, 4)
   assert.equal((await f.agent.getGoal(f.id)).status, 'blocked')
 })
@@ -1060,10 +1062,13 @@ test('a closing summary preserves the last result without marking an unfinished 
   })
   const completed = turnFinished(f.agent)
   await f.agent.startTurn(f.id, 'Task', '/workspace', settings)
-  assert.equal((await completed).status, 'failed')
+  const result = await completed
+  assert.equal(result.status, 'failed')
+  assert.equal(result.terminationReason, 'execution_limit')
   assert.equal(f.requests[1].body.messages.at(-1).content, 'last observed result')
   const saved = await f.store.load(f.id)
   assert.equal(saved.goal.status, 'active')
+  assert.equal(saved.turns.at(-1).terminationReason, 'execution_limit')
   assert.equal(saved.messages.some(message => message.role === 'assistant' && message.content === '完成'), true)
 })
 

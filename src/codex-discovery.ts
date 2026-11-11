@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { Readable } from 'stream'
-import { codexExecutableCandidates, codexEnvironment, environmentValue, executableEnvironment, executableFile, ExecutableContext, normalizeExecutable, resolveCodexExecutable } from './codex-executable'
+import { CliSelectorUnavailableError, codexExecutableCandidates, codexEnvironment, environmentValue, executableEnvironment, executableFile, ExecutableContext, normalizeExecutable, resolveCodexExecutable } from './codex-executable'
 import { packageManagerDirectories } from './codex-prefix'
 import { newestCodexExecutable } from './codex-version'
 import { checkCodexInstallation, codexCompanions, CodexInstallationError, CodexCapabilities } from './codex-installation'
@@ -15,6 +15,7 @@ export interface CodexLaunch {
 }
 
 export interface DiscoveryContext extends ExecutableContext, CodexCapabilities {
+  onInvalidExecutable?: (configured: string) => void
   excludedExecutables?: ReadonlySet<string>
   signal?: AbortSignal
   shellTimeoutMs?: number
@@ -274,6 +275,10 @@ export async function resolveCodexLaunch (configured: string, context: Discovery
     } else executable = resolveCodexExecutable(configured, { ...resolution, env })
   } catch (error: any) {
     checkCancelled(context.signal)
+    if (!automatic && supported && error instanceof CliSelectorUnavailableError && context.onInvalidExecutable) {
+      context.onInvalidExecutable(configured)
+      return resolveCodexLaunch('', { ...context, onInvalidExecutable: undefined })
+    }
     if (!automatic || !supported) throw error
     originalError = error
   }

@@ -80,3 +80,7 @@ Use `read_tab(mode=delta)` with its unchanged nextCursor for new stream text, or
 
 
 For existing native agents in Linux SSH panes, `attach_process` can verify the foreground PID and PTY using independent exec and an output-only random proof. Read again after attachment and each input; never restart a waiting agent to bypass an identity failure. Consult the operation reference for unsupported topologies and Codex installation recovery boundaries.
+
+Codex CLI settings default to automatic discovery (blank or `codex`). Unavailable saved selectors recover by clearing the setting and searching again; this does not replay tasks. Treat CLI discovery failures separately from authentication and model errors.
+
+Question navigation distinguishes ordinary interruption from user Stop and unfinished tasks. Keep goal state accurate: use blocked only for a specific external prerequisite; execution limits leave the task unfinished.

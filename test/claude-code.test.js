@@ -545,6 +545,19 @@ test('concurrent Claude connections share discovery, while replacement and close
   await recovered
 })
 
+test('clearing a Claude path selects automatic discovery instead of reusing the constructor path', async t => {
+  const f = await fixture(t)
+  const discovery = require('../src/claude-code-client.ts')
+  const selectors = []
+  t.mock.method(discovery, 'inspectClaudeCode', async selector => { selectors.push(selector); return f.executable })
+  await f.agent.connect(f.settings)
+  f.settings.claudeExecutable = ''
+  await f.agent.connect(f.settings)
+  assert.deepEqual(selectors, [f.executable, 'claude'])
+  assert.equal(f.agent.selectedExecutable, 'claude')
+  assert.equal(fs.existsSync(path.join(f.root, 'capture.json')), false, 'connection checks must not start inference')
+})
+
 test('default Claude re-resolves an updated installation before a new invocation and preserves the native session without replay', async t => {
   const f = await fixture(t), client = require('../src/claude-code-client.ts'), actual = client.runClaudeProcess, invoked = []
   t.mock.method(client, 'runClaudeProcess', options => { if (options.args.includes('-p')) invoked.push(options.executable); return actual(options) })
@@ -606,4 +619,19 @@ test('Claude launcher removal after help is an installation-stage failure rather
     return true
   })
   assert.equal(fs.existsSync(path.join(f.root, 'capture.json')), false)
+})
+
+
+test('Claude max-turn result retains a structured execution limit without retrying inference', async t => {
+  const f = await fixture(t, { resultError: true, resultSubtype: 'error_max_turns' })
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const finished = done(f.agent)
+  await f.agent.startTurn(id, 'Finish this task', f.root, f.settings)
+  const turn = await finished
+  assert.equal(turn.status, 'failed')
+  assert.equal(turn.terminationReason, 'execution_limit')
+  const saved = await f.store.load(id)
+  assert.equal(saved.turns.at(-1).terminationReason, 'execution_limit')
+  assert.equal(saved.turns.length, 1)
 })

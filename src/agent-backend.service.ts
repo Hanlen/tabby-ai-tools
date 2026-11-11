@@ -1,3 +1,4 @@
+import { persistInvalidCodexSelector } from './cli-selector-recovery'
 import { Injectable } from '@angular/core'
 import { ConfigService, PlatformService } from 'tabby-core'
 import * as path from 'path'
@@ -65,6 +66,7 @@ export class AgentBackendFactory {
     if (!id) {
       const space = this.nativeSpace('codex')
       const backend = isolated || space.native ? new CodexService() : this.codex
+      persistInvalidCodexSelector(backend.client, this.config)
       backend.sessionSpace = space
       backend.sessionThreads = spaceThreads(this.config.store.codexAgent, 'codex', space)
       const scoped = !storeOverride && space.root ? new AgentStore(path.join(space.root, 'index')) : store

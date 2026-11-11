@@ -5,6 +5,7 @@ import { AgentSettings } from './config'
 import { CodexService } from './codex.service'
 import { translate } from './i18n'
 import { sessionSpaceConfig } from './session-space'
+import { persistInvalidCodexSelector } from './cli-selector-recovery'
 import { installationFailure } from './codex-installation'
 
 /** Owns the shared app-server for the entire plugin lifetime, including hidden panels. */
@@ -30,6 +31,8 @@ export class CodexRuntimeService implements OnDestroy {
   start (): void {
     if (this.started || this.stopped) return
     this.started = true
+    this.codex.client.on('invalidExecutable', this.onInvalidExecutable)
+    persistInvalidCodexSelector(this.codex.client, this.config)
     this.codex.client.on('connected', this.onConnected)
     this.codex.client.on('disconnected', this.onDisconnected)
     window.addEventListener('unload', this.stop)
@@ -70,7 +73,12 @@ export class CodexRuntimeService implements OnDestroy {
     }
   }
 
+  private readonly onInvalidExecutable = (): void => { this.executable = 'codex' }
+
   private readonly onConnected = (): void => {
+    // A panel may supersede an in-flight background startup using the same
+    // selector. Its late rejection must not report an already recovered failure.
+    this.connectionAttempt++
     this.codexUsed = true
     this.clearRetry()
     this.retryDelay = 1000
@@ -102,6 +110,7 @@ export class CodexRuntimeService implements OnDestroy {
     this.clearRetry()
     this.subscriptions.unsubscribe()
     window.removeEventListener('unload', this.stop)
+    this.codex.client.off('invalidExecutable', this.onInvalidExecutable)
     this.codex.client.off('connected', this.onConnected)
     this.codex.client.off('disconnected', this.onDisconnected)
     this.codex.client.close()

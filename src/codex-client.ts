@@ -49,7 +49,7 @@ export class CodexClient extends EventEmitter {
   async refreshAuthentication (executable: string, space?: NativeSessionSpace): Promise<void> {
     if (!space?.native || space.engine !== 'codex') throw new Error('Select a private Codex space to copy the local login cache')
     await this.close()
-    const resolved = await resolveCodexLaunch(normalizeExecutable(executable) || 'codex')
+    const resolved = await resolveCodexLaunch(normalizeExecutable(executable) || 'codex', { onInvalidExecutable: this.onInvalidExecutable })
     await prepareSessionSpace(space)
     if (!await initializeNativeAuth(space, resolved.env, { replaceExisting: true })) {
       throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
@@ -102,7 +102,7 @@ export class CodexClient extends EventEmitter {
       this.recordInstallationFault(error)
       this.recoveryAttempts++
       this.fault = undefined
-      try { await this.start(executable, signal, space) } catch (next: any) {
+      try { await this.start(this.executable, signal, space) } catch (next: any) {
         this.fault = new Error(`${error.message}\nRecovery stopped after one rescan: ${next.message}`)
         throw this.fault
       }
@@ -153,8 +153,14 @@ export class CodexClient extends EventEmitter {
     })
   }
 
+  private readonly onInvalidExecutable = (configured: string): void => {
+    this.executable = 'codex'
+    this.emit('invalidExecutable', configured)
+    this.emit('diagnostic', `Configured Codex CLI is unavailable: ${configured}\nCleared selector; searching automatically. No task will be replayed.\n`)
+  }
+
   private async start (executable: string, signal: AbortSignal, space?: NativeSessionSpace, recovered = false): Promise<void> {
-    const resolved = await resolveCodexLaunch(executable, { ...this.capabilities, signal, excludedExecutables: this.excludedExecutables })
+    const resolved = await resolveCodexLaunch(executable, { ...this.capabilities, signal, excludedExecutables: this.excludedExecutables, onInvalidExecutable: this.onInvalidExecutable })
     if (signal.aborted) throw new Error('Codex app-server was closed during CLI discovery')
     this.launch = resolved
     if (space) await prepareSessionSpace(space)

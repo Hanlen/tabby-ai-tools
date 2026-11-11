@@ -37,7 +37,7 @@ export interface AgentSettings {
 export class CodexConfigProvider extends ConfigProvider {
   defaults = {
     codexAgent: {
-      executable: 'codex',
+      executable: '',
       claudeExecutable: 'claude',
       claudeModel: 'sonnet',
       claudeReasoningEffort: '',

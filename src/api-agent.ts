@@ -260,7 +260,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   private async compactContext (session: ApiSession, adapter: ApiProviderAdapter, signal: AbortSignal, reason = 'manual'): Promise<boolean> {
     const firstKeptIndex = compactionBoundary(session.messages)
     if (!firstKeptIndex || firstKeptIndex <= (session.compactions?.slice(-1)[0]?.firstKeptIndex || 0)) return false
-    if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) throw new Error('已达到目标 token 预算')
+    if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) throw Object.assign(new Error('已达到目标 token 预算'), { terminationReason: 'execution_limit' })
     this.event(session.id, 'agent/lifecycle', { type: 'compaction_start', reason })
     let tokens = 0
     try {
@@ -349,7 +349,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
         if (signal.aborted || executionSignal.aborted) throw new Error('请求已停止')
         if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) {
           session.goal.status = 'budgetLimited'
-          throw new Error('已达到目标 token 预算')
+          throw Object.assign(new Error('已达到目标 token 预算'), { terminationReason: 'execution_limit' })
         }
         const toolItem = { id: call.id, type: 'commandExecution', command: `${call.name} ${call.arguments}`, aggregatedOutput: '' }
         turn.items.push(toolItem)
@@ -378,9 +378,9 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
       }
       let nativeToolCalls = 0
       const adapter = await untilStopped(this.createAdapter(session, settings, async (call, executionSignal) => {
-        if (loopFailure) throw new Error(loopFailure)
+        if (loopFailure) throw Object.assign(new Error(loopFailure), { terminationReason: 'unfinished' })
         const allowed = iterations && nativeToolCalls >= iterations ? definitions.filter(tool => tool.name === 'agent_goal_update') : definitions
-        if (iterations && nativeToolCalls >= iterations && call.name !== 'agent_goal_update') throw new Error(limitMessage)
+        if (iterations && nativeToolCalls >= iterations && call.name !== 'agent_goal_update') throw Object.assign(new Error(limitMessage), { terminationReason: 'execution_limit' })
         nativeToolCalls++
         return executeTool(call, allowed, executionSignal)
       }), signal)
@@ -397,7 +397,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
       let closingGoalUpdated = false
       for (;;) {
         if (signal.aborted) throw new Error('请求已停止')
-        if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) { session.goal.status = 'budgetLimited'; throw new Error('已达到目标 token 预算；任务尚未确认完成') }
+        if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) { session.goal.status = 'budgetLimited'; throw Object.assign(new Error('已达到目标 token 预算；任务尚未确认完成'), { terminationReason: 'execution_limit' }) }
         const closing = !!loopFailure || (iterations > 0 && toolRounds >= iterations)
         for (const input of job.queued.splice(0)) {
           session.messages.push(adapter.user(input))
@@ -406,7 +406,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
         await this.store.save(session)
         if (!this.profile.runtime && this.profile.autoCompact && this.profile.contextWindow > 0 &&
           JSON.stringify(projectApiContext(session)).length / 3 > this.profile.contextWindow * 0.75) await this.compactContext(session, adapter, signal, 'threshold')
-        if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) throw new Error('已达到目标 token 预算；任务尚未确认完成')
+        if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) throw Object.assign(new Error('已达到目标 token 预算；任务尚未确认完成'), { terminationReason: 'execution_limit' })
         const item = { id: agentId(), type: 'agentMessage', text: '' }
         let itemAdded = false
         reasoningItem = undefined
@@ -444,7 +444,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
           if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) {
             session.goal.status = 'budgetLimited'
             this.event(session.id, 'thread/goal/updated', { goal: session.goal })
-            throw new Error('已达到目标 token 预算；任务尚未确认完成')
+            throw Object.assign(new Error('已达到目标 token 预算；任务尚未确认完成'), { terminationReason: 'execution_limit' })
           }
         } : undefined)
         if (result.text !== item.text) {
@@ -462,7 +462,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
         if (result.tools.length || nativeToolCalls !== previousNativeToolCalls) responseGuard = new ApiToolLoopGuard()
         if (result.tools.length) {
           // Closing may update local goal metadata once, but never operate a terminal.
-          if (closing && (closingGoalUpdated || result.tools.length !== 1 || !availableTools.some(tool => tool.name === result.tools[0].name))) throw new Error(loopFailure || limitMessage)
+          if (closing && (closingGoalUpdated || result.tools.length !== 1 || !availableTools.some(tool => tool.name === result.tools[0].name))) throw Object.assign(new Error(loopFailure || limitMessage), { terminationReason: loopFailure ? 'unfinished' : 'execution_limit' })
           const results: ToolResult[] = []
           for (const call of result.tools) {
             if (signal.aborted) throw new Error('请求已停止')
@@ -473,8 +473,8 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
           else toolRounds++
         } else {
           session.messages.push(...result.messages)
-          if (loopFailure) throw new Error(loopFailure)
-          if (closing && (job.queued.length || (session.goal && session.goal.status !== 'complete'))) throw new Error(limitMessage)
+          if (loopFailure) throw Object.assign(new Error(loopFailure), { terminationReason: 'unfinished' })
+          if (closing && (job.queued.length || (session.goal && session.goal.status !== 'complete'))) throw Object.assign(new Error(limitMessage), { terminationReason: 'execution_limit' })
           if (!job.queued.length && session.goal?.status === 'active' && this.profile.runtime !== 'pi') {
             // Keep one running turn and the provider's native history; never replay commands.
             // Detect repeated text-only stalls by evidence rather than a fixed turn count.
@@ -488,6 +488,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
       }
     } catch (error: any) {
       turn.status = signal.aborted ? 'interrupted' : 'failed'
+      if (!signal.aborted && ['execution_limit', 'unfinished', 'external'].includes(error.terminationReason)) turn.terminationReason = error.terminationReason
       failure = signal.aborted ? undefined : String(error.message || 'API Agent 执行失败')
       // Include observed outcomes in the next prompt; never resend an unmatched tool request.
       session.messages.push({ role: 'user', content: '上一回合中断或失败。不要自动重复终端操作；先检查实际状态。\n' + turn.items.filter(item => item.type === 'commandExecution').map(item => item.command + '\n' + (item.aggregatedOutput || '结果未知')).join('\n').slice(-12000) })
@@ -502,7 +503,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
       try { await this.store.save(session) } catch { turn.status = 'failed'; failure = '保存 API 会话失败；请检查配置目录权限和磁盘空间' }
       try { await job.release?.() } catch { turn.status = 'failed'; failure = 'Unable to release the session lock; inspect the session before continuing' }
       this.running.delete(session.id)
-      this.event(session.id, 'turn/completed', { turn: { id: turn.id, status: turn.status, ...(failure ? { error: { message: failure } } : {}) } })
+      this.event(session.id, 'turn/completed', { turn: { id: turn.id, status: turn.status, ...(turn.terminationReason ? { terminationReason: turn.terminationReason } : {}), ...(failure ? { error: { message: failure } } : {}) } })
     }
   }
 }
