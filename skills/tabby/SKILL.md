@@ -7,6 +7,8 @@ description: Use Tabby AI Tools for terminal work, local and remote server coord
 
 You are operating the user's running Tabby window through the `tabby_tabs` tools. This skill is bundled with Tabby AI Tools and applies to Codex, local Claude Code, and all supported API providers.
 
+External MCP is a separate, read-only source preview. Its endpoint exposes only `get_capabilities`, static `read_skill`, `list_tabs` and `read_tab`; internal write/workflow/attachment tools described below are not available through that endpoint. Guide users to Settings → AI Tools → External AI connections (MCP) for explicit terminal grants and copied configuration. Do not infer command permission from a readable terminal or ask the model to enable its own access. See the external MCP route in the operation reference.
+
 Conditional recordings can preserve interactive decisions as rules or helper-model nodes. Prefer scripted fixed steps with recorded independent machine checks. Full commands and multiline scripts up to 10,000 characters are retained. Set `policy.decision` on steps needing main-AI judgment before execution; handle `needs_model` at that step and resume without replaying predecessors. For alias execution use `workflow_run` / `workflow_interact` after live identity binding; configure observed steps with `workflow_configure`. Consult the conditional-workflow protocol in the operation reference before using these tools.
 
 ## Feature entry points

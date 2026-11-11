@@ -222,3 +222,13 @@ See [installation recovery and SSH process identity](codex-installation-recovery
 ### v0.9.4 navigation outcomes
 
 `agent-conversation-state.ts` resolves task evidence separately from transport status. Ordinary interruptions are pale green; only confirmed user Stop, unfinished goals and execution limits are red. Completed turns await goal observation; external blockers are blue. API turns retain typed termination causes; Claude native result subtypes identify execution limits. Snapshots use v2 storage with v1 fallback, downgrading unclassified legacy failures. Goal reads are guarded against later turns and goal events; navigation does not invoke providers or replay tools.
+
+## MCP 只读预览开发增量（未发布）
+
+`runtime/mcp` 独立于 Angular TS 4.9，使用 `typescript-pi` 对应的 TS 5.9 做类型检查。`scripts/build-mcp.mjs` 将官方 SDK server/core、Node adapter 和 schema 依赖打入 `dist/mcp/utility.cjs`，main 协调器为 `electron-host.cjs`，附上 `THIRD_PARTY_NOTICES.txt`；生产包不安装 SDK，也没有新增安装脚本。`mcp:build` 纳入 build/pretest；MCP 运行在 Electron utilityProcess，PATH 为空，没有系统 Node 回退。
+
+main 从 Tabby 主进程的 `TABBY_CONFIG_DIRECTORY`（缺省 userData）取 canonical 配置空间，不接受 renderer/HTTP 传入路径或窗口路由。实际 Electron IPC sender、顶层 frame 与 Tabby document URL 校验后注册 renderer。main 管理持久 token 摘要、空初始范围、不透明目标与授权代际，utility 只持有最小认证快照，renderer 在读取前后再验证实际 session/stream 与范围。snapshot/delta cursor 绑定客户端、revision、target、stream，客户端不能指定内部 owner/log scope。范围变更、取消、异常和退出不重放请求；只读代码不调用 Tabby 输入工具。
+
+`src/mcp.service.ts` 从模块启动，设置关闭时不监听网络；`mcp-terminals.ts` 按授权引用计数 watch/unwatch 并取消等待。`mcp-settings.*` 是现有 Settings 内的可折叠分组；`mcp-client-config.ts` 仅生成复制预览，不写客户端文件。新增 MCP 界面文案在简体中文以外可使用英文回退，既有语言选择与翻译不变。权限与端口写入私有文件，终端范围不跨重启恢复。
+
+`test/mcp.test.js` 覆盖官方 SDK 实际 HTTP 和真实输出服务，`mcp-electron.test.js` 覆盖可信路由／双窗口／崩溃／端口与撤销竞态；它们不能替代真实桌面。Linux Tabby/Codex 无模型真实终端闭环已取得；真实 Cursor／Claude、Windows/macOS、SSH 和旧宿主待补。更新后的 overview 是示意图，明确标注未发布与示例，不能冒充运行截图。

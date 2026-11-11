@@ -137,6 +137,8 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 
 ## 安装与开始使用
 
+**源码未发布预览：外部 MCP 只读连接。** 在「设置 → AI Tools → 外部 AI 连接（MCP）」启用服务、添加命名客户端并勾选终端后，外部客户端可读取真实终端快照、增量输出并有界等待。每个客户端有独立凭据，初始范围为空，取消勾选立即撤销；复用 Tabby 内置运行时，侧栏关闭仍可读取。配置片段需要手动复制合并。Linux 真实 Tabby/Codex 读取已验证，Cursor／Claude 客户端及其他桌面仍待验。已发布的 0.9.4 包不含该预览，当前不支持命令执行。[配置与边界](docs/mcp.md)。
+
 1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完成后点击设置页的重启提示（**Restart the app to apply changes**）；安装和升级均在重启后生效。
 2. 使用本机 Codex 登录，或在 **Settings → AI Tools** 添加 API 连接。
 3. 重启后 AI Tools 会默认自动打开。打开目标终端，在侧栏输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。收起后可点击工具栏机器人图标重新打开；如需关闭自动打开，在 **Settings → AI Tools** 取消勾选 **启动 Tabby 时自动打开 AI Tools**。已明确关闭的配置会保留。

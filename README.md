@@ -137,6 +137,8 @@ Use `/schedules` to inspect plans and run records, pause or resume, run immediat
 
 ## Install and start
 
+**Unreleased source preview — external MCP:** Settings → AI Tools → External AI connections (MCP) can expose explicitly selected terminals to a local client for read-only snapshots, deltas and bounded waits. Each named client gets an independent credential; scope starts empty and can be revoked immediately. It uses Tabby's built-in runtime and works with the sidebar closed. Configuration snippets are copied manually. Real Tabby/Codex terminal reading has been verified on Linux; Cursor/Claude client acceptance and other desktops remain pending. This preview is not included in the published 0.9.4 package and does not execute commands. [Setup and limits](docs/mcp.md).
+
 1. In Tabby, open **Settings → Plugins**, find **`tabby-ai-tools`**, and install it. Click Tabby's **Restart the app to apply changes** prompt when ready; installations and updates take effect after the restart.
 2. Use your local Codex login, or add an API connection under **Settings → AI Tools**.
 3. AI Tools opens automatically after restart. Open the target terminal, describe a task in the sidebar, and send with **Ctrl+Enter / Cmd+Enter**. Use the robot icon to reopen a hidden sidebar. To disable automatic opening, uncheck **Open AI Tools when Tabby starts** in **Settings → AI Tools**; an existing opt-out is preserved.

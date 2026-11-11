@@ -52,13 +52,13 @@ try {
   const installed = join(destination, 'node_modules', manifest.name)
   const actual = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'))
   assert.equal(actual.version, manifest.version)
-  for (const name of ['dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt']) {
+  for (const name of ['dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt', 'dist/mcp/utility.cjs', 'dist/mcp/electron-host.cjs', 'dist/mcp/THIRD_PARTY_NOTICES.txt']) {
     assert.ok(readFileSync(join(installed, name)).length, `Missing packaged runtime: ${name}`)
   }
   // Inspect the entire installed production closure, not only root dependencies.
   const inspect = directory => {
     const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
-    assert.doesNotMatch(pkg.name, /(?:^@earendil-works\/pi-|^protobufjs$|^@google\/genai$)/)
+    assert.doesNotMatch(pkg.name, /(?:^@earendil-works\/pi-|^@modelcontextprotocol\/|^protobufjs$|^@google\/genai$)/)
     for (const hook of ['preinstall', 'install', 'postinstall']) assert.ok(!pkg.scripts?.[hook], `${pkg.name} has an install hook: ${hook}`)
     inspectModules(join(directory, 'node_modules'))
   }

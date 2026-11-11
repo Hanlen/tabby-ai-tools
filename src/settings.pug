@@ -30,6 +30,9 @@
       span#agent-terminal-logs-hint.settings-muted {{t("仅保存任务访问的终端输出，本机保留 7 天；输出可能含敏感信息。关闭后停止新增保存。")}}
     input#agent-terminal-logs(type='checkbox', [(ngModel)]='settings.terminalLogsEnabled', (ngModelChange)='save()', aria-describedby='agent-terminal-logs-hint')
   p.settings-notice(role='status', *ngIf='notice') {{t(notice)}}
+  details.settings-mcp
+    summary {{t("外部 AI 连接（MCP）")}}
+    tabby-mcp-settings
   .settings-workspace
     nav.connection-nav([attr.aria-label]='t("AI 连接列表")')
       .connection-nav-heading

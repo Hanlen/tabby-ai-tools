@@ -21,12 +21,15 @@ import { TabbyCapabilitiesService } from './tabby-capabilities.service'
 import { ScheduledTasksService } from './scheduled-tasks.service'
 import { AgentI18nService } from './i18n.service'
 import { AttachmentTransferService } from './attachment-transfer.service'
+import { McpService } from './mcp.service'
+import { McpSettingsComponent } from './mcp-settings.component'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
-  declarations: [CodexPanelComponent, CodexSettingsComponent, MarkdownComponent, AgentConversationNavigationComponent],
+  declarations: [CodexPanelComponent, CodexSettingsComponent, MarkdownComponent, AgentConversationNavigationComponent, McpSettingsComponent],
   entryComponents: [CodexPanelComponent, CodexSettingsComponent],
   providers: [
+    McpService,
     AttachmentTransferService,
     AgentI18nService,
     CodexService,
@@ -45,5 +48,5 @@ import { AttachmentTransferService } from './attachment-transfer.service'
   ],
 })
 export default class CodexAgentModule {
-  constructor (runtime: CodexRuntimeService, schedules: ScheduledTasksService, i18n: AgentI18nService) { i18n.start(); runtime.start(); schedules.start() }
+  constructor (runtime: CodexRuntimeService, schedules: ScheduledTasksService, i18n: AgentI18nService, mcp: McpService) { i18n.start(); runtime.start(); schedules.start(); void mcp.start() }
 }
