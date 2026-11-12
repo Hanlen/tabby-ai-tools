@@ -2,13 +2,19 @@
   .mcp-heading
     label.mcp-check(for='mcp-enabled')
       input#mcp-enabled(type='checkbox', [checked]='state.enabled', [disabled]='busy', (change)='toggle($any($event.target).checked, $any($event.target))')
-      strong {{t("启用本机 MCP 只读服务")}}
+      strong {{t("启用本机 MCP 服务")}}
     button.btn.btn-outline-secondary(type='button', (click)='refresh()', [disabled]='busy') {{t("刷新")}}
-  p.mcp-muted {{t("让外部 AI 客户端读取你明确授权的 Tabby 终端；无需配置侧栏模型。当前预览不提供终端输入或命令执行。")}}
+  p.mcp-muted {{t("让外部 AI 客户端读取或操作明确授权的终端，无需侧栏模型。客户端默认为只读；写入需另选批准或自动操作模式。")}}
   p.mcp-status(role='status', aria-live='polite') {{state.running ? t("服务已启动") : state.enabled ? t("服务未启动") : t("服务已关闭")}}
     code(*ngIf='state.endpoint') {{state.endpoint}}
   p.mcp-notice(role='alert', *ngIf='state.error') {{t(state.error)}}
   p.mcp-notice(role='status', aria-live='polite', *ngIf='notice') {{t(notice)}}
+  .mcp-discovery(*ngIf='state.discovery')
+    p.mcp-muted {{t("通用 Agent Skill：让支持技能的客户端发现 Tabby 的 MCP 接入方式；首次连接仍需独立凭据和终端授权。")}}
+    button.btn.btn-outline-secondary(type='button', (click)='installAgentSkill()', [disabled]='busy') {{t("安装／检查 Agent Skill")}}
+    p.mcp-muted(*ngFor='let item of state.discovery.skillInstallations') {{t(item.status)}} · {{item.path}}
+    p.mcp-muted {{t("发现记录（不含凭据）")}}: {{state.discovery.registry}}
+    p.mcp-notice(role='status', *ngIf='state.discovery.error') {{state.discovery.error}}
   .mcp-port(*ngIf='!state.enabled')
     label(for='mcp-port') {{t("本机端口（0 表示首次自动选择）")}}
     input#mcp-port.form-control(type='number', min='0', max='65535', [(ngModel)]='port', [disabled]='busy')
@@ -23,7 +29,23 @@
       label(for='mcp-client') {{t("管理客户端")}}
       select#mcp-client.form-control([ngModel]='selectedId', (ngModelChange)='select($event)', [disabled]='busy')
         option(*ngFor='let client of state.clients', [value]='client.id') {{client.name}}
+    .mcp-approvals(*ngFor='let approval of state.approvals')
+      p.mcp-notice(role='alert') {{t("待批准的终端操作")}} · {{approval.client}} · {{approval.title}} · {{t("窗口")}} {{approval.window}}
+      p.mcp-muted {{t("请在目标终端所在窗口批准。25 秒内有效；拒绝、撤销或超时均不自动重试。")}}
+      pre {{approval.tool}}: {{approval.input}}
+      .mcp-actions
+        button.btn.btn-primary(type='button', (click)='decide(approval.id, true)', [disabled]='busy') {{t("批准此操作")}}
+        button.btn.btn-outline-secondary(type='button', (click)='decide(approval.id, false)', [disabled]='busy') {{t("拒绝此操作")}}
+    .mcp-lease(*ngFor='let lease of state.leases')
+      p.mcp-muted {{t("当前输入控制")}} · {{lease.client}} · {{lease.title}} · {{t("窗口")}} {{lease.window}}
+      button.btn.btn-outline-secondary(type='button', (click)='releaseLease(lease.id)', [disabled]='busy') {{t("释放输入控制（不停止进程）")}}
     ng-container(*ngIf='selected')
+      label(for='mcp-mode') {{t("终端操作权限")}}
+      select#mcp-mode.form-control([ngModel]="selected.mode || 'read_only'", (ngModelChange)='setMode($event, modeInput)', #modeInput, [disabled]='busy')
+        option(value='read_only') {{t("只读")}}
+        option(value='confirm') {{t("每次操作确认")}}
+        option(value='auto') {{t("允许自动操作")}}
+      p.mcp-muted {{t("操作权限仅适用于该客户端已勾选的终端。自动操作按终端账户权限执行；不会自动中断已有任务。取消、释放或租约到期仅解锁输入，不终止进程。")}}
       p.mcp-muted {{t("最近请求")}}: {{selected.lastSeen || t("尚未收到客户端请求")}} · {{t("最近请求不代表持续在线。")}}
       fieldset.mcp-targets([disabled]='busy')
         legend {{t("允许读取的终端")}}

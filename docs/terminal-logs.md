@@ -1,6 +1,8 @@
 # Terminal streaming and task logs
 
-`read_tab` keeps its existing screen-reading behavior. Use `mode="delta"` to read new terminal stream text, then pass the returned `nextCursor` unchanged on the next call. Start without a cursor to establish a baseline. Use `maxChars` (2–20,000) for bounded pages; follow `hasMore` before waiting again.
+**Unreleased source improvement:** default `read_tab` snapshots wake on new output or reliable shell completion, with about 50 ms for rendering/burst coalescing and a 200 ms coalescing cap for continuous output. A task also sees unread output received after its own input and before the read; a successful snapshot advances that task's observation baseline. Other observers do not consume this baseline, and stdin/keys rearm it. No output means waiting up to `waitMs` (default 1000 ms when controlled, otherwise 0); explicit zero remains immediate. Snapshot `wakeReason` and `waitedMs` explain the wait. Output is not completion: multiline batches retain ownership even at intermediate prompts. Explicit `waitFor` and delta cursors keep their existing policies.
+
+`read_tab` reads the current screen by default. Use `mode="delta"` to read new terminal stream text, then pass the returned `nextCursor` unchanged on the next call. Start without a cursor to establish a baseline. Use `maxChars` (2–20,000) for bounded pages; follow `hasMore` before waiting again.
 
 ```json
 {"tabId":"tab-2","mode":"delta","cursor":"<nextCursor>","waitFor":"either","waitMs":10000}

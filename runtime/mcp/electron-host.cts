@@ -2,6 +2,8 @@ import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { McpPolicy, failure, randomId } from './policy.cjs'
+import { McpDiscovery } from './discovery.cjs'
+declare const TABBY_MCP_VERSION: string
 
 const { app, ipcMain, utilityProcess } = require('electron')
 const CHANNEL = 'tabby-ai-mcp-v1'
@@ -12,19 +14,41 @@ export function install () {
   if (!app.isReady() || typeof utilityProcess?.fork !== 'function' || Number(process.versions.node.split('.')[0]) < 20) throw new Error('MCP requires a Tabby host with Node 20+ and utilityProcess support')
   // The config-space key and renderer identity come from the host, never HTTP.
   const configSpace = realpathSync(process.env.TABBY_CONFIG_DIRECTORY || app.getPath('userData'))
+  const discovery = new McpDiscovery(app.getPath('home'), configSpace, join(__dirname, '../../skills/tabby-mcp'), TABBY_MCP_VERSION)
+  let skillInstallations: ReturnType<McpDiscovery['installSkill']> = [], discoveryError = ''
+  const installSkill = () => { try { skillInstallations = discovery.installSkill(); discoveryError = '' } catch { discoveryError = 'Agent skill could not be installed; the bundled skill can be copied manually.' } }
+  installSkill()
   const policy = new McpPolicy(join(configSpace, 'ai-tools-mcp'))
   const expectedUrl = pathToFileURL(join(app.getAppPath(), 'dist/index.html')).href
   const owners = new Map<number, { sender: any; cleanup: () => void }>()
   const controls = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-  const observations = new Map<string, { sender: any; target: string; clientId: string; revision: number; reject: (error: Error) => void; resolve: (value: any) => void; timer: ReturnType<typeof setTimeout>; callId: string }>()
+  const leases = new Map<string, { id: string; clientId: string; revision: number; targetId: string; sender: any; expiresAt: number; timer: ReturnType<typeof setTimeout> }>()
+  const observations = new Map<string, { leaseId?: string; sent?: boolean; approval?: { client: string; title: string; tool: string; input: string; expiresAt: number }; launch?: () => void; sender: any; target: string; clientId: string; revision: number; reject: (error: Error) => void; resolve: (value: any) => void; timer: ReturnType<typeof setTimeout>; callId: string }>()
   const exits = new WeakMap<object, Promise<void>>(), exitedChildren = new WeakSet<object>()
   let child: any, faulted: any, port = 0, error = '', utilityNode = '', chain = Promise.resolve(), stopping: Promise<void> | undefined
   const trusted = (event: any) => {
     try { return !event.sender.isDestroyed() && event.senderFrame === event.sender.mainFrame && event.sender.getURL() === expectedUrl } catch { return false }
   }
   const enqueue = <T,>(action: () => Promise<T>): Promise<T> => { const next = chain.then(action); chain = next.then(() => undefined, () => undefined); return next }
-  const state = () => ({ ...policy.publicState(), running: !!child && !faulted && !!port, port: policy.port, endpoint: port ? `http://127.0.0.1:${port}/mcp` : '', error, hostNode: process.versions.node, utilityNode })
-  const clearScopes = () => { for (const client of policy.clients.values()) { client.targets.clear(); client.revision++ } }
+  const state = () => ({ ...policy.publicState(), discovery: { registry: discovery.registry, skillInstallations, error: discoveryError }, approvals: [...observations].filter(([,o]) => o.approval).map(([id,o]) => ({ id, ...o.approval, target: o.target, window: o.sender.id })), leases: [...leases.values()].map(l => ({ id: l.id, client: policy.clients.get(l.clientId)?.name || '', target: l.targetId, title: policy.targets.get(l.targetId)?.title || '', window: l.sender.id, expiresAt: l.expiresAt })), running: !!child && !faulted && !!port, port: policy.port, endpoint: port ? `http://127.0.0.1:${port}/mcp` : '', error, hostNode: process.versions.node, utilityNode })
+  const releaseLease = (id: string) => {
+    const lease = leases.get(id)
+    if (!lease) return
+    leases.delete(id); clearTimeout(lease.timer)
+    sendRenderer(lease.sender, { type: 'release', leaseId: id })
+  }
+  const touchLease = (id: string) => {
+    const lease = leases.get(id)
+    if (!lease) return
+    clearTimeout(lease.timer); lease.expiresAt = Date.now() + 120000
+    lease.timer = setTimeout(() => {
+      releaseLease(id)
+      for (const [key, item] of observations) if (item.leaseId === id) cancelObservation(key, 'lease_expired')
+      synchronize()
+    }, 120000)
+    lease.timer.unref?.()
+  }
+  const clearScopes = () => { for (const id of leases.keys()) releaseLease(id); for (const client of policy.clients.values()) { client.targets.clear(); client.revision++ } }
   const rejectControls = () => {
     for (const waiter of controls.values()) { clearTimeout(waiter.timer); waiter.reject(new Error('MCP process unavailable')) }
     controls.clear()
@@ -34,13 +58,15 @@ export function install () {
     if (!item) return
     observations.delete(id); clearTimeout(item.timer)
     // Settle first: a disappearing renderer must not strand this promise.
-    item.reject(failure(code))
+    item.reject(failure(item.sent && item.leaseId ? 'unknown_outcome' : code))
+    if (item.leaseId) releaseLease(item.leaseId)
     if (notify) sendRenderer(item.sender, { type: 'cancel', id })
   }
   const dropOwner = (id: number) => {
     const owner = owners.get(id)
     if (!owner) return
     owner.cleanup(); owners.delete(id); policy.removeOwner(id)
+    for (const [key, lease] of leases) if (lease.sender === owner.sender) { leases.delete(key); clearTimeout(lease.timer) }
     for (const [key, item] of observations) if (item.sender === owner.sender) cancelObservation(key, 'target_closed', false)
   }
   const sendRenderer = (sender: any, message: any): boolean => {
@@ -73,13 +99,18 @@ export function install () {
     }
   }
   const synchronize = () => {
+    try { discovery.update(state()) } catch { discoveryError = 'Agent discovery could not be saved; MCP access is unchanged.' }
     if (child && !faulted) postChild(child, { type: 'update', snapshot: policy.snapshot() })
+    for (const [id, lease] of leases) {
+      try { const client = policy.authorize(lease.clientId, lease.revision, lease.targetId); if (client.mode === 'read_only' || faulted) throw failure('permission_denied') } catch { releaseLease(id) }
+    }
     for (const [id, item] of observations) {
       try { policy.authorize(item.clientId, item.revision, item.target) } catch { cancelObservation(id, 'permission_denied') }
     }
     for (const owner of owners.values()) sendRenderer(owner.sender, {
       type: 'state', state: state(),
-      grants: policy.enabled && !faulted ? [...policy.clients.values()].flatMap(c => [...c.targets].map(id => policy.targets.get(id)).filter(t => t?.owner === owner.sender.id).map(t => ({ clientId: c.id, revision: c.revision, targetId: t!.id, key: t!.key, session: t!.session }))) : [],
+      leases: [...leases.values()].filter(l => l.sender === owner.sender).map(l => { const target = policy.targets.get(l.targetId)!; return { id: l.id, clientId: l.clientId, revision: l.revision, targetId: l.targetId, key: target.key, session: target.session, expiresAt: l.expiresAt } }),
+      grants: policy.enabled && !faulted ? [...policy.clients.values()].flatMap(c => [...c.targets].map(id => policy.targets.get(id)).filter(t => t?.owner === owner.sender.id).map(t => ({ clientId: c.id, mode: c.mode, revision: c.revision, targetId: t!.id, key: t!.key, session: t!.session }))) : [],
     })
   }
   const control = (type: string, data: any = {}) => new Promise<any>((resolve, reject) => {
@@ -95,19 +126,52 @@ export function install () {
     if (faulted || !port) throw failure('cancelled')
     const client = policy.authorize(message.clientId, message.revision)
     if (message.tool === 'list_tabs') return [...client.targets].map(id => policy.targets.get(id)).filter(Boolean).map(t => ({ tabId: t!.id, title: t!.title }))
-    if (message.tool !== 'read_tab' || !message.args || typeof message.args.tabId !== 'string') throw failure('permission_denied')
+    const writing = ['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(message.tool)
+    if ((!writing && message.tool !== 'read_tab') || !message.args || typeof message.args.tabId !== 'string') throw failure('permission_denied')
     policy.authorize(message.clientId, message.revision, message.args.tabId)
     const target = policy.targets.get(message.args.tabId)!, owner = owners.get(target.owner)
     if (!owner) throw failure('target_closed')
     if (observations.size >= 16) throw failure('busy')
+    let lease!: typeof leases extends Map<any, infer V> ? V : never
+    if (writing) {
+      if (client.mode === 'read_only') throw failure('permission_denied')
+      if (message.args.leaseId) {
+        const existing = leases.get(message.args.leaseId)
+        if (!existing || existing.clientId !== client.id || existing.revision !== client.revision || existing.targetId !== target.id || existing.expiresAt <= Date.now()) throw failure('invalid_lease')
+        lease = existing
+        if ([...observations.values()].some(o => o.leaseId === lease.id)) throw failure('busy')
+      } else {
+        if (message.tool !== 'attach_process' && !(message.tool === 'send_input' && message.args.mode !== 'stdin')) throw failure('invalid_lease')
+        if ([...leases.values()].some(l => l.targetId === target.id)) throw failure('busy')
+        lease = { id: randomId(), clientId: client.id, revision: client.revision, targetId: target.id, sender: owner.sender, expiresAt: 0, timer: undefined as any }
+        leases.set(lease.id, lease); touchLease(lease.id)
+      }
+    }
     const value = await new Promise<any>((resolve, reject) => {
-      const id = randomId(), timer = setTimeout(() => cancelObservation(id, 'observation_timeout'), 32000)
-      observations.set(id, { sender: owner.sender, target: target.id, clientId: client.id, revision: client.revision, resolve, reject, timer, callId: message.id })
-      if (!sendRenderer(owner.sender, { type: 'read', id, clientId: client.id, revision: client.revision, targetId: target.id, key: target.key, session: target.session, args: message.args })) cancelObservation(id, 'target_closed', false)
-    })
+      const id = randomId(), confirm = writing && message.tool !== 'release_tab' && client.mode === 'confirm'
+      const timer = setTimeout(() => { cancelObservation(id, confirm ? 'approval_timeout' : 'observation_timeout'); synchronize() }, confirm ? 25000 : 32000)
+      const item = { sender: owner.sender, target: target.id, clientId: client.id, revision: client.revision, resolve, reject, timer, callId: message.id, leaseId: writing ? lease.id : undefined, sent: false, approval: undefined as any, launch: undefined as (() => void) | undefined }
+      item.launch = () => {
+        item.approval = undefined; clearTimeout(item.timer)
+        item.timer = setTimeout(() => { cancelObservation(id, 'observation_timeout'); synchronize() }, 32000)
+        try { policy.authorize(client.id, client.revision, target.id); if (writing && !leases.has(lease.id)) throw failure('invalid_lease') }
+        catch { cancelObservation(id, 'permission_denied'); return }
+        item.sent = true
+        if (!sendRenderer(owner.sender, { type: writing ? 'execute' : 'read', id, tool: message.tool, leaseId: item.leaseId, clientId: client.id, revision: client.revision, targetId: target.id, key: target.key, session: target.session, args: message.args })) cancelObservation(id, 'target_closed', false)
+      }
+      observations.set(id, item)
+      if (confirm) item.approval = { client: client.name, title: target.title, tool: message.tool, input: JSON.stringify(message.args, null, 2), expiresAt: Date.now() + 25000 }
+      synchronize()
+      if (!confirm && observations.has(id)) item.launch()
+    }).catch(error => { if (writing) { releaseLease(lease.id); synchronize() }; throw error })
+    if (writing) {
+      if (message.tool === 'release_tab' || value.sent === false) releaseLease(lease.id)
+      else touchLease(lease.id)
+      synchronize()
+    }
     policy.authorize(message.clientId, message.revision, target.id)
     if (policy.targets.get(target.id) !== target) throw failure('target_stale')
-    return value
+    return writing ? { ...value, tabId: target.id, ...(leases.has(lease.id) ? { leaseId: lease.id, leaseExpiresAt: lease.expiresAt } : {}) } : value
   }
   const start = async () => {
     if (stopping) await stopping
@@ -139,6 +203,7 @@ export function install () {
         void dispatch(message).then(value => { postChild(own, { type: 'tool-result', id: message.id, value }) }, (error: any) => { postChild(own, { type: 'tool-result', id: message.id, error: error.code || 'internal_error' }) })
       } else if (message.type === 'cancel') {
         for (const [id, item] of observations) if (item.callId === message.id) cancelObservation(id, 'cancelled')
+        synchronize()
       } else if (message.type === 'activity' && !faulted) {
         const client = policy.clients.get(message.clientId)
         if (client) { client.lastSeen = new Date().toISOString(); synchronize() }
@@ -160,6 +225,7 @@ export function install () {
   }
   const stop = (): Promise<void> => stopping ||= (async () => {
     port = 0
+    for (const id of leases.keys()) releaseLease(id)
     for (const id of observations.keys()) cancelObservation(id, 'cancelled')
     const own = child
     if (!own || exitedChildren.has(own)) return
@@ -211,7 +277,20 @@ export function install () {
     }
     if (!owners.has(sender.id)) throw new Error('MCP renderer is not registered')
     let value: any
-    if (message.type === 'targets') { policy.register(sender.id, message.targets); synchronize() }
+    if (message.type === 'install-agent-skill') installSkill()
+    else if (message.type === 'decide') {
+      const item = observations.get(message.id)
+      if (!item?.approval || item.sender !== sender) throw failure('permission_denied')
+      if (item.approval.expiresAt <= Date.now()) cancelObservation(message.id, 'approval_timeout')
+      else if (message.accept === true) item.launch?.()
+      else cancelObservation(message.id, 'approval_denied')
+    } else if (message.type === 'release-lease') {
+      const lease = leases.get(message.id)
+      if (!lease || lease.sender !== sender) throw failure('permission_denied')
+      for (const [id, item] of observations) if (item.leaseId === lease.id) cancelObservation(id, 'cancelled')
+      releaseLease(lease.id)
+    } else if (message.type === 'mode') { policy.setMode(message.id, message.mode); await commit() }
+    else if (message.type === 'targets') { policy.register(sender.id, message.targets); synchronize() }
     else if (message.type === 'state') return state()
     else if (message.type === 'enabled') {
       policy.enabled = message.enabled === true
@@ -230,6 +309,6 @@ export function install () {
     else throw new Error('Unknown MCP action')
     synchronize(); return value ?? state()
   }))
-  app.once('before-quit', () => { try { child?.kill() } catch { /* Application shutdown also reaps the utility. */ } })
+  app.once('before-quit', () => { try { discovery.update({ enabled: policy.enabled, running: false, endpoint: '' }) } catch { /* Discovery is a hint, never authority. */ }; try { child?.kill() } catch { /* Application shutdown also reaps the utility. */ } })
   globalState[singleton] = true
 }

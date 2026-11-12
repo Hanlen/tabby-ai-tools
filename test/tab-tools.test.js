@@ -42,6 +42,7 @@ require.extensions['.ts'] = (module, filename) => {
   module._compile(output, filename)
 }
 const { TabbyTabToolsService, TAB_TOOLS } = require('../src/tab-tools.ts')
+const { CodexTerminalOutputService } = require('../src/terminal-output.service.ts')
 const { ScheduledTaskStore } = require('../src/scheduled-tasks.ts')
 const { ScheduledWorkflowRunner } = require('../src/scheduled-workflow-runner.ts')
 Module._load = originalLoad
@@ -93,6 +94,171 @@ test('Codex dynamic tool definitions contain the Tabby operations', () => {
   const names = TAB_TOOLS[0].tools.map(tool => tool.name)
   for (const name of ['list_tabs', 'read_tab', 'select_tab', 'send_input', 'release_tab', 'interact_tab', 'get_capabilities', 'read_skill', 'open_profile', 'run_command', 'split_tab']) assert.ok(names.includes(name))
   assert.equal(names.length, new Set(names).size)
+})
+
+function snapshotLatencyFixture (t) {
+  const terminal = new FakeTerminal('Observe', ['ready'])
+  let text = '', unmask
+  const app = { tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
+  const output = new CodexTerminalOutputService(app)
+  const tools = new TabbyTabToolsService(app, output)
+  const controller = new AbortController(), context = { owner: 'observer', signal: controller.signal }
+  t.after(() => { controller.abort(); tools.ngOnDestroy() })
+  return { terminal, output, tools, context, controller,
+    suppress (value) { if (value) unmask = output.suppress(terminal); else unmask?.() },
+    emit (value) {
+      text += value
+      terminal.frontend.xterm.buffer.active.getLine = () => ({ translateToString: () => text })
+      terminal.session.output$.next(value)
+    },
+  }
+}
+
+for (const beforeRead of [false, true]) test(`snapshot wakes on unread output without shell integration (already arrived: ${beforeRead})`, { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, f.context)
+  if (beforeRead) f.emit('/workspace')
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  if (!beforeRead) setTimeout(() => f.emit('/workspace'), 20)
+  const view = await pending
+  assert.equal(view.text, '/workspace')
+  assert.equal(view.wakeReason, 'output')
+  assert.ok(view.waitedMs < 1000)
+  assert.equal(view.commandState, 'unknown')
+  assert.equal(view.controlledByAI, true, 'output is not completion and must not release ownership')
+  const quiet = await f.tools.call('read_tab', { tabId, waitMs: 100 }, f.context)
+  assert.equal(quiet.wakeReason, 'timeout', 'already observed output cannot repeatedly wake a read')
+  assert.ok(quiet.waitedMs >= 80)
+  assert.equal(f.output.updates$.observers.length, 0)
+  assert.deepEqual(f.terminal.sent, ['pwd\r'], 'observing never replays input')
+})
+
+test('multiline output returns promptly while retaining the batch lock after intermediate prompts', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'echo first\nsleep 3600', submit: true }, f.context)
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  setTimeout(() => f.emit('\x1b]133;C\x07first\x1b]133;D;0\x07\x1b]133;A\x07'), 20)
+  const view = await pending
+  assert.equal(view.wakeReason, 'output')
+  assert.ok(view.waitedMs < 1000)
+  assert.equal(view.controlledByAI, true)
+  assert.equal((await f.tools.call('send_input', { tabId, text: 'do not run', submit: true }, f.context)).blocked, true)
+  assert.deepEqual(f.terminal.sent, ['echo first\nsleep 3600\r'])
+})
+
+test('continuous output has a bounded snapshot render delay', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'tail -f log', submit: true }, f.context)
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  const timer = setInterval(() => f.emit('line\n'), 10)
+  t.after(() => clearInterval(timer))
+  const view = await pending
+  clearInterval(timer)
+  assert.equal(view.wakeReason, 'output')
+  assert.ok(view.waitedMs < 800, 'continuous output must not indefinitely postpone the read')
+  assert.equal(view.controlledByAI, true)
+})
+
+test('snapshot observation remains isolated by owner and rearms after stdin', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'read answer', submit: true }, f.context)
+  f.emit('Question?')
+  const other = await f.tools.call('read_tab', { tabId, waitMs: 20 }, { owner: 'other' })
+  assert.equal(other.wakeReason, 'timeout', 'another observer must not inherit pending input output')
+  const own = await f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  assert.equal(own.wakeReason, 'output', 'another observer must not consume the owner baseline')
+  await f.tools.call('send_input', { tabId, text: 'answer', mode: 'stdin', submit: true }, f.context)
+  const quiet = await f.tools.call('read_tab', { tabId, waitMs: 20 }, f.context)
+  assert.equal(quiet.wakeReason, 'timeout', 'a previous prompt cannot wake the next interaction')
+  f.emit('Accepted')
+  const next = await f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  assert.equal(next.wakeReason, 'output')
+  assert.deepEqual(f.terminal.sent, ['read answer\r', 'answer\r'])
+})
+
+test('private output cannot wake default snapshots and cancellation removes listeners', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, f.context)
+  f.suppress(true)
+  f.emit('private payload')
+  const view = await f.tools.call('read_tab', { tabId, waitMs: 30 }, f.context)
+  assert.equal(view.text.includes('private payload'), false)
+  assert.equal(view.wakeReason, 'timeout')
+  f.suppress(false)
+  await f.tools.call('read_tab', { tabId, waitMs: 0 }, f.context)
+  const controls = f.tools.controls$.observers.length, lifecycle = f.output.lifecycle$.observers.length
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  f.controller.abort()
+  await assert.rejects(pending, /stopped/)
+  assert.equal(f.output.updates$.observers.length, 0)
+  assert.equal(f.output.lifecycle$.observers.length, lifecycle)
+  assert.equal(f.tools.controls$.observers.length, controls)
+  assert.deepEqual(f.terminal.sent, ['pwd\r'])
+})
+
+test('snapshot reads cwd and process metadata concurrently', async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  let finishCwd, finishProcesses
+  f.terminal.session.getWorkingDirectory = () => new Promise(resolve => { finishCwd = resolve })
+  f.terminal.session.getChildProcesses = () => new Promise(resolve => { finishProcesses = resolve })
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 0 }, f.context)
+  try {
+    assert.equal(typeof finishCwd, 'function')
+    assert.equal(typeof finishProcesses, 'function', 'process inspection must start before cwd resolves')
+  } finally { finishCwd?.('/workspace'); finishProcesses?.([]) }
+  assert.equal((await pending).server.cwd, '/workspace')
+})
+
+test('a failed snapshot does not consume unread output', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, f.context)
+  f.emit('workspace')
+  const buffer = f.terminal.frontend.xterm.buffer.active, readLine = buffer.getLine
+  buffer.getLine = () => { throw new Error('renderer temporarily unavailable') }
+  await assert.rejects(f.tools.call('read_tab', { tabId, waitMs: 0 }, f.context), /temporarily unavailable/)
+  buffer.getLine = readLine
+  const recovered = await f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  assert.equal(recovered.wakeReason, 'output')
+  assert.equal(recovered.text, 'workspace')
+  assert.deepEqual(f.terminal.sent, ['pwd\r'])
+})
+
+test('overlapping snapshots never move the observation baseline backwards', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'tail -f log', submit: true }, f.context)
+  f.emit('first')
+  let finishCwd
+  f.terminal.session.getWorkingDirectory = () => new Promise(resolve => { finishCwd = resolve })
+  const slow = f.tools.call('read_tab', { tabId, waitMs: 0 }, f.context)
+  f.emit('second')
+  f.terminal.session.getWorkingDirectory = async () => '/workspace'
+  await f.tools.call('read_tab', { tabId, waitMs: 0 }, f.context)
+  finishCwd('/workspace')
+  await slow
+  assert.equal((await f.tools.call('read_tab', { tabId, waitMs: 20 }, f.context)).wakeReason, 'timeout')
+})
+
+test('changing terminal sessions stops snapshot waits and discards old observation baselines', { timeout: 3000 }, async t => {
+  const f = snapshotLatencyFixture(t)
+  const tabId = (await f.tools.call('list_tabs', {}))[0].id
+  await f.tools.call('send_input', { tabId, text: 'pwd', submit: true }, f.context)
+  const pending = f.tools.call('read_tab', { tabId, waitMs: 10000 }, f.context)
+  f.terminal.session = { open: true, output$: new Subject(), getChildProcesses: async () => [] }
+  f.terminal.sessionChanged$.next(f.terminal.session)
+  const view = await pending
+  assert.equal(view.wakeReason, 'session_changed')
+  assert.equal(view.controlledByAI, false)
+  assert.equal(view.commandState, 'unknown')
+  assert.equal(f.output.updates$.observers.length, 0)
+  assert.deepEqual(f.terminal.sent, ['pwd\r'])
 })
 
 test('terminal transport sends a 10000-character command intact and rejects larger input before writing', async () => {
@@ -258,7 +424,7 @@ test('stopping during automatic interruption prevents a late command', async () 
   const terminal = new FakeTerminal('Build', [])
   terminal.children = [{ pid: 123, command: 'build' }]
   const tools = new TabbyTabToolsService({ tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() },
-    { watch () {}, unwatch () {} })
+    { watch () {}, unwatch () {}, cursor: () => 0 })
   try {
     const [{ id: tabId }] = await tools.call('list_tabs', {})
     const controller = new AbortController()
@@ -588,7 +754,7 @@ test('verified local attachment releases after the owned process actually disapp
 test('sudo workflow preflight is injected into its target terminal and cleaned up on task release', async () => {
   const tab = new FakeTerminal('Local', [])
   const app = { tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
-  const output = { watch () {}, unwatch () {} }
+  const output = { watch () {}, unwatch () {}, cursor: () => 0 }
   const tools = new TabbyTabToolsService(app, output)
   try {
     const [{ id }] = await tools.call('list_tabs', {})
@@ -608,7 +774,7 @@ test('sudo cleanup waits for a remote shell prompt and never enters a foreground
   const tab = new FakeTerminal('Remote', [])
   tab.profile.type = 'ssh'
   const app = { tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
-  const tools = new TabbyTabToolsService(app, { watch () {}, unwatch () {} })
+  const tools = new TabbyTabToolsService(app, { watch () {}, unwatch () {}, cursor: () => 0 })
   try {
     const [{ id }] = await tools.call('list_tabs', {})
     await tools.call('send_input', { tabId: id, text: 'sudo ls', submit: true }, { owner: 'sudo-task', sudoLease: true })
@@ -629,7 +795,7 @@ test('terminal identity exposes stable connection IDs, IP and actual cwd without
   const tab = new FakeTerminal('Renamed terminal', [])
   tab.profile = { type: 'ssh', id: 'ssh-production', options: { host: '10.20.0.9', port: 2222, user: 'deploy', password: 'DO_NOT_EXPOSE', privateKey: 'PRIVATE_KEY_DATA', jumpHost: { password: 'NESTED_SECRET' } } }
   tab.session.getWorkingDirectory = async () => '/srv/application'
-  const tools = new TabbyTabToolsService({ tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, { watch () {}, unwatch () {} })
+  const tools = new TabbyTabToolsService({ tabs: [tab], tabsChanged$: new Subject(), activeTabChange$: new Subject() }, { watch () {}, unwatch () {}, cursor: () => 0 })
   try {
     const [{ id }] = await tools.call('list_tabs', {})
     const result = await tools.call('read_tab', { tabId: id, waitMs: 0 })
@@ -786,4 +952,42 @@ test('a reconnect or stop while SSH proof is pending cannot claim input or send 
     assert.equal(f.tools.controls$.value.length, 0)
     assert.deepEqual(f.terminal.sent, [])
   } finally { f.tools.ngOnDestroy() }
+})
+
+test('MCP disables automatic takeover for both known foreground processes and unknown inspection', async () => {
+  const { terminal, tools } = interactiveFixture()
+  try {
+    const context = { owner: 'mcp:lease', allowTakeover: false }
+    const args = { text: 'pwd', submit: true, foregroundTaskNeeded: false }
+    assert.equal((await tools.callTerminal('send_input', args, terminal, context)).blocked, true)
+    terminal.profile.type = 'ssh'
+    assert.equal((await tools.callTerminal('send_input', args, terminal, context)).blocked, true)
+    assert.deepEqual(terminal.sent, [])
+    assert.equal(tools.controls$.value.length, 0)
+  } finally { tools.ngOnDestroy() }
+})
+test('MCP final permission check after lock publication blocks input and restores the terminal', async () => {
+  const { terminal, tools } = interactiveFixture()
+  terminal.children = []
+  let authorized = true, attempts = 0
+  const watcher = tools.controls$.subscribe(controls => { if (controls.length) authorized = false })
+  try {
+    await assert.rejects(tools.callTerminal('send_input', { text: 'pwd', submit: true }, terminal, { owner: 'mcp:lease', allowTakeover: false, beforeInput: () => { if (!authorized) throw new Error('permission revoked') }, onInput: () => { attempts++ } }), /permission revoked/)
+    assert.equal(attempts, 0); assert.deepEqual(terminal.sent, []); assert.equal(tools.controls$.value.length, 0)
+  } finally { watcher.unsubscribe(); tools.ngOnDestroy() }
+})
+test('MCP and the sidebar share atomic input ownership and explicit Ctrl+C never targets another owner', async () => {
+  const { terminal, tools } = interactiveFixture()
+  terminal.children = []
+  try {
+    await tools.callTerminal('send_input', { text: 'sleep 30', submit: true }, terminal, { owner: 'sidebar' })
+    await assert.rejects(tools.callTerminal('send_input', { text: 'pwd', submit: true }, terminal, { owner: 'mcp:lease', allowTakeover: false }), /another/)
+    await assert.rejects(tools.callTerminal('send_keys', { key: 'c', ctrl: true }, terminal, { owner: 'mcp:lease', allowTakeover: false }), /owned/)
+    assert.deepEqual(terminal.sent, ['sleep 30\r'])
+    tools.releaseOwner('sidebar')
+    await tools.callTerminal('send_input', { text: 'read answer', submit: true }, terminal, { owner: 'mcp:lease', allowTakeover: false })
+    await tools.callTerminal('send_keys', { key: 'c', ctrl: true }, terminal, { owner: 'mcp:lease', allowTakeover: false })
+    assert.deepEqual(terminal.sent, ['sleep 30\r', 'read answer\r', '\x03'])
+    tools.releaseOwner('mcp:lease');terminal.sendInput('manual');assert.equal(terminal.sent.at(-1),'manual')
+  } finally { tools.ngOnDestroy() }
 })

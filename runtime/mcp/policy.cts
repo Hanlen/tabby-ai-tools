@@ -5,7 +5,8 @@ import { join } from 'node:path'
 export const failure = (code: string) => Object.assign(new Error(code), { code })
 export const randomId = () => randomBytes(24).toString('base64url')
 export const tokenDigest = (value: string) => createHash('sha256').update(value).digest('hex')
-export interface ClientGrant { id: string; name: string; digest: string; revision: number; targets: Set<string>; lastSeen?: string }
+export type McpMode = 'read_only' | 'confirm' | 'auto'
+export interface ClientGrant { mode: McpMode; id: string; name: string; digest: string; revision: number; targets: Set<string>; lastSeen?: string }
 export interface Target { id: string; owner: number; key: string; session: string; title: string }
 export class McpPolicy {
   enabled = false
@@ -28,7 +29,7 @@ export class McpPolicy {
       for (const item of data.clients) {
         if (typeof item.id !== 'string' || !/^[a-f0-9]{64}$/.test(item.digest) || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 80 || !Number.isSafeInteger(item.revision) || item.revision < 1) throw new Error('Invalid MCP client state')
         // A saved terminal name is never sufficient to restore access after restart.
-        this.clients.set(item.id, { ...item, targets: new Set(), revision: item.revision + 1, lastSeen: undefined })
+        this.clients.set(item.id, { ...item, targets: new Set(), mode: 'read_only', revision: item.revision + 1, lastSeen: undefined })
       }
     } catch (error: any) { if (error.code !== 'ENOENT') throw error }
   }
@@ -44,7 +45,7 @@ export class McpPolicy {
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 80) throw new Error('Client name must contain 1–80 characters')
     if (this.clients.size >= 32) throw new Error('At most 32 MCP clients are allowed')
     const id = randomId(), token = randomBytes(32).toString('base64url')
-    this.clients.set(id, { id, name: name.trim(), digest: tokenDigest(token), revision: 1, targets: new Set() })
+    this.clients.set(id, { id, name: name.trim(), digest: tokenDigest(token), revision: 1, mode: 'read_only', targets: new Set() })
     return { id, token }
   }
   rotate (id: string): { id: string; token: string } {
@@ -61,6 +62,11 @@ export class McpPolicy {
     if (!Array.isArray(targetIds) || targetIds.length > 256 || targetIds.some(id => typeof id !== 'string' || !this.targets.has(id))) throw failure('target_stale')
     const client = this.client(id)
     client.targets = new Set(targetIds); client.revision++
+  }
+  setMode (id: string, mode: McpMode): void {
+    if (!['read_only', 'confirm', 'auto'].includes(mode)) throw failure('permission_denied')
+    const client = this.client(id)
+    client.mode = mode; client.revision++
   }
   removeTarget (id: string): void {
     this.targets.delete(id)
@@ -83,8 +89,8 @@ export class McpPolicy {
     if (targetId && (!client.targets.has(targetId) || !this.targets.has(targetId))) throw failure('permission_denied')
     return client
   }
-  snapshot () { return { enabled: this.enabled, clients: [...this.clients.values()].map(c => ({ id: c.id, digest: c.digest, revision: c.revision })) } }
+  snapshot () { return { enabled: this.enabled, clients: [...this.clients.values()].map(c => ({ id: c.id, digest: c.digest, revision: c.revision, mode: c.mode })) } }
   publicState () {
-    return { enabled: this.enabled, clients: [...this.clients.values()].map(c => ({ id: c.id, name: c.name, revision: c.revision, targets: [...c.targets], lastSeen: c.lastSeen })), targets: [...this.targets.values()].map(t => ({ id: t.id, title: t.title, window: t.owner })) }
+    return { enabled: this.enabled, clients: [...this.clients.values()].map(c => ({ id: c.id, name: c.name, mode: c.mode, revision: c.revision, targets: [...c.targets], lastSeen: c.lastSeen })), targets: [...this.targets.values()].map(t => ({ id: t.id, title: t.title, window: t.owner })) }
   }
 }

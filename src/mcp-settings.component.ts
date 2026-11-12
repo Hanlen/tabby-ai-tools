@@ -80,6 +80,10 @@ export class McpSettingsComponent implements OnDestroy {
     if (granted) targets.add(target); else targets.delete(target)
     await this.request('scope', { id: this.selectedId, targets: [...targets] })
   }); if (input) input.checked = this.selected?.targets.includes(target) || false }
+  installAgentSkill (): Promise<void> { return this.run(async () => { await this.request('install-agent-skill') }) }
+  setMode (mode: string, input?: HTMLSelectElement): Promise<void> { return this.run(async () => { await this.request('mode', { id: this.selectedId, mode }) }).finally(() => { if (input) input.value = this.selected?.mode || 'read_only' }) }
+  decide (id: string, accept: boolean): Promise<void> { return this.run(async () => { await this.request('decide', { id, accept }) }) }
+  releaseLease (id: string): Promise<void> { return this.run(async () => { await this.request('release-lease', { id }) }) }
   copy (): Promise<void> { return this.run(async () => { await this.platform.setClipboard({ text: this.configuration }); this.notice = '配置已复制，请在客户端中手动合并并重新连接。' }) }
   ngOnDestroy (): void { this.destroyed = true; this.token = ''; this.subscription.unsubscribe() }
 }

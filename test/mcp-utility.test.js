@@ -32,3 +32,35 @@ test('bounded observer timeout is distinguished from channel closure and stale r
   rpc.receive({ id: sent.at(-1).id, value: { text: 'current' } })
   assert.deepEqual(await current, { text: 'current' }); rpc.close()
 })
+
+for (const tool of ['send_input', 'send_keys', 'attach_process', 'release_tab']) {
+  for (const interruption of ['timeout', 'abort', 'disconnect']) test(`${tool} has an unknown outcome after dispatch and ${interruption}; it is never replayed`, async () => {
+    const sent = [], rpc = new UtilityRequests(message => sent.push(message), () => {})
+    const controller = new AbortController()
+    const pending = rpc.invoke('writer', 1, tool, { tabId: 'target' }, controller.signal, 10)
+    const rejected = assert.rejects(pending, { code: 'unknown_outcome' })
+    if (interruption === 'abort') controller.abort()
+    if (interruption === 'disconnect') rpc.close()
+    await rejected
+    assert.equal(rpc.size, 0)
+    assert.equal(sent.filter(message => message.type === 'tool').length, 1)
+    if (interruption !== 'disconnect') assert.equal(sent.at(-1).type, 'cancel')
+    rpc.receive({ id: sent[0].id, value: { sent: true } })
+    assert.equal(rpc.size, 0, 'late success must not revive a write or trigger another dispatch')
+    rpc.close()
+  })
+}
+test('a write cancelled before dispatch sends nothing and authoritative denials remain distinguishable', async () => {
+  const sent = [], rpc = new UtilityRequests(message => sent.push(message), () => {})
+  const controller = new AbortController(); controller.abort()
+  await assert.rejects(rpc.invoke('writer', 1, 'send_input', {}, controller.signal), { code: 'cancelled' })
+  assert.equal(sent.length, 0)
+  for (const code of ['approval_denied', 'approval_timeout', 'permission_denied', 'busy']) {
+    const pending = rpc.invoke('writer', 1, 'send_input', {}, new AbortController().signal)
+    const rejected = assert.rejects(pending, { code })
+    rpc.receive({ id: sent.at(-1).id, error: code }); await rejected
+  }
+  rpc.close()
+  await assert.rejects(rpc.invoke('writer', 1, 'send_input', {}, new AbortController().signal), { code: 'cancelled' })
+  assert.equal(sent.length, 4)
+})

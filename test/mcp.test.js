@@ -26,6 +26,9 @@ const { McpTerminalReader } = require('../src/mcp-terminals.ts')
 const { mcpClientConfig } = require('../src/mcp-client-config.ts')
 Module._load = load; require.extensions['.ts'] = extensions
 const value = result => JSON.parse(result.content[0].text)
+async function invalidCall (promise) {
+  try { const result = await promise; assert.equal(result.isError, true) } catch (error) { assert.equal(error.code, -32602) }
+}
 
 function policyFixture (t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-mcp-policy-'))
@@ -129,7 +132,7 @@ for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`client observation c
 for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`real HTTP read-only end-to-end with real output service: ${JSON.stringify(mode)}`, async t => {
   const f = await httpFixture(t, mode)
   const tools = (await f.client.listTools()).tools.map(t => t.name).sort()
-  assert.deepEqual(tools, ['get_capabilities', 'list_tabs', 'read_skill', 'read_tab'])
+  assert.deepEqual(tools, ['attach_process', 'get_capabilities', 'list_tabs', 'read_skill', 'read_tab', 'release_tab', 'send_input', 'send_keys'])
   assert.deepEqual(value(await f.client.callTool({ name: 'list_tabs', arguments: {} })).map(t => t.tabId), [f.targets[0]])
   f.terminal.session.output$.next('\x1b[32mreal subscription output\x1b[0m')
   const snapshot = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } }))
@@ -141,7 +144,8 @@ for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`real HTTP read-only 
   assert.equal(value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[1] } })).code, 'permission_denied')
   const malformed = await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], owner: 'forged' } })
   assert.equal(malformed.isError, true)
-  for (const name of ['send_input', 'send_keys', 'attach_process', 'release_tab', 'list_logs', 'close_tab']) await assert.rejects(f.client.callTool({ name, arguments: {} }), { code: -32602 })
+  assert.equal(value(await f.client.callTool({ name: 'send_input', arguments: { tabId: f.targets[0], text: 'pwd' } })).code, 'permission_denied')
+  for (const name of ['send_input', 'send_keys', 'attach_process', 'release_tab', 'list_logs', 'close_tab']) await invalidCall(f.client.callTool({ name, arguments: {} }))
 })
 test('client-bound cursors reject sharing, tampering, different target and changed grant generation', async t => {
   const f = await httpFixture(t)
@@ -233,6 +237,37 @@ test('read snapshot respects attachment masks and truncation; cancellation never
   controller.abort(); await assert.rejects(pending, { code: 'cancelled' })
   assert.ok(cursor)
 })
+function screen (lines) {
+  return { xterm: { cols: 80, modes: { applicationCursorKeysMode: true }, buffer: { active: {
+    type: 'normal', baseY: 0, cursorX: 2, cursorY: lines.length - 1, length: lines.length,
+    getLine: index => ({ translateToString: (_trim, start = 0, end) => lines[index].slice(start, end), getCell: () => ({ isBold: () => index === 0 }) }),
+  } } } }
+}
+for (const primed of [false, true]) test(`attachment highlights stay private across repeated HTTP snapshots (previous reader: ${primed})`, async t => {
+  const f = await httpFixture(t), secret = 'PRIVATE_ATTACHMENT_PAYLOAD', marker = 'TA_private_DONE'
+  // Wrap the footer as xterm does in a narrow terminal. The highlighted payload
+  // precedes it, so sanitizing that span alone cannot locate the private region.
+  const lines = [secret, 'TA_private_', 'DONE:0', '$ ready']
+  f.terminal.frontend = screen(lines)
+  f.output.hideAttachmentOutput(f.terminal, marker)
+  const release = f.output.suppress(f.terminal)
+  f.terminal.session.output$.next(secret); release()
+  if (primed) assert.ok(!f.output.sanitizeView(f.terminal, lines.join('\n')).includes(secret))
+  for (let i = 0; i < 2; i++) {
+    const snapshot = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } }))
+    assert.match(snapshot.text, /ready/)
+    assert.ok(!JSON.stringify(snapshot).includes(secret), 'no snapshot field may expose a masked attachment')
+  }
+})
+test('an unmasked HTTP snapshot preserves cursor, keyboard mode and highlighted choices', async t => {
+  const f = await httpFixture(t)
+  f.terminal.frontend = screen(['Selected choice', 'prompt'])
+  const snapshot = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } }))
+  assert.equal(snapshot.text, 'Selected choice\nprompt')
+  assert.deepEqual(snapshot.interaction.cursor, { column: 2, row: 1 })
+  assert.equal(snapshot.interaction.applicationCursorKeysMode, true)
+  assert.equal(snapshot.interaction.highlights[0].text, 'Selected choice')
+})
 test('copy-only client configs preserve credentials as headers and reject non-loopback endpoints', () => {
   const token = 'a'.repeat(43), url = 'http://127.0.0.1:34567/mcp'
   const toml = mcpClientConfig('codex', url, token)
@@ -243,4 +278,51 @@ test('copy-only client configs preserve credentials as headers and reject non-lo
     assert.equal(item.type, kind === 'claude' ? 'http' : undefined)
   }
   assert.throws(() => mcpClientConfig('codex', 'http://0.0.0.0:34567/mcp', token))
+})
+
+for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`controlled input HTTP schema and authority: ${JSON.stringify(mode)}`, async t => {
+  const { policy, targets } = policyFixture(t), grant = policy.add('writer')
+  policy.enabled = true; policy.setScope(grant.id, [targets[0]]); policy.setMode(grant.id, 'auto')
+  const calls = []
+  const server = await startMcpServer(async (id, revision, tool, args) => { policy.authorize(id, revision, args.tabId); calls.push({ tool, args }); return { sent: true, leaseId: 'server-issued' } }, policy.snapshot())
+  const client = new Client({ name: 'writer', version: '1' }, { versionNegotiation: { mode } })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer '+grant.token } } }))
+  t.after(async () => { await client.close(); await server.close() })
+  assert.equal(value(await client.callTool({ name: 'get_capabilities', arguments: {} })).inputEnabled, true)
+  for (const args of [{ text: 'pwd', owner: 'sidebar' }, { text: 'pwd', foregroundTaskNeeded: false }, { text: '\x03' }]) await invalidCall(client.callTool({ name: 'send_input', arguments: { tabId: targets[0], ...args } }))
+  assert.equal(calls.length, 0)
+  const sent = value(await client.callTool({ name: 'send_input', arguments: { tabId: targets[0], text: 'pwd' } }))
+  assert.equal(sent.leaseId, 'server-issued'); assert.equal(calls[0].args.submit, true); assert.equal(calls[0].args.mode, 'command')
+  for (const [name, args] of [['send_keys', { leaseId: sent.leaseId, key: 'c', ctrl: true }], ['send_input', { text: 'answer', mode: 'stdin', leaseId: sent.leaseId }], ['release_tab', { leaseId: sent.leaseId }], ['attach_process', { expectedProcess: 'codex', purpose: 'User requested supervising this agent' }]]) assert.equal((await client.callTool({ name, arguments: { tabId: targets[0], ...args } })).isError, undefined)
+  policy.setMode(grant.id, 'read_only'); server.update(policy.snapshot())
+  assert.equal(value(await client.callTool({ name: 'send_keys', arguments: { tabId: targets[0], leaseId: sent.leaseId, key: 'Enter' } })).code, 'permission_denied')
+})
+
+test('write mode is explicit and is not restored from saved permissions', t => {
+  const { policy, directory } = policyFixture(t), client = policy.add('writer')
+  assert.equal(policy.client(client.id).mode, 'read_only')
+  policy.setMode(client.id, 'auto'); policy.save()
+  assert.equal(new McpPolicy(directory).client(client.id).mode, 'read_only')
+  assert.throws(() => policy.setMode(client.id, 'unrestricted'), { code: 'permission_denied' })
+})
+
+for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`HTTP write timeouts are uncertain even without an aborted request signal: ${JSON.stringify(mode)}`, async t => {
+  const { policy, targets } = policyFixture(t), grant = policy.add('writer')
+  policy.enabled = true; policy.setScope(grant.id, [targets[0]]); policy.setMode(grant.id, 'auto')
+  let code = 'observation_timeout', calls = 0
+  const server = await startMcpServer(async () => { calls++; throw Object.assign(new Error(code), { code }) }, policy.snapshot())
+  const client = new Client({ name: 'timeout', version: '1' }, { versionNegotiation: { mode } })
+  t.after(async () => { await client.close(); await server.close() })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer ' + grant.token } } }))
+  const write = () => client.callTool({ name: 'send_input', arguments: { tabId: targets[0], text: 'printf once' } })
+  for (code of ['observation_timeout', 'cancelled']) {
+    const result = await write()
+    assert.equal(result.isError, true); assert.equal(value(result).code, 'unknown_outcome')
+    assert.match(value(result).message, /do not automatically retry/)
+  }
+  code = 'observation_timeout'
+  const read = await client.callTool({ name: 'read_tab', arguments: { tabId: targets[0] } })
+  assert.equal(value(read).code, 'observation_timeout')
+  for (code of ['approval_denied', 'approval_timeout', 'permission_denied', 'busy']) assert.equal(value(await write()).code, code)
+  assert.equal(calls, 7, 'failed operations must not be retried by the server')
 })

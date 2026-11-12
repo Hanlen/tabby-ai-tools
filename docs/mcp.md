@@ -1,4 +1,4 @@
-# External AI connections: read-only MCP preview
+# External AI connections: MCP terminal preview
 
 This feature is currently an **unreleased source preview**. The published 0.9.4
 package does not include it. It exposes explicitly selected, running Tabby
@@ -64,10 +64,14 @@ clients are modified by Tabby.
 
 | Tool | Behavior |
 | --- | --- |
-| `get_capabilities` | Reports this endpoint's read-only tools and actual limits. |
-| `read_skill` | Static instructions for these four external tools only; no arbitrary knowledge sections or upstream files. |
+| `get_capabilities` | Reports this client's mode, all eight tools, and actual limits. |
+| `read_skill` | Static instructions for these eight external tools only; no arbitrary knowledge sections or upstream files. |
 | `list_tabs` | Only this client's granted, currently valid terminal sessions; opaque IDs, no hidden terminal names or raw profiles. |
 | `read_tab` | A snapshot of up to 300 lines / 20,000 characters. Pass its `nextCursor` for output deltas; optional `waitMs` is bounded at 30 seconds. |
+| `send_input` | Command or owned-process stdin; explicit confirm/auto grant, maximum 10,000 characters. |
+| `send_keys` | Key input only for the current lease; explicit Ctrl+C follows the same permission. |
+| `attach_process` | Claim a verified existing process without interrupting it. |
+| `release_tab` | Release only your lease; restore input without stopping a process. |
 
 Snapshot cursors are captured before the snapshot so concurrent fresh output can
 appear again in the next delta. A delta cursor follows the returned bytes. Output
@@ -80,7 +84,9 @@ visible scrollback. The output may contain secrets and must be treated as
 untrusted data rather than instructions. Profile host/account labels are configured
 identity hints, not proof of nested SSH/container identity. Rename ambiguous
 terminals before granting them. Attachment transfer payloads are masked using
-the plugin's existing output protections.
+the plugin's existing output protections. When those protections alter a snapshot,
+its cursor/highlight interaction metadata is omitted as well, so styled text cannot
+reveal a masked payload.
 
 The MCP reader subscribes independently of the sidebar and does not start task
 log capture or acquire input ownership. Closing or reconnecting a terminal,
@@ -106,7 +112,7 @@ The production implementation has been exercised on Linux x64 with official
 Tabby 1.0.238, Electron 43.7.0 / Node 24.21.0 and Codex CLI 0.167.1. Codex discovered
 the endpoint and read real terminal output without a model turn; actual grants,
 unshared terminals, delta/wait, revoke, rotate and service shutdown were checked.
-The utility runs with an empty PATH, using the host's Node. SDK tests cover both
+Controlled input was also exercised in the isolated Linux profile: approval/denial, command and stdin, attachment/keys, owned Ctrl+C, shared sidebar conflict, revoke and real Codex command/release, with zero model turns. The utility runs with an empty PATH, using the host's Node. SDK tests cover both
 legacy and 2026-07-28 HTTP protocol paths.
 
 Real Cursor/Claude Code client acceptance, older Tabby versions, Windows/macOS
@@ -114,8 +120,121 @@ desktop behavior and user SSH terminals remain unverified. A compatible host nee
 utilityProcess, Node 20+ and the supported main-process bridge; an unsupported
 host reports an MCP-specific error and does not require another model login.
 
-This preview provides **no terminal input, command execution, process takeover,
-write approvals, execution leases, external task logs or automatic client file
-installation**. Those remain later MCP stages. Observation cancellation or a
-timeout never stops an existing terminal command or replays input. The existing
-internal Codex/Claude/API terminal tools retain their separate behavior.
+The endpoint registers eight tools: `get_capabilities`, `read_skill`, `list_tabs`,
+`read_tab`, `send_input`, `send_keys`, `attach_process`, and `release_tab`. All tools
+can be discovered by a read-only client, but server-side permission checks reject
+its input requests. Tool annotations and client-side approvals never grant access.
+External logs, files, workflows, application settings and automatic client-file
+installation remain outside this preview. Internal Codex/Claude/API operations
+retain their separate behavior.
+
+## Enable command execution and interaction
+
+After selecting a client and its concrete terminals, choose **Terminal operation
+permission**: **Read only** (default), **Confirm each operation**, or **Allow
+automatic operations**. Permission covers only that client's checked terminals.
+Commands use the terminal account's permissions. A mode/scope change invalidates
+pending approvals, in-flight input and leases. Restart resets input permission to
+read-only as well as clearing concrete targets; disable/reconnect requires fresh
+terminal grants. Never infer input permission from readable output.
+
+In confirmation mode, each command, attachment, stdin or key request appears in
+**Settings → AI Tools → External AI connections (MCP)** with its client, target and
+exact arguments. Approve or deny in the window containing that terminal within
+25 seconds. Keep this section open while operating a confirmation-mode client;
+there is no background auto-approval. Controls remain usable while approval waits.
+`release_tab` does not require another approval. Automatic mode uses the existing
+explicit grant without repeating operation approvals.
+
+1. `list_tabs`, then `read_tab` to inspect the target. Snapshot results also include
+   available cursor/highlight interaction metadata; delta results contain text.
+2. `send_input({tabId,text,mode:"command",submit:true})` starts a command only when
+   local foreground inspection confirms idle. Maximum text length is 10,000;
+   control characters are rejected (use `send_keys`). No automatic Ctrl+C or
+   foreground takeover is allowed. Unknown inspection, including normal SSH
+   enumeration, blocks a new command; generic SSH shell execution is not yet supported.
+3. A successful input or `attach_process` returns a server-generated `leaseId`.
+   Pass it with `send_input(mode:"stdin")`, `send_keys`, further same-lease commands,
+   or `release_tab`. Never invent an owner or reuse another client's lease.
+4. `attach_process({tabId,expectedProcess,purpose})` claims a verified existing
+   interactive process only when explicitly requested. It never interrupts or
+   restarts it. Existing native Linux SSH PID/PTY proof may be used, but actual
+   external-MCP SSH acceptance remains pending.
+5. Read fresh output after every interaction. Use `send_keys({tabId,leaseId,
+   key:"c",ctrl:true})` for explicit Ctrl+C only when needed for the owned task;
+   it obeys the selected approval mode. `sent:true` proves submission, not success.
+6. `release_tab({tabId,leaseId})` or the local **Release input control** button
+   restores user input. Neither stops a running process. A lease expires after
+   120 seconds without a successful input operation; reads do not renew it.
+
+Only one lease can reserve a terminal; competing clients receive `busy`. Input
+also uses the shared sidebar/scheduler controller: it never overrides their locks.
+Unchecking a target, changing mode, cancelling, revoking/rotating credentials,
+closing/reconnecting the terminal, stopping the service or losing its process
+invalidates affected approvals and leases. It does not send cleanup text or kill
+remote processes. Cancellation after dispatch, a response loss or an observation
+timeout can mean input already happened (`unknown_outcome`); inspect the terminal
+and never automatically resubmit. A 25-second approval wait shares the bounded
+33-second observation budget, so late approval can leave little time for inspection.
+If that budget expires or the parent channel closes after a write was forwarded,
+the client receives `unknown_outcome`, even if no result arrived from the terminal.
+Explicit approval denial/expiry remains distinguishable from an unknown result.
+
+Controlled-input evidence is recorded separately from earlier read-only acceptance.
+No paid model call is required for protocol/desktop verification. Real user accounts,
+Cursor/Claude Code clients, Windows/macOS, older hosts and external MCP SSH remain
+pending unless explicitly recorded with versions and actual tool results. Extreme
+375px windows retain Tabby's wide settings sidebar and have poor readability;
+use a wider desktop window for the approval detail.
+
+## How an agent discovers Tabby
+
+There are three separate stages: discovering instructions, finding the service,
+and pairing an authenticated MCP client. Saying “connect to Tabby through MCP”
+can select the installed `tabby-mcp` skill in a supporting agent; the skill alone
+cannot register a server, obtain a credential or grant a terminal.
+
+On the first start in a supported Tabby host, the plugin copies the portable
+`skills/tabby-mcp` folder into `~/.agents/skills/tabby-mcp`. It also installs the
+same content in the existing `~/.claude` skill directory (Codex and Cursor use the shared root).
+It does not create absent client-specific homes. Existing matching skills are
+reported as present; modified, older or unrecognized folders are preserved as a
+conflict, never overwritten. Check/retry with **Install / check Agent Skill** in
+MCP settings. For custom skill roots, another user/host, or other agents, import
+the bundled folder using that client's installation mechanism. There is no
+universal directory that every agent reads, and no npm install-time script or
+system Node requirement. The skill becomes available after Tabby has started;
+client reload/session requirements depend on the client.
+
+Each copy includes `references/local-discovery.json`, a locator for
+`~/.agents/tabby/mcp/`. Separate profile JSON records advertise only this plugin's
+version, enabled/running status, loopback endpoint and setup route. They contain
+no tokens, digests, terminal titles, scopes or user client configuration. They are
+application metadata, not a standard MCP-wide registry or proof that a service is
+still running after a crash. Stopped/disabled records have an empty endpoint;
+records are written privately and atomically. Filesystem failures are reported
+separately and do not change MCP authorization or stop an otherwise working service.
+
+For example, in Codex:
+
+1. “Connect to Tabby through MCP” can match the skill description. The agent first
+   checks its available MCP tools; if absent, it reads the skill's local locator.
+2. The location record helps distinguish disabled Tabby from an unpaired client.
+   A missing/stale record is a setup problem, never permission to scan ports or
+   extract credentials from another client's configuration.
+3. First pairing still uses the generated configuration from Tabby Settings. Once
+   installed in the intended client's personal configuration and reloaded as
+   needed, the client performs the MCP handshake and tool discovery.
+4. `get_capabilities`, `read_skill`, `list_tabs`, and a granted terminal read verify
+   the actual connection. Empty grants and read-only mode remain independent of
+   successful skill or server discovery.
+
+The same workflow applies to other MCP-capable agents that load Agent Skills.
+An agent without skill support can follow this guide manually. Remote/cloud
+agents cannot reach a desktop loopback service merely because they received a
+skill file. No skill invokes a model or changes MCP accounts, scopes or permissions.
+
+Directory references: [Codex skills](https://learn.chatgpt.com/docs/build-skills),
+[Claude Code skills](https://code.claude.com/docs/en/skills),
+[Cursor skills](https://cursor.com/docs/skills). Their documentation describes
+client behavior; actual client/version acceptance is recorded separately.

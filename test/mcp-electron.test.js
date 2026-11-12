@@ -8,6 +8,9 @@ const { EventEmitter } = require('node:events')
 const { PassThrough } = require('node:stream')
 const { setTimeout: delay } = require('node:timers/promises')
 const { pathToFileURL } = require('node:url')
+const { startMcpServer } = require('../artifacts/mcp-server.cjs')
+const { UtilityRequests } = require('../artifacts/mcp-utility-rpc.cjs')
+const { Client, StreamableHTTPClientTransport } = require('@modelcontextprotocol/client')
 const CHANNEL = 'tabby-ai-mcp-v1'
 
 function fixture (t, saved) {
@@ -167,4 +170,122 @@ test('unobserved termination reaches its deadline while retaining the process sl
     await assert.rejects(f.invoke(a, { type: 'enabled', enabled: true }), /exit not observed/)
     assert.equal(f.children.length, 1)
   } finally { old.emit('exit', 1) }
+})
+
+async function writerFixture (t, mode = 'auto') {
+  const f = fixture(t), a = f.owner(1), b = f.owner(2)
+  await f.invoke(a, { type: 'register' }); await f.invoke(b, { type: 'register' }); await f.invoke(a, { type: 'enabled', enabled: true })
+  await f.invoke(a, { type: 'targets', targets: [{ key: 't', session: 's', title: 'Write target' }] })
+  const c = await f.invoke(a, { type: 'add', name: 'Writer A' }), d = await f.invoke(a, { type: 'add', name: 'Writer B' })
+  const target = (await f.invoke(a, { type: 'state' })).targets[0]
+  for (const client of [c, d]) { await f.invoke(a, { type: 'scope', id: client.id, targets: [target.id] }); await f.invoke(a, { type: 'mode', id: client.id, mode }) }
+  const child = f.children[0]
+  const request = async (id, client = c, tool = 'send_input', args = {}) => {
+    const state = await f.invoke(a, { type: 'state' })
+    child.emit('message', { type: 'tool', id, clientId: client.id, revision: state.clients.find(x => x.id === client.id).revision, tool, args: { tabId: target.id, text: 'printf marker', mode: 'command', submit: true, ...args } })
+    await delay(2)
+    return a.sent.filter(x => x.message.type === 'execute').at(-1)?.message
+  }
+  const reply = async (message, value = { sent: true }) => { f.ipc.emit(CHANNEL + '-reply', { sender: a, senderFrame: a.mainFrame }, { id: message.id, value }); await delay(2) }
+  const result = id => child.messages.find(x => x.type === 'tool-result' && x.id === id)
+  return { ...f, a, b, c, d, target, child, request, reply, result }
+}
+test('main issues target-bound leases, blocks another client and concurrent same-lease writes, and release only unlocks', async t => {
+  const f = await writerFixture(t)
+  const first = await f.request('start'); await f.reply(first)
+  const lease = f.result('start').value.leaseId; assert.ok(lease)
+  await f.request('other', f.d); assert.equal(f.result('other').error, 'busy')
+  await f.request('forged', f.d, 'send_keys', { leaseId: lease, key: 'Enter' }); assert.equal(f.result('forged').error, 'invalid_lease')
+  const interactive = await f.request('stdin', f.c, 'send_input', { leaseId: lease, mode: 'stdin', text: 'answer' })
+  await f.request('parallel', f.c, 'send_keys', { leaseId: lease, key: 'Enter' }); assert.equal(f.result('parallel').error, 'busy')
+  await f.reply(interactive)
+  const release = await f.request('release', f.c, 'release_tab', { leaseId: lease }); await f.reply(release, { released: true })
+  assert.equal((await f.invoke(f.a, { type: 'state' })).leases.length, 0)
+  await f.request('stale', f.c, 'send_keys', { leaseId: lease, key: 'Enter' }); assert.equal(f.result('stale').error, 'invalid_lease')
+})
+test('approval is exact, target-window-only, responsive to controls and never sent after denial or revocation', async t => {
+  const f = await writerFixture(t, 'confirm')
+  await f.request('deny')
+  let state = await f.invoke(f.a, { type: 'state' }); assert.equal(state.approvals.length, 1)
+  assert.match(state.approvals[0].input, /printf marker/)
+  assert.equal(f.a.sent.filter(x => x.message.type === 'execute').length, 0)
+  await assert.rejects(f.invoke(f.b, { type: 'decide', id: state.approvals[0].id, accept: true }), { code: 'permission_denied' })
+  await f.invoke(f.a, { type: 'decide', id: state.approvals[0].id, accept: false }); await delay(2)
+  assert.equal(f.result('deny').error, 'approval_denied')
+  await f.request('revoked'); state = await f.invoke(f.a, { type: 'state' })
+  await f.invoke(f.a, { type: 'mode', id: f.c.id, mode: 'read_only' }); await delay(2)
+  assert.equal(f.result('revoked').error, 'permission_denied')
+  await assert.rejects(f.invoke(f.a, { type: 'decide', id: state.approvals[0].id, accept: true }))
+  assert.equal((await f.invoke(f.a, { type: 'state' })).leases.length, 0)
+})
+test('approval acceptance sends once; cancellation after dispatch is unknown and frees the lease without replay', async t => {
+  const f = await writerFixture(t, 'confirm'); await f.request('cancel-before-approve')
+  f.child.emit('message', { type: 'cancel', id: 'cancel-before-approve' }); await delay(2)
+  assert.equal(f.result('cancel-before-approve').error, 'cancelled')
+  assert.equal((await f.invoke(f.a, { type: 'state' })).approvals.length, 0)
+  assert.equal(f.a.sent.filter(x => x.message.type === 'execute').length, 0)
+  await f.request('approve')
+  const approval = (await f.invoke(f.a, { type: 'state' })).approvals[0]
+  await f.invoke(f.a, { type: 'decide', id: approval.id, accept: true })
+  await assert.rejects(f.invoke(f.a, { type: 'decide', id: approval.id, accept: true }))
+  assert.equal(f.a.sent.filter(x => x.message.type === 'execute').length, 1)
+  f.child.emit('message', { type: 'cancel', id: 'approve' }); await delay(2)
+  assert.equal(f.result('approve').error, 'unknown_outcome')
+  assert.equal((await f.invoke(f.a, { type: 'state' })).leases.length, 0)
+  const dispatched = f.a.sent.find(x => x.message.type === 'execute').message
+  await f.reply(dispatched)
+  assert.equal(f.a.sent.filter(x => x.message.type === 'execute').length, 1)
+})
+test('approval timeout sends nothing and idle lease expiration restores input without sending keys', async t => {
+  const f = await writerFixture(t, 'confirm')
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  // Deliver directly to avoid fixture delay under fake timers.
+  let state = await f.invoke(f.a, { type: 'state' })
+  f.child.emit('message', { type: 'tool', id: 'expired', clientId: f.c.id, revision: state.clients[0].revision, tool: 'send_input', args: { tabId: f.target.id, text: 'pwd' } })
+  t.mock.timers.tick(25001); await new Promise(setImmediate)
+  assert.equal(f.result('expired').error, 'approval_timeout')
+  assert.equal(f.a.sent.filter(x => x.message.type === 'execute').length, 0)
+  await f.invoke(f.a, { type: 'mode', id: f.c.id, mode: 'auto' }); state = await f.invoke(f.a, { type: 'state' })
+  f.child.emit('message', { type: 'tool', id: 'auto', clientId: f.c.id, revision: state.clients[0].revision, tool: 'send_input', args: { tabId: f.target.id, text: 'pwd' } })
+  const execute = f.a.sent.find(x => x.message.type === 'execute').message
+  f.ipc.emit(CHANNEL + '-reply', { sender: f.a, senderFrame: f.a.mainFrame }, { id: execute.id, value: { sent: true } }); await Promise.resolve(); await Promise.resolve()
+  t.mock.timers.tick(120001)
+  assert.equal((await f.invoke(f.a, { type: 'state' })).leases.length, 0)
+  assert.ok(f.a.sent.some(x => x.message.type === 'release'))
+  t.mock.timers.reset()
+})
+
+for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`late approval and lost renderer reply preserve unknown write outcome over HTTP: ${JSON.stringify(mode)}`, async t => {
+  const f = await writerFixture(t, 'confirm')
+  const rpc = new UtilityRequests(message => f.child.emit('message', message), () => {})
+  const post = f.child.postMessage
+  f.child.postMessage = message => { post(message); if (message.type === 'tool-result') rpc.receive(message) }
+  const snapshot = f.child.messages.filter(message => message.type === 'update').at(-1).snapshot
+  const server = await startMcpServer((...args) => rpc.invoke(...args), snapshot)
+  const client = new Client({ name: 'late-approval', version: '1' }, { versionNegotiation: { mode } })
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer ' + f.c.token } } }))
+    let observeApproval
+    const approved = new Promise(resolve => { observeApproval = resolve }), send = f.a.send
+    f.a.send = (channel, message) => { send(channel, message); if (message.type === 'state' && message.state.approvals.length) observeApproval(message.state.approvals[0]) }
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+    const pending = client.callTool({ name: 'send_input', arguments: { tabId: f.target.id, text: 'printf once' } })
+    const approval = await approved
+    t.mock.timers.tick(24000)
+    await f.invoke(f.a, { type: 'decide', id: approval.id, accept: true })
+    const execute = f.a.sent.find(item => item.message.type === 'execute').message
+    // Input may have happened; withhold its renderer reply past the utility's
+    // total 33-second deadline, before main's post-approval deadline can expire.
+    t.mock.timers.tick(9001)
+    const result = await pending, outcome = JSON.parse(result.content[0].text)
+    assert.equal(result.isError, true)
+    assert.equal(outcome.code, 'unknown_outcome')
+    assert.match(outcome.message, /do not automatically retry/)
+    assert.doesNotMatch(outcome.message, /No input was sent/)
+    const state = await f.invoke(f.a, { type: 'state' })
+    assert.equal(state.approvals.length, 0); assert.equal(state.leases.length, 0)
+    f.ipc.emit(CHANNEL + '-reply', { sender: f.a, senderFrame: f.a.mainFrame }, { id: execute.id, value: { sent: true } })
+    await new Promise(setImmediate)
+    assert.equal(f.a.sent.filter(item => item.message.type === 'execute').length, 1)
+  } finally { t.mock.timers.reset(); rpc.close(); await client.close(); await server.close() }
 })

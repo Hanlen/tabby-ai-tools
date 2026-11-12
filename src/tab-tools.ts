@@ -26,6 +26,9 @@ export interface TabToolContext {
   signal?: AbortSignal
   readOnly?: boolean
   sudoLease?: boolean
+  beforeInput?: () => void
+  allowTakeover?: boolean
+  onInput?: () => void
 }
 
 interface ControlState extends ControlledTab {
@@ -35,6 +38,7 @@ interface ControlState extends ControlledTab {
   session: BaseTerminalTabComponent<any>['session']
   emptyChecks: number
   observedProcess: boolean
+  observedCursor: number
   completion?: 'running' | 'ended' | 'prompt'
   automaticCompletion: boolean
   subscriptions: Subscription
@@ -214,6 +218,7 @@ export class TabbyTabToolsService implements OnDestroy {
     const state: ControlState = {
       tab, tabId: this.id(tab), title: tab.title, owner, command, startedAt: Date.now(),
       originalSendInput: tab.sendInput, allowInput: false, session: tab.session, emptyChecks: 0, observedProcess: false, automaticCompletion: true, subscriptions: new Subscription(),
+      observedCursor: this.output.cursor(tab),
     }
     tab.sendInput = (data: string | Buffer) => {
       if (state.allowInput) state.originalSendInput.call(tab, data)
@@ -247,10 +252,14 @@ export class TabbyTabToolsService implements OnDestroy {
     return state
   }
 
-  private sendControlled (state: ControlState, data: string): void {
+  private sendControlled (state: ControlState, data: string, context?: TabToolContext): void {
+    context?.beforeInput?.()
+    if (context?.signal?.aborted) throw new Error('Input cancelled before send')
     if (this.controlled.get(state.tab) !== state || state.tab.session !== state.session || !state.session?.open) throw new Error('The terminal session or input owner changed; input was not sent')
+    // Include output that arrives between sending input and the model's next read.
+    state.observedCursor = this.output.cursor(state.tab)
     state.allowInput = true
-    try { state.tab.sendInput(data) } finally { state.allowInput = false }
+    try { context?.onInput?.(); state.tab.sendInput(data) } finally { state.allowInput = false }
   }
 
   private async verifyInteraction (tab: BaseTerminalTabComponent<any>, owner: string, checkStopped: () => void): Promise<ControlState> {
@@ -441,33 +450,57 @@ export class TabbyTabToolsService implements OnDestroy {
     })
   }
 
-  private async waitForTerminal (tab: BaseTabComponent, waitMs: number, signal?: AbortSignal): Promise<void> {
+  private async waitForTerminal (tab: BaseTabComponent, waitMs: number, signal?: AbortSignal, sinceCursor?: number): Promise<string> {
     const terminal = tab instanceof BaseTerminalTabComponent ? tab : undefined
     const session = terminal?.session
+    const start = sinceCursor ?? (terminal ? this.output.cursor(terminal) : 0)
     const completed = () => !!terminal && !!session?.open && terminal.session === session && this.completedCommands.get(terminal) === session && !this.controlled.has(terminal)
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
       const subscriptions = new Subscription()
+      let done = false, firstOutput: number | undefined, lastCursor = start
       let settleTimer: ReturnType<typeof setTimeout> | undefined
-      const finish = (error?: Error) => {
+      const finish = (reason: string) => {
+        if (done) return
+        done = true
         clearTimeout(timer)
         if (settleTimer) clearTimeout(settleTimer)
         subscriptions.unsubscribe()
         signal?.removeEventListener('abort', abort)
-        if (error) reject(error)
-        else resolve()
+        if (reason === 'abort') reject(new Error('Agent task was stopped'))
+        else resolve(reason)
       }
-      const abort = () => finish(new Error('Agent task was stopped'))
-      const timer = setTimeout(() => finish(), waitMs)
-      const checkCompletion = () => {
-        // Give xterm's asynchronous write queue a short chance to consume the final output.
-        if (completed() && !settleTimer) settleTimer = setTimeout(() => {
-          settleTimer = undefined
-          if (completed()) finish()
-        }, 50)
+      const abort = () => finish('abort')
+      const deadline = Date.now() + waitMs
+      const timer = setTimeout(() => finish('timeout'), waitMs)
+      const check = () => {
+        if (done) return
+        if (terminal && terminal.session !== session) { finish('session_changed'); return }
+        if (terminal && !session?.open) { finish('session_closed'); return }
+        const cursor = terminal ? this.output.cursor(terminal) : start
+        const hasOutput = !!terminal && cursor > start && !this.output.isSuppressed?.(terminal)
+        if (hasOutput && firstOutput === undefined) firstOutput = Date.now()
+        if ((completed() || hasOutput) && (!settleTimer || cursor !== lastCursor)) {
+          if (settleTimer) clearTimeout(settleTimer)
+          lastCursor = cursor
+          // Let xterm render; coalesce bursts without waiting out a long waitMs.
+          const delay = Math.max(0, Math.min(50, firstOutput === undefined ? 50 : 200 - (Date.now() - firstOutput), deadline - Date.now()))
+          settleTimer = setTimeout(() => {
+            settleTimer = undefined
+            if (completed()) finish('completion')
+            else if (terminal && this.output.cursor(terminal) > start && !this.output.isSuppressed?.(terminal)) finish('output')
+          }, delay)
+        }
       }
       signal?.addEventListener('abort', abort, { once: true })
       if (signal?.aborted) { abort(); return }
-      subscriptions.add(this.controls$.subscribe(checkCompletion))
+      subscriptions.add(this.controls$.subscribe(check))
+      subscriptions.add(this.output.updates$?.subscribe(check))
+      subscriptions.add(this.output.lifecycle$?.subscribe(check))
+      subscriptions.add(terminal?.sessionChanged$?.subscribe(check))
+      subscriptions.add(session?.closed$?.subscribe(() => finish('session_closed')))
+      subscriptions.add(session?.destroyed$?.subscribe(() => finish('session_closed')))
+      if (done) subscriptions.unsubscribe()
+      else check()
     })
   }
 
@@ -511,8 +544,14 @@ export class TabbyTabToolsService implements OnDestroy {
     } else throw new Error('Unknown action')
   }
 
+  /** Internal terminal reference; external protocols never receive renderer tab IDs. */
+  callTerminal (name: string, args: any, terminal: BaseTerminalTabComponent<any>, context: TabToolContext): Promise<any> {
+    if (!['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(name) || !this.allTabs().includes(terminal)) return Promise.reject(new Error('Terminal unavailable'))
+    return this.call(name, { ...args, tabId: this.id(terminal) }, context)
+  }
+
   async call (name: string, args: any, context?: TabToolContext): Promise<any> {
-    const checkStopped = () => { if (context?.signal?.aborted) throw new Error('Agent task was stopped; command was not sent') }
+    const checkStopped = () => { if (context?.signal?.aborted) throw new Error('Agent task was stopped; command was not sent'); context?.beforeInput?.() }
     checkStopped()
     if (context?.readOnly && TABBY_MUTATIONS.has(name)) throw new Error('只读模式禁止 Tabby 修改操作')
     this.refresh()
@@ -591,6 +630,7 @@ export class TabbyTabToolsService implements OnDestroy {
       return this.capabilities.call(name, args || {}, args?.tabId ? this.find(args.tabId) : undefined, checkStopped)
     }
     if (!args || typeof args.tabId !== 'string') throw new Error('tabId is required')
+    const observation = { wakeReason: 'immediate', waitedMs: 0 }
     if (name === 'read_tab') {
       const current = this.find(args.tabId)
       const waitMs = Math.max(0, Math.min(30000, Number(args.waitMs ?? (current instanceof BaseTerminalTabComponent && this.controlled.has(current) ? 1000 : 0)) || 0))
@@ -601,8 +641,18 @@ export class TabbyTabToolsService implements OnDestroy {
         if (args.cursor || args.maxChars !== undefined) throw new Error('cursor/maxChars require delta mode')
         if (args.waitFor) {
           if (!['output', 'completion', 'either'].includes(args.waitFor)) throw new Error('Invalid waitFor')
-          if (waitMs) await this.waitStream(current, this.output.cursor(current), waitMs, args.waitFor, context?.signal)
-        } else if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
+          if (waitMs) {
+            const started = Date.now()
+            observation.wakeReason = await this.waitStream(current, this.output.cursor(current), waitMs, args.waitFor, context?.signal)
+            observation.waitedMs = Date.now() - started
+          }
+        } else if (waitMs) {
+          const state = this.controlled.get(current)
+          const sinceCursor = state?.owner === (context?.owner || 'legacy') ? state.observedCursor : undefined
+          const started = Date.now()
+          observation.wakeReason = await this.waitForTerminal(current, waitMs, context?.signal, sinceCursor)
+          observation.waitedMs = Date.now() - started
+        }
       } else {
         if (args.mode === 'delta' || args.cursor || args.waitFor) throw new Error('Terminal parameters require a terminal')
         if (waitMs) await this.waitForTerminal(current, waitMs, context?.signal)
@@ -665,14 +715,18 @@ export class TabbyTabToolsService implements OnDestroy {
     if (name === 'read_tab') {
       const maxLines = Math.max(1, Math.min(300, Number(args.maxLines) || 100))
       if (tab instanceof BaseTerminalTabComponent) {
-        if (this.output.isSuppressed?.(tab)) return { tabId: args.tabId, text: '[Attachment transfer in progress; payload omitted. Use attachment_status.]', commandState: 'running', controlledByAI: true }
+        if (this.output.isSuppressed?.(tab)) return { tabId: args.tabId, ...observation, text: '[Attachment transfer in progress; payload omitted. Use attachment_status.]', commandState: 'running', controlledByAI: true }
         const observedSession = tab.session, observedStream = this.output.streamId?.(tab)
         const scope = context?.logScope || context?.owner
         const nextCursor = scope && observedStream ? this.streamTokens.encode(scope, observedStream, this.output.cursor(tab), this.completionRevisions.get(tab) || 0) : undefined
-        const server = await this.serverIdentity(tab)
-        const runningProcesses = await this.processes(tab)
+        const observedCursor = this.output.cursor(tab)
+        const [server, runningProcesses] = await Promise.all([this.serverIdentity(tab), this.processes(tab)])
         if (observedSession !== tab.session) throw new Error('Terminal session changed during observation')
         checkStopped()
+        const observed = () => {
+          const state = this.controlled.get(tab)
+          if (state?.owner === (context?.owner || 'legacy')) state.observedCursor = Math.max(state.observedCursor, observedCursor)
+        }
         const commandState = this.controlled.get(tab)?.completion || (this.completedCommands.get(tab) === tab.session ? 'prompt' : 'unknown')
         const xterm = (tab.frontend as any)?.xterm
         const buffer = xterm?.buffer?.active
@@ -681,11 +735,14 @@ export class TabbyTabToolsService implements OnDestroy {
           const lines: string[] = []
           for (let i = start; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) || '')
           const text = lines.join('\n'), safeText = this.output.sanitizeView?.(tab, text) ?? text
-          return { tabId: args.tabId, title: tab.title, server, commandState, text: safeText.slice(-20000), truncated: start > 0 || text.length > 20000, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), interaction: safeText === text ? terminalInteractionState(xterm, start) : undefined }
+          const interaction = safeText === text ? terminalInteractionState(xterm, start) : undefined
+          observed()
+          return { tabId: args.tabId, title: tab.title, server, commandState, ...observation, text: safeText.slice(-20000), truncated: start > 0 || text.length > 20000, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), interaction }
         }
         const end = this.output.cursor(tab)
         const slice = this.output.readSince(tab, Math.max(0, end - 20000), 20000)
-        return { tabId: args.tabId, title: tab.title, server, commandState, text: slice.text, truncated: slice.truncated, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
+        observed()
+        return { tabId: args.tabId, title: tab.title, server, commandState, ...observation, text: slice.text, truncated: slice.truncated, nextCursor, cursorRelation: 'before_snapshot', runningProcesses, controlledByAI: this.controlled.has(tab), note: '终端界面尚未就绪，仅有插件启动后的输出。' }
       }
       const nodes: Node[] = (tab.hostView as any)?.rootNodes || []
       const text = nodes.map(node => node.textContent || '').join('\n').trim()
@@ -712,7 +769,7 @@ export class TabbyTabToolsService implements OnDestroy {
         await this.verifyObservation(args, context)
         const state = await this.verifyInteraction(tab, owner, checkStopped)
         checkStopped()
-        this.sendControlled(state, args.text + (args.submit ? '\r' : ''))
+        this.sendControlled(state, args.text + (args.submit ? '\r' : ''), context)
         return { sent: true, tabId: args.tabId, submitted: !!args.submit, mode: 'stdin' }
       }
       if (args.mode && args.mode !== 'command') throw new Error('Unknown input mode')
@@ -721,6 +778,7 @@ export class TabbyTabToolsService implements OnDestroy {
       const running = await this.processes(tab)
       checkStopped()
       if (running?.length || running === null) {
+        if (context?.allowTakeover === false) return { sent: false, blocked: true, reason: 'Foreground process is running or cannot be verified idle; no automatic interruption is allowed.' }
         if (args.foregroundTaskNeeded === true) return { sent: false, blocked: true, reason: 'Existing foreground task is needed; wait for it or interact using stdin mode if this session owns it.', runningProcesses: running }
         if (running?.length && args.foregroundTaskNeeded !== false) return { sent: false, blocked: true, reason: 'Inspect the existing process and decide whether the current task needs it before sending a new command.', runningProcesses: running }
         // The task authorizes takeover. Unknown enumeration (common over SSH)
@@ -760,7 +818,7 @@ export class TabbyTabToolsService implements OnDestroy {
         commandText = entry.lease.wrap(commandText)
         state.automaticCompletion = false
       }
-      try { this.sendControlled(state, commandText + (args.submit ? '\r' : '')) } catch (error) { this.release(tab); throw error }
+      try { this.sendControlled(state, commandText + (args.submit ? '\r' : ''), context) } catch (error) { this.release(tab); throw error }
       if (!args.submit) this.release(tab)
       return { sent: true, tabId: args.tabId, server, submitted: !!args.submit, userInputLocked: !!args.submit }
     }
@@ -788,7 +846,7 @@ export class TabbyTabToolsService implements OnDestroy {
       const state = await this.verifyInteraction(tab, context?.owner || 'legacy', checkStopped)
       checkStopped()
       const sequence = terminalKeySequence(args, !!(tab.frontend as any)?.xterm?.modes?.applicationCursorKeysMode)
-      this.sendControlled(state, sequence)
+      this.sendControlled(state, sequence, context)
       return { sent: true, tabId: args.tabId, key: args.key, shift: !!args.shift, alt: !!args.alt, ctrl: !!args.ctrl, repeat: args.repeat ?? 1, note: 'Read the terminal to verify the effect before the next action.' }
     }
     if (name === 'interact_tab') {

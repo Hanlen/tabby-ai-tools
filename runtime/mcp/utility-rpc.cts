@@ -2,7 +2,7 @@ import { failure, randomId } from './policy.cjs'
 
 /** Every request settles locally, even when the parent channel throws or closes. */
 export class UtilityRequests {
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; cleanup: () => void }>()
+  private pending = new Map<string, { mutation: boolean; resolve: (value: any) => void; reject: (error: Error) => void; cleanup: () => void }>()
   private closed = false
   constructor (private send: (message: any) => void, private disconnected: () => void) {}
   get size (): number { return this.pending.size }
@@ -13,7 +13,7 @@ export class UtilityRequests {
   close (): void {
     if (this.closed) return
     this.closed = true
-    for (const waiter of this.pending.values()) { waiter.cleanup(); waiter.reject(failure('cancelled')) }
+    for (const waiter of this.pending.values()) { waiter.cleanup(); waiter.reject(failure(waiter.mutation ? 'unknown_outcome' : 'cancelled')) }
     this.pending.clear(); this.disconnected()
   }
   receive (message: any): void {
@@ -26,16 +26,19 @@ export class UtilityRequests {
     return new Promise((resolve, reject) => {
       if (this.closed || signal.aborted) return reject(failure('cancelled'))
       if (this.pending.size >= 16) return reject(failure('busy'))
+      const mutation = ['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(tool)
       const id = randomId()
       const finish = (code: string) => {
         if (!this.pending.delete(id)) return
-        cleanup(); reject(failure(code))
+        // Once forwarded, interruption cannot establish whether a write ran.
+        // Only an authoritative parent reply can confirm a denial/non-send.
+        cleanup(); reject(failure(mutation ? 'unknown_outcome' : code))
         this.post({ type: 'cancel', id })
       }
       const abort = () => finish('cancelled')
       const timer = setTimeout(() => finish('observation_timeout'), timeoutMs)
       const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort) }
-      this.pending.set(id, { resolve, reject, cleanup })
+      this.pending.set(id, { mutation, resolve, reject, cleanup })
       signal.addEventListener('abort', abort, { once: true })
       this.post({ type: 'tool', id, clientId, revision, tool, args })
     })

@@ -42,8 +42,8 @@ for (const [directory, manifest] of [...packages].sort((a, b) => a[1].name.local
 }
 await writeFile(join(output, 'THIRD_PARTY_NOTICES.txt'), notices.join(''))
 await build({ absWorkingDir: root, entryPoints: ['runtime/mcp/electron-host.cts'], outfile: join(output, 'electron-host.cjs'),
-  bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['electron'], legalComments: 'eof' })
+  bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['electron'], define: { TABBY_MCP_VERSION: JSON.stringify(version) }, legalComments: 'eof' })
 await mkdir(join(root, 'artifacts'), { recursive: true })
-for (const entry of ['server.mts', 'policy.cts', 'utility-rpc.cts']) await build({ absWorkingDir: root, entryPoints: ['runtime/mcp/' + entry],
+for (const entry of ['server.mts', 'policy.cts', 'utility-rpc.cts', 'discovery.cts']) await build({ absWorkingDir: root, entryPoints: ['runtime/mcp/' + entry],
   outfile: join(root, 'artifacts/mcp-' + entry.split('.')[0] + '.cjs'), bundle: true, platform: 'node', format: 'cjs', target: 'node20', define: { TABBY_MCP_VERSION: JSON.stringify(version) } })
 console.log(`Built self-contained MCP utility with notices for ${packages.size} packages`)

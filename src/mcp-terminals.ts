@@ -1,5 +1,6 @@
 import { Subject, Subscription } from 'rxjs'
 import type { CodexTerminalOutputService } from './terminal-output.service'
+import { terminalInteractionState } from './terminal-keys'
 import type { McpGrant } from './mcp-types'
 
 export interface McpTerminal { key: string; session: string; terminal: any }
@@ -56,11 +57,16 @@ export class McpTerminalReader {
       return { stream, offset: slice.cursor, text: slice.text, truncated: slice.truncated, hasMore: slice.hasMore }
     }
     const buffer = terminal.frontend?.xterm?.buffer?.active
-    let text = '', truncated = false
+    let text = '', truncated = false, interaction: any
     if (buffer && typeof buffer.getLine === 'function') {
       const start = Math.max(0, buffer.length - args.maxLines), lines: string[] = []
       for (let i = start; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) || '')
-      text = this.output.sanitizeView(terminal, lines.join('\n')); truncated = start > 0 || text.length > 20000
+      const rawText = lines.join('\n')
+      text = this.output.sanitizeView(terminal, rawText)
+      // Masking is stateful and relies on a footer in the complete snapshot.
+      // A highlighted span alone cannot prove it is outside the private region.
+      if (text === rawText) interaction = terminalInteractionState(terminal.frontend.xterm, start)
+      truncated = start > 0 || text.length > 20000
       text = text.slice(-20000)
     } else {
       const slice = this.output.readSince(terminal, Math.max(0, offset - 20000), 20000)
@@ -68,7 +74,7 @@ export class McpTerminalReader {
       text = lines.slice(-args.maxLines).join('\n'); truncated = slice.truncated || offset > 20000 || lines.length > args.maxLines
     }
     check()
-    return { text, stream, offset, truncated, hasMore: false }
+    return { text, stream, offset, truncated, hasMore: false, ...(interaction ? { interaction } : {}) }
   }
   destroy (): void { this.update([], []); this.changed.complete() }
 }

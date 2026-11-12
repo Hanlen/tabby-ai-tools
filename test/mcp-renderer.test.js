@@ -89,6 +89,7 @@ test('failed uncheck restores actual terminal scope and enabled state instead of
   const scope = { checked: false }, enabled = { checked: false }
   await f.component.scope('t', false, scope); assert.equal(scope.checked, true)
   await f.component.toggle(false, enabled); assert.equal(enabled.checked, true)
+  const mode = { value: 'auto' }; await f.component.setMode('auto', mode); assert.equal(mode.value, 'read_only')
   assert.match(f.component.notice, /write failed/)
 })
 test('late rotated credential cannot attach to a different selected client', async t => {

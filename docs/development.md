@@ -24,7 +24,7 @@ Markdown 解析器与高亮器随 webpack 主包打包，仅为构建依赖，�
 
 ### 对话与终端输出
 
-对话过程展示由 `chat-activity.ts` 统一转换实时条目与历史条目。思考摘要／文本增量与工具开始、完成事件更新同一记录；原生 `details/summary` 默认折叠，正文按需挂载，`trackBy` 保留展开状态。API、Claude Code 和 Pi 仅转发服务提供的可展示文本，不渲染加密载荷；展示记录与模型原生历史分开保存。终端读取以 OSC 133 的 C→D→A 完成序列提前唤醒，保留 50 ms 渲染缓冲和原等待上限；新命令、会话更换或结束会清除旧完成记录。多行批次不因中间提示符提前返回。
+对话过程展示由 `chat-activity.ts` 统一转换实时条目与历史条目。思考摘要／文本增量与工具开始、完成事件更新同一记录；原生 `details/summary` 默认折叠，正文按需挂载，`trackBy` 保留展开状态。API、Claude Code 和 Pi 仅转发服务提供的可展示文本，不渲染加密载荷；展示记录与模型原生历史分开保存。默认终端快照可由规范化的新输出或 OSC 133 的 C→D→A 完成序列提前唤醒，保留约 50 ms 渲染／合并时间、持续输出约 200 ms 合并上限和原 waitMs 上限。控制状态保存 observedCursor，在输入前重置、同 owner 成功快照后推进（屏幕读取前的高水位），因此读屏前已到达的输出不必继续空等，其他 owner 不消费该游标。只订阅过滤后的 output.updates$，遵循附件遮蔽；取消、会话更换／关闭清理等待订阅。快照返回 wakeReason/waitedMs；目录和进程元数据并行读取，读取后仍复核 session。输出唤醒只触发观察；多行中间提示符不释放批次锁，新命令、会话更换或结束会清除旧完成记录。
 
 2026-11-01 本地 Linux 验证：Node 22.19.0 下完整测试 771 项通过、6 项平台相关跳过；类型检查和生产构建通过。新增夹具覆盖完成前／完成后读屏提前返回、伪提示符与多行批次不提前返回、取消订阅清理、工具结果未到时的过程显示、思考展示上限和历史恢复。当前默认 Node 20 会导致两项 Pi 夹具在运行时版本检查处失败，完整验证使用临时 Node 22.19.0。未调用收费模型，也未验证真实 Tabby 桌面或本次提交的跨平台 CI。
 
@@ -223,12 +223,19 @@ See [installation recovery and SSH process identity](codex-installation-recovery
 
 `agent-conversation-state.ts` resolves task evidence separately from transport status. Ordinary interruptions are pale green; only confirmed user Stop, unfinished goals and execution limits are red. Completed turns await goal observation; external blockers are blue. API turns retain typed termination causes; Claude native result subtypes identify execution limits. Snapshots use v2 storage with v1 fallback, downgrading unclassified legacy failures. Goal reads are guarded against later turns and goal events; navigation does not invoke providers or replay tools.
 
-## MCP 只读预览开发增量（未发布）
+## MCP 终端预览开发增量（未发布）
 
 `runtime/mcp` 独立于 Angular TS 4.9，使用 `typescript-pi` 对应的 TS 5.9 做类型检查。`scripts/build-mcp.mjs` 将官方 SDK server/core、Node adapter 和 schema 依赖打入 `dist/mcp/utility.cjs`，main 协调器为 `electron-host.cjs`，附上 `THIRD_PARTY_NOTICES.txt`；生产包不安装 SDK，也没有新增安装脚本。`mcp:build` 纳入 build/pretest；MCP 运行在 Electron utilityProcess，PATH 为空，没有系统 Node 回退。
 
-main 从 Tabby 主进程的 `TABBY_CONFIG_DIRECTORY`（缺省 userData）取 canonical 配置空间，不接受 renderer/HTTP 传入路径或窗口路由。实际 Electron IPC sender、顶层 frame 与 Tabby document URL 校验后注册 renderer。main 管理持久 token 摘要、空初始范围、不透明目标与授权代际，utility 只持有最小认证快照，renderer 在读取前后再验证实际 session/stream 与范围。snapshot/delta cursor 绑定客户端、revision、target、stream，客户端不能指定内部 owner/log scope。范围变更、取消、异常和退出不重放请求；只读代码不调用 Tabby 输入工具。
+main 从 Tabby 主进程的 `TABBY_CONFIG_DIRECTORY`（缺省 userData）取 canonical 配置空间，不接受 renderer/HTTP 传入路径或窗口路由。实际 Electron IPC sender、顶层 frame 与 Tabby document URL 校验后注册 renderer。main 管理持久 token 摘要、空初始范围、不透明目标与授权代际，utility 只持有最小认证快照，renderer 在读取前后再验证实际 session/stream 与范围。snapshot/delta cursor 绑定客户端、revision、target、stream，客户端不能指定内部 owner/log scope。范围变更、取消、异常和退出不重放请求；只读适配器不调用输入工具。`mcp-execution.ts` 延迟获取共享 `TabbyTabToolsService`，仅映射四个输入／控制工具；context.beforeInput 在最终发送边界复核，allowTakeover=false 禁止自动中断，onInput 区分尚未发送与未知结果。
 
 `src/mcp.service.ts` 从模块启动，设置关闭时不监听网络；`mcp-terminals.ts` 按授权引用计数 watch/unwatch 并取消等待。`mcp-settings.*` 是现有 Settings 内的可折叠分组；`mcp-client-config.ts` 仅生成复制预览，不写客户端文件。新增 MCP 界面文案在简体中文以外可使用英文回退，既有语言选择与翻译不变。权限与端口写入私有文件，终端范围不跨重启恢复。
 
 `test/mcp.test.js` 覆盖官方 SDK 实际 HTTP 和真实输出服务，`mcp-electron.test.js` 覆盖可信路由／双窗口／崩溃／端口与撤销竞态；它们不能替代真实桌面。Linux Tabby/Codex 无模型真实终端闭环已取得；真实 Cursor／Claude、Windows/macOS、SSH 和旧宿主待补。更新后的 overview 是示意图，明确标注未发布与示例，不能冒充运行截图。
+
+main 的 confirm/auto 权限以客户端绑定所选目标；重启回到 read_only。输入预约和 lease 在 main 同步创建，批准等待不占用 IPC 串行控制队列。目标窗口可批准／拒绝具体参数，25 秒超时；120 秒输入空闲 lease 自动释放。取消、撤销、范围／模式／会话变化、停止或崩溃清观察和 lease，通过独立 release 消息还原 renderer 控制，不发 Ctrl+C、不重放。客户端不能提供 owner、内部 tabId、sudo、foreground takeover 或日志 scope。33 秒总观察预算含批准等待，晚批准可能得到 unknown_outcome；不得将“已发送”当作命令完成。
+renderer 同时持有独立 lease 截止计时器：即使 main 无法再投递 release/state，输入控制也会在本地截止时解除；续期只使用 main 签发的 expiresAt。
+
+输出遮蔽先作用于完整快照；若正文被替换，则省略 interaction 元数据，不能对高亮片段分别调用有状态的 sanitizeView。utility 对已转发的四类写操作在总截止、取消或父通道断开时返回 unknown_outcome；HTTP 边界也将写入 observation_timeout／cancelled 保守映射为未知，只有明确的 main 拒绝保留具体原因。回归覆盖附件重复快照／其他读取者先识别 footer，以及两代真实 HTTP 协议经过 main 的晚批准、丢失 renderer 回复、清理租约和不重放；合成终端与宿主 fixture 不代表实机验证。
+
+`runtime/mcp/discovery.cts` 管理独立标准 Agent Skill 的首次发现安装及无凭据位置记录。以 main 的真实 home/config-space 为准，绝不接受 HTTP 传入用户目录；同名已有技能只比较不覆盖。复制支持文件后最后写 SKILL.md，独占创建冲突不覆盖用户文件。每配置空间独立 hash 记录，内容白名单不含客户端摘要／凭据或目标范围；状态未变不写盘。发现写入失败与 MCP 生命周期分开，不修改授权，不注册客户端。设置页提供重试／检查，自定义技能路径仍手动导入。
