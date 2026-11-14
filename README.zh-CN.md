@@ -100,7 +100,7 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 ## ChatGPT 订阅用户如何开始
 
 1. 在运行 Tabby 的本机安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)。
-2. 打开 **Settings → AI Tools → Codex → 指令与会话**，先检查选定空间认证；私有缓存缺失时会继承可用的本机 ChatGPT 文件缓存。必要时生成登录命令，在本地终端完成官方登录后再次检查。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
+2. 打开 **Settings → AI Tools → Codex → 指令与会话**，空的独立空间可以导入本机 ChatGPT 登录。登录失效且无法恢复时，在侧栏连接按钮旁的下拉菜单选择**登录**，也可以在设置中生成所选空间的登录命令。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
 
    ```bash
    codex login

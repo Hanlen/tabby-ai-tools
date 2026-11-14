@@ -3,10 +3,12 @@
     h3
       i.fas.fa-exclamation-triangle(aria-hidden='true')
       |  {{t("{0} 认证失败", [authAgentLabel])}}
-    p {{canRecoverNativeAuth ? t("认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。") : t("认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。")}}
+    p {{canSignInToPrivateCodex ? t("请登录 Codex 独立空间。若本机已有更新的同账号登录，也可以尝试恢复。") : canRecoverNativeAuth ? t("认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。") : t("认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。")}}
     p.codex-detail-error(*ngIf='authRecoveryError', role='alert') {{t(authRecoveryError)}}
     .codex-auth-warning-actions
-      button.btn.btn-primary(type='button', *ngIf='canRecoverNativeAuth', autofocus, (click)='recoverAuthentication()', [disabled]='loading || authRecovering') {{authRecovering ? t("正在恢复登录…") : t("重新复制登录并重连")}}
+      button.btn.btn-primary(type='button', *ngIf='canSignInToPrivateCodex', (click)='loginToPrivateCodex(true)', [disabled]='loading || busy || !!request || authRecovering') {{t("登录")}}
+      button.btn.btn-outline-secondary(type='button', *ngIf='canRecoverNativeAuth', (click)='recoverAuthentication()', [disabled]='loading || authRecovering') {{authRecovering && !codexLoginInProgress ? t("正在恢复登录…") : t("重新复制登录并重连")}}
+      button.btn.btn-outline-secondary(type='button', *ngIf='codexLoginInProgress', (click)='cancelCodexLogin()') {{t("取消登录")}}
       button.btn.btn-outline-secondary(type='button', (click)='dismissAuthWarning()', [disabled]='authRecovering') {{t("关闭")}}
   dialog.codex-image-preview(#attachmentPreviewDialog, [attr.aria-label]='t("图片预览")', (cancel)='$event.preventDefault(); closeAttachmentPreview()', (click)='$event.target === $event.currentTarget && closeAttachmentPreview()', (keydown)='$event.stopPropagation()', (close)='previewAttachment = undefined')
     .codex-image-preview-content(*ngIf='previewAttachment')
@@ -19,8 +21,15 @@
       strong {{agentLabel}}
       small([attr.title]='cwd || t("未设置工作目录")') {{shortCwd}}
     .codex-actions
-      button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnectAgent()', [disabled]='loading || busy || !!request || modelSaving', [attr.title]='loading ? t("正在连接") : claudeCodeMode ? t("应用 Claude Code 配置并恢复会话") : apiMode ? t("应用 API 连接配置并恢复会话") : t("重新连接 Codex")', [attr.aria-label]='t("{0} {1}，点击重连", [agentLabel, t(connectionLabel)])')
-        i.fas([class.fa-link]='connected', [class.fa-unlink]='!connected', aria-hidden='true')
+      .codex-connection-control((keydown.escape)='authMenuOpen = false')
+        button.codex-connection.btn.btn-sm(type='button', [class.codex-connected]='connected', [class.codex-connecting]='loading', [class.codex-disconnected]='!loading && !connected', (click)='reconnectAgent()', [disabled]='loading || busy || !!request || modelSaving', [attr.title]='loading ? t("正在连接") : claudeCodeMode ? t("应用 Claude Code 配置并恢复会话") : apiMode ? t("应用 API 连接配置并恢复会话") : t("重新连接 Codex")', [attr.aria-label]='t("{0} {1}，点击重连", [agentLabel, t(connectionLabel)])')
+          i.fas([class.fa-link]='connected', [class.fa-unlink]='!connected', aria-hidden='true')
+        button.btn.btn-outline-secondary.btn-sm.codex-auth-toggle(type='button', *ngIf='privateCodexLogin', (click)='authMenuOpen = !authMenuOpen', [attr.aria-expanded]='authMenuOpen', [attr.aria-label]='t("Codex 登录菜单")')
+          i.fas.fa-caret-down(aria-hidden='true')
+        .codex-auth-menu(*ngIf='privateCodexLogin && authMenuOpen')
+          button.btn.btn-sm(type='button', *ngIf='codexLoginInProgress', (click)='cancelCodexLogin(); authMenuOpen = false') {{t("取消登录")}}
+          button.btn.btn-sm(type='button', *ngIf='!codexLoginInProgress && !codexSignedIn', (click)='loginToPrivateCodex()', [disabled]='loading || busy || !!request') {{t("登录")}}
+          button.btn.btn-sm(type='button', *ngIf='!codexLoginInProgress && codexSignedIn', (click)='logoutOfPrivateCodex()', [disabled]='loading || busy || !!request') {{t("退出登录")}}
       button.codex-details-toggle.btn.btn-outline-secondary.btn-sm(type='button', (click)='toggleStatus()', [attr.aria-expanded]='statusOpen', [attr.aria-label]='statusOpen ? t("收起状态详情") : t("展开状态详情")', [attr.title]='t("展开或收起状态详情")') {{t("详情")}}
       button.btn.btn-outline-secondary.btn-sm(type='button', (click)='closeRequested.emit()', [attr.title]='t("收起侧栏")', [attr.aria-label]='t("收起侧栏")') ×
   .codex-connection-controls

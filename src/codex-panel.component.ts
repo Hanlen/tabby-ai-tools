@@ -2,7 +2,7 @@ import { conversationOutcome, restoredOutcome, ConversationOutcome } from './age
 import { isRateLimitError, retryDeadline, retryDuration } from './turn-retry'
 import { CLAUDE_CODE_ID } from './claude-code-profile'
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewChild } from '@angular/core'
-import { ConfigService } from 'tabby-core'
+import { ConfigService, PlatformService } from 'tabby-core'
 import { CodexModel, CodexService, SavedSession } from './codex.service'
 import { AgentSettings } from './config'
 import { RpcMessage } from './codex-client'
@@ -58,6 +58,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   authWarning = false
   authRecovering = false
   authRecoveryError = ''
+  authMenuOpen = false
+  codexSignedIn = false
+  private codexLogin?: AbortController
+  private autoAuthAttempted = false
   private authBackend?: AgentBackend
   private authProfileId = ''
   @ViewChild('authWarningDialog') private authWarningDialog?: ElementRef<HTMLDialogElement>
@@ -71,8 +75,70 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     return (!backend.profile || backend.profile.runtime === 'claude-code') && !!backend.sessionSpace?.native && !!backend.refreshAuthentication
   }
 
+  get privateCodexLogin (): boolean {
+    return !this.codex.profile && !!this.codex.sessionSpace?.native && !!this.codex.signIn
+  }
+
+  get canSignInToPrivateCodex (): boolean {
+    const backend = this.authBackend || this.codex
+    return !backend.profile && !!backend.sessionSpace?.native && !!backend.signIn
+  }
+
+  async loginToPrivateCodex (fromWarning = false): Promise<void> {
+    const target = fromWarning ? this.authBackend : undefined
+    const backend = target || this.codex
+    const targetId = target ? this.authProfileId : this.profileId
+    if (backend.profile || !backend.sessionSpace?.native || !backend.signIn ||
+        !this.platform || this.loading || this.busy || this.request || this.authRecovering) return
+    const controller = new AbortController()
+    this.codexLogin = controller
+    this.authMenuOpen = false
+    this.authRecoveryError = ''
+    this.authRecovering = this.loading = true
+    this.status = '请在浏览器完成 Codex 登录。'
+    try {
+      await backend.signIn(this.connectionSettings(targetId, backend), url => this.platform!.openExternal(url), controller.signal)
+      if (this.panelDestroyed || controller.signal.aborted) return
+      await this.reconnectAfterAuthentication(backend, targetId)
+      this.autoAuthAttempted = false
+      this.clearAuthWarning()
+      this.status = 'Codex 独立空间已登录。'
+    } catch (error: any) {
+      if (this.panelDestroyed || controller.signal.aborted) return
+      this.authRecoveryError = error.message
+      this.status = error.message
+      this.authBackend = backend
+      this.authProfileId = targetId
+      this.authWarning = true
+      this.showAuthWarningDialog()
+    } finally {
+      this.codexLogin = undefined
+      this.authRecovering = this.loading = false
+      if (controller.signal.aborted && !this.panelDestroyed) this.status = '已取消 Codex 登录。'
+      if (!this.panelDestroyed) this.changeDetector?.detectChanges()
+    }
+  }
+
+  cancelCodexLogin (): void { this.codexLogin?.abort() }
+  get codexLoginInProgress (): boolean { return !!this.codexLogin }
+
+  async logoutOfPrivateCodex (): Promise<void> {
+    if (!this.privateCodexLogin || !this.codex.signOut || this.loading || this.busy || this.request) return
+    this.authMenuOpen = false
+    this.loading = true
+    try {
+      await this.codex.signOut()
+      this.codexSignedIn = false
+      this.connected = false
+      this.clearAuthWarning()
+      this.status = '已退出 Codex 独立空间。'
+    } catch (error: any) { this.status = error.message }
+    finally { this.loading = false; if (!this.panelDestroyed) this.changeDetector?.detectChanges() }
+  }
+
   private warnAuthentication (error: any, backend = this.codex, profileId = this.profileId): boolean {
     if (backend.profile && backend.profile.runtime !== 'claude-code' || !isNativeAuthenticationError(error)) return false
+    if (backend === this.codex && this.privateCodexLogin) this.codexSignedIn = false
     if (!this.authWarning) {
       this.authBackend = backend
       this.authProfileId = profileId
@@ -98,7 +164,25 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.authWarningDialog?.nativeElement.close()
   }
 
-  async recoverAuthentication (): Promise<void> {
+  private async reconnectAfterAuthentication (backend: AgentBackend, targetId: string): Promise<void> {
+    if (backend === this.codex) {
+      if (!await this.reconnect()) throw new Error(this.status)
+      return
+    }
+    await backend.client.close()
+    this.loading = false
+    await this.selectConnection(targetId, true)
+    if (this.profileId !== targetId || !this.connected) throw new Error(this.connectionError || this.status)
+  }
+
+  private tryAutomaticAuthRecovery (): void {
+    if (this.panelDestroyed || this.autoAuthAttempted || !this.authWarning || this.authBackend !== this.codex ||
+        !this.privateCodexLogin || this.loading || this.busy || this.authRecovering) return
+    this.autoAuthAttempted = true
+    void this.recoverAuthentication(true)
+  }
+
+  async recoverAuthentication (automatic = false): Promise<void> {
     if (!this.canRecoverNativeAuth || this.authRecovering || this.loading) return
     this.authRecovering = true
     this.loading = true
@@ -109,27 +193,21 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.cancelWorkflowOperations()
     this.pendingQuestionReply = ''
     try {
-      if (backend === this.codex && this.busy && this.turnId) await backend.interrupt(this.threadId, this.turnId)
-      await backend.refreshAuthentication!(settings)
-      if (backend === this.codex) {
-        if (!await this.reconnect()) throw new Error(this.status)
-      } else {
-        // A failed connection switch may have restored the previous provider.
-        await backend.client.close()
-        this.loading = false
-        await this.selectConnection(targetId, true)
-        if (this.profileId !== targetId || !this.connected) throw new Error(this.connectionError || this.status)
-      }
+      if (!automatic && backend === this.codex && this.busy && this.turnId) await backend.interrupt(this.threadId, this.turnId)
+      await backend.refreshAuthentication!(settings, automatic)
+      if (this.panelDestroyed) return
+      await this.reconnectAfterAuthentication(backend, targetId)
       this.clearAuthWarning()
       this.sendNotice = '已重新复制本机登录，请重新发送或继续任务。'
       this.status = this.sendNotice
     } catch (error: any) {
       this.authRecoveryError = error.message
-      if (backend === this.codex) this.connected = false
+      if (backend === this.codex && !backend.client.isConnected) this.connected = false
+      if (backend === this.codex && this.privateCodexLogin) this.codexSignedIn = false
     } finally {
       this.authRecovering = false
       this.loading = false
-      this.changeDetector?.detectChanges()
+      if (!this.panelDestroyed) this.changeDetector?.detectChanges()
     }
   }
   @Input() cwd = ''
@@ -884,6 +962,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     private agents: AgentBackendFactory,
     private changeDetector?: ChangeDetectorRef,
     private attachments?: AttachmentTransferService,
+    private platform?: PlatformService,
   ) {
     this.profileId = agents?.defaultProfileId || ''
     this.codex = agents ? agents.create(this.profileId) : codex
@@ -903,7 +982,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     }
     this.connectionSwitchError = undefined
     this.connectionError = ''
-    const previous = { codex: this.codex, profileId: this.profileId, cliConfiguration: this.cliConfiguration, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
+    const previous = { codex: this.codex, profileId: this.profileId, codexSignedIn: this.codexSignedIn, cliConfiguration: this.cliConfiguration, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
       entries: this.entries, goalStatus: this.goalStatus, latestTurnStatus: this.latestTurnStatus, sessions: this.sessions, models: this.models,
       historyOpen: this.historyOpen, modelPickerOpen: this.modelPickerOpen, connected: this.connected, busy: this.busy, status: this.status,
       threadStatus: this.threadStatus, statusRateLimits: this.statusRateLimits, ordinaryUsageAllowed: this.ordinaryUsageAllowed,
@@ -937,6 +1016,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.codex.client.off('disconnected', this.onDisconnect)
       this.codex = backend
       this.profileId = id
+      this.authMenuOpen = false
+      this.codexSignedIn = false
       this.cwd = targetCwd
       if (transferredId) this.settings.threads[this.cwd] = transferredId
       this.threadId = ''
@@ -1108,6 +1189,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.status = this.codex.client.isConnected ? '正在恢复会话…' : `正在连接 ${this.agentLabel}…`
     try {
       await this.codex.connect(this.settings)
+      if (this.privateCodexLogin) {
+        const auth = await this.codex.client.request('account/read', { refreshToken: false })
+        this.codexSignedIn = auth?.account?.type === 'chatgpt'
+        if (!this.codexSignedIn) throw new Error('Codex is not logged in to ChatGPT.')
+      }
       this.status = '正在恢复会话…'
       this.cwd = this.cwd || this.settings.cwd || os.homedir()
       const savedId = this.settings.threads[this.cwd]
@@ -1326,6 +1412,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       await this.runSlashCommand('/new')
       return
     }
+    if (this.privateCodexLogin && !this.codexSignedIn && !this.busy) {
+      this.warnAuthentication(new Error('Codex is not logged in to ChatGPT.'))
+      return
+    }
     if (this.retryState) return
     this.sendNotice = ''
     this.sendAttempt++
@@ -1402,6 +1492,10 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   async continueTask (): Promise<void> {
     if (!this.threadId || this.busy) return
+    if (this.privateCodexLogin && !this.codexSignedIn) {
+      this.warnAuthentication(new Error('Codex is not logged in to ChatGPT.'))
+      return
+    }
     if (this.apiMode && !this.claudeCodeMode && !this.apiProfiles.some(profile => profile.id === this.profileId)) {
       this.status = '此 API 连接已移除，请选择其他连接'
       return
@@ -1793,7 +1887,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
           if (p.turn.error || (p.turn.status === 'failed' && !this.sendNotice)) this.showSendError(p.turn.error || { message: p.turn.status }, '任务未完成', p.turn.id)
           else if (p.turn.status === 'failed') this.status = this.sendNotice
           else this.status = `任务未完成：${p.turn.status}`
+          if (p.turn.status === 'failed' && (!p.turn.error || isNativeAuthenticationError(p.turn.error))) this.tryAutomaticAuthRecovery()
         } else {
+          this.autoAuthAttempted = false
+          if (this.privateCodexLogin && this.authBackend === this.codex && !this.authRecovering) {
+            this.codexSignedIn = true
+            this.clearAuthWarning()
+          }
           this.sendNotice = ''
           void this.refreshGoal(p.turn.id)
         }
@@ -1843,6 +1943,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.tabTools.releaseOwner(this.threadId)
       this.busy = false
       this.turnId = ''
+      if (authenticationFailure && label === '发送失败') queueMicrotask(() => this.tryAutomaticAuthRecovery())
     }
   }
 
@@ -2082,6 +2183,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy (): void {
     this.panelDestroyed = true
+    this.cancelCodexLogin()
     this.cliConfigurationSubscription?.unsubscribe()
     this.attachmentsDestroyed = true
     this.closeAttachmentPreview()

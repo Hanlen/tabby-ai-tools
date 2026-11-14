@@ -75,8 +75,16 @@ export class CodexService {
     })
   }
   setContextStore (store: AgentStore): void { this.contextStore = store }
-  async refreshAuthentication (settings: AgentSettings): Promise<void> {
-    await this.client.refreshAuthentication(settings.executable.trim() || 'codex', this.sessionSpace)
+  async refreshAuthentication (settings: AgentSettings, automatic?: boolean): Promise<void> {
+    await this.client.refreshAuthentication(settings.executable.trim() || 'codex', this.sessionSpace, automatic)
+  }
+  async signIn (settings: AgentSettings, openBrowser: (url: string) => void, signal: AbortSignal): Promise<void> {
+    if (!this.sessionSpace?.native) throw new Error('Select a private Codex space.')
+    await this.client.signIn(settings.executable.trim() || 'codex', this.sessionSpace, openBrowser, signal)
+  }
+  async signOut (): Promise<void> {
+    if (!this.sessionSpace?.native) throw new Error('Select a private Codex space.')
+    await this.client.signOut(this.sessionSpace)
   }
   private async checkOwnership (id: string, cwd?: string): Promise<InstructionsSnapshot | undefined> {
     const record = await this.contextStore?.loadNativeSession?.(id)

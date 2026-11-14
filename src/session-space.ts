@@ -15,6 +15,7 @@ export interface NativeSessionSpace {
 }
 const codexCredentialKeys = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN']
 const claudeCredentialKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']
+const localCodexLoginFile = '.tabby-codex-local-login'
 
 /** Missing settings preserve existing native references, while unused engines
  * start private. IDs depend on connection identity, never display names/cwd. */
@@ -57,43 +58,135 @@ export async function prepareSessionSpace (space: NativeSessionSpace): Promise<v
   }
 }
 
-/** Seed an unconfigured private home from the official CLI's login cache.
- * Publish a complete owner-only file; only explicit recovery replaces a login.
- * Source credentials and native history are never changed or logged. */
-export async function initializeNativeAuth (space: NativeSessionSpace | undefined, inherited: NodeJS.ProcessEnv, options: { home?: string; replaceExisting?: boolean } = {}): Promise<boolean> {
+function parseAuthCache (cache: string): any {
+  try { return JSON.parse(cache) } catch { return undefined }
+}
+
+function codexLogin (auth: any): boolean {
+  return !!auth && (!auth.auth_mode || auth.auth_mode === 'chatgpt') && typeof auth.tokens?.access_token === 'string' && !!auth.tokens.access_token
+}
+
+function tokenClaims (token: unknown): any {
+  if (typeof token !== 'string') return undefined
+  const payload = token.split('.')[1]
+  return payload ? parseAuthCache(Buffer.from(payload, 'base64url').toString('utf8')) : undefined
+}
+
+function codexIdentity (auth: any): string | undefined {
+  const access = tokenClaims(auth.tokens.access_token)
+  const id = tokenClaims(auth.tokens.id_token)
+  const claims = access?.['https://api.openai.com/auth']
+  const user = claims?.chatgpt_user_id || id?.['https://api.openai.com/auth']?.chatgpt_user_id || access?.sub || id?.sub
+  const account = auth.tokens.account_id || claims?.chatgpt_account_id
+  if (typeof user === 'string' && user && typeof account === 'string' && account) return JSON.stringify([user, account])
+}
+
+function importedCredential (auth: any): string | undefined {
+  const owner = auth?.tokens?.login_owner_id
+  const token = auth?.tokens?.refresh_token
+  // New Codex versions preserve the owner ID through token refreshes. Older
+  // versions can prove provenance only while the imported refresh token matches.
+  const proof = typeof owner === 'string' && owner ? ['owner', owner] : typeof token === 'string' && token ? ['refresh', token] : undefined
+  if (proof) return createHash('sha256').update(JSON.stringify(proof)).digest('hex')
+}
+
+async function readIfPresent (file: string): Promise<string | undefined> {
+  try { return await fs.readFile(file, 'utf8') }
+  catch (error: any) { if (error.code !== 'ENOENT') throw error }
+}
+
+async function publishAuthFile (target: string, content: string, replace: boolean, expected?: string): Promise<boolean> {
+  const temporary = path.join(path.dirname(target), `.auth-${randomBytes(16).toString('hex')}.tmp`)
+  const handle = await fs.open(temporary, 'wx', 0o600)
+  try {
+    try { await handle.writeFile(content) } finally { await handle.close() }
+    if (replace) {
+      if (expected !== undefined && await readIfPresent(target) !== expected) return false
+      await fs.rename(temporary, target)
+      return true
+    }
+    try { await fs.link(temporary, target); return true }
+    catch (error: any) { if (error.code === 'EEXIST') return false; throw error }
+  } finally {
+    try { await fs.unlink(temporary) } catch (error: any) { if (error.code !== 'ENOENT') throw error }
+  }
+}
+
+/** Existing Codex logins are replaced only with a newer credential for the
+ * same user and workspace. Unattended recovery also requires proof of import. */
+export async function initializeNativeAuth (space: NativeSessionSpace | undefined, inherited: NodeJS.ProcessEnv, options: { home?: string; replaceExisting?: boolean; automatic?: boolean } = {}): Promise<boolean> {
   if (!space?.native) return false
   const codex = space.engine === 'codex'
   const filename = codex ? 'auth.json' : '.credentials.json'
   const home = options.home || os.homedir()
   const target = path.join(space.native, filename)
+  const importRecord = path.join(space.native, '.tabby-codex-auth-import')
   try {
-    if (!options.replaceExisting) {
-      try { await fs.lstat(target); return false } catch (error: any) { if (error.code !== 'ENOENT') throw error }
-    }
+    const existing = await fs.lstat(target).catch((error: any) => { if (error.code !== 'ENOENT') throw error })
+    if (existing && (!existing.isFile() || existing.isSymbolicLink())) return false
+    if (!codex && existing && !options.replaceExisting) return false
+    const recordedImport = codex && existing ? await readIfPresent(importRecord) : undefined
+    if (existing && !options.replaceExisting && recordedImport) return false
+    const localLogin = path.join(space.native, localCodexLoginFile)
+    if (codex && await readIfPresent(localLogin) !== undefined) return false
     let sourceHome = normalizeExecutable(environmentValue(inherited, codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR', process.platform === 'win32') || path.join(home, codex ? '.codex' : '.claude'))
     if (/^~[/\\]/.test(sourceHome)) sourceHome = path.join(home, sourceHome.slice(2))
-    let cache: string
-    try { cache = await fs.readFile(path.join(sourceHome, filename), 'utf8') }
-    catch (error: any) { if (error.code === 'ENOENT') return false; throw error }
-    let auth: any
-    try { auth = JSON.parse(cache) } catch { return false }
-    // API-key-only caches must not silently change subscription billing.
-    if (!auth) return false
-    if (codex ? (auth.auth_mode && auth.auth_mode !== 'chatgpt') || typeof auth.tokens?.access_token !== 'string' || !auth.tokens.access_token
-      : typeof auth.claudeAiOauth?.accessToken !== 'string' || !auth.claudeAiOauth.accessToken) return false
-    const temporary = path.join(space.native, `.auth-${randomBytes(16).toString('hex')}.tmp`)
-    const handle = await fs.open(temporary, 'wx', 0o600)
-    try {
-      try { await handle.writeFile(cache) } finally { await handle.close() }
-      if (options.replaceExisting) { await fs.rename(temporary, target); return true }
-      try { await fs.link(temporary, target); return true }
-      catch (error: any) { if (error.code === 'EEXIST') return false; throw error }
-    } finally {
-      try { await fs.unlink(temporary) } catch (error: any) { if (error.code !== 'ENOENT') throw error }
+    const source = path.join(sourceHome, filename)
+    if (path.resolve(source) === path.resolve(target)) return false
+    const cache = await readIfPresent(source)
+    if (!cache) return false
+    const auth = parseAuthCache(cache)
+    if (!codex) {
+      if (typeof auth?.claudeAiOauth?.accessToken !== 'string' || !auth.claudeAiOauth.accessToken) return false
+      return await publishAuthFile(target, cache, !!options.replaceExisting)
     }
+    if (!codexLogin(auth)) return false
+    const sourceImport = importedCredential(auth)
+    const previousCache = existing ? await readIfPresent(target) : undefined
+    if (existing && previousCache === undefined) return false
+    if (previousCache !== undefined) {
+      const previous = parseAuthCache(previousCache)
+      const previousImport = importedCredential(previous)
+      if (!options.replaceExisting) {
+        // Recognize an older Tabby installation only when the grant still matches.
+        if (sourceImport && sourceImport === previousImport) await publishAuthFile(importRecord, sourceImport, false)
+        return false
+      }
+      if (!codexLogin(previous) || previous.tokens.access_token === auth.tokens.access_token) return false
+      if (options.automatic && (!previousImport || recordedImport !== previousImport)) return false
+      const identity = codexIdentity(previous)
+      if (!identity || identity !== codexIdentity(auth) || !(Date.parse(auth.last_refresh) > Date.parse(previous.last_refresh))) return false
+    }
+    const expiration = tokenClaims(auth.tokens.access_token)?.exp
+    if (typeof expiration === 'number' && expiration * 1000 <= Date.now()) return false
+    if (await readIfPresent(localLogin) !== undefined) return false
+    const copied = await publishAuthFile(target, cache, previousCache !== undefined, previousCache)
+    if (copied && sourceImport) await publishAuthFile(importRecord, sourceImport, true)
+    return copied
   } catch (error: any) {
     // Do not include parser errors or file contents in a diagnostic.
     throw new Error(`Cannot initialize CLI login cache (${error.code || 'file error'}). Check selected-space login.`)
+  }
+}
+
+/** Remember an explicit sign-in/sign-out choice. Do not revoke a potentially
+ * shared grant when removing it from this local space. */
+export async function preferLocalCodexLogin (space: NativeSessionSpace, signOut = false): Promise<void> {
+  if (space.engine !== 'codex' || !space.native) throw new Error('Select a private Codex space.')
+  await publishAuthFile(path.join(space.native, localCodexLoginFile), '1', false)
+  if (signOut) {
+    try { await fs.unlink(path.join(space.native, 'auth.json')) }
+    catch (error: any) { if (error.code !== 'ENOENT') throw error }
+  }
+}
+
+export async function requirePrivateCodexLogin (space?: NativeSessionSpace): Promise<void> {
+  if (space?.engine !== 'codex' || !space.native) return
+  if (await readIfPresent(path.join(space.native, localCodexLoginFile)) === undefined) return
+  try { await fs.access(path.join(space.native, 'auth.json')) }
+  catch (error: any) {
+    if (error.code !== 'ENOENT') throw error
+    throw new Error('Codex is not logged in to ChatGPT.')
   }
 }
 

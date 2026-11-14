@@ -22,6 +22,10 @@
 .codex-profile-select{min-width:0;width:100%;height:26px;padding:1px 5px;font-size:11px;color:inherit;background:var(--theme-bg-more,transparent)}
 .codex-heading small{font-size:11px;opacity:.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .codex-actions{display:flex;align-items:center;gap:4px;flex:none}
+.codex-connection-control{display:flex;position:relative;align-items:center;gap:2px}
+.codex-auth-menu{position:absolute;inset-block-start:calc(100% + 4px);inset-inline-end:0;z-index:5;display:grid;min-width:max-content;padding:4px;border:1px solid var(--theme-fg-more,#777);border-radius:5px;background:var(--theme-bg-more,#30343b);color:var(--theme-fg,#eee)}
+.codex-auth-menu>.btn{color:inherit;text-align:start}
+.codex-auth-menu>.btn:hover:not(:disabled){background:rgba(127,127,127,.2)}
 .codex-model-controls{display:flex;align-items:center;gap:4px;min-width:0;flex:none}
 .codex-model-summary{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:26px;padding:2px 4px;border:0;border-radius:4px;background:rgba(127,127,127,.12);color:inherit;font:inherit;font-size:11px;text-align:start;cursor:pointer}
 .codex-model-summary:hover{background:rgba(127,127,127,.18)}

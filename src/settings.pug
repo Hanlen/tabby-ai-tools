@@ -515,5 +515,5 @@
             .instruction-preview(*ngIf='nativeCommand')
               pre(dir='ltr') {{nativeCommand}}
               button.btn.btn-outline-secondary(type='button', (click)='copyNativeCommand()') {{t("Copy login command")}}
-            p.settings-muted {{t("No credentials or system history are copied. Operating-system credential stores may still share an account; private history is not an operating-system sandbox.")}}
+            p.settings-muted {{t("An empty private space can import an existing local login. System history stays in the system space.")}}
   p.settings-footer.settings-muted {{t("连接使用草稿：保存或放弃；其他设置自动保存。保存后在侧栏空闲时重新连接以应用，输入 /new 开始新对话。")}}

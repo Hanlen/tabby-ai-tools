@@ -20,6 +20,7 @@ import { formatDateTime, getLanguage, SUPPORTED_LANGUAGES, textDirection, transl
 import { AgentInstructions, InstructionsSnapshot, resolveInstructions, validateInstructions } from './agent-instructions'
 import { NativeEngine, SessionSpaceConfig, privateSpaceConfig, sessionSpaceConfig, resolveSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment, nativeLoginCommand } from './session-space'
 import { CodexClient } from './codex-client'
+import { isNativeAuthenticationError } from './cli-auth'
 import { resolveCodexLaunch } from './codex-discovery'
 import { inspectClaudeCode, resolveClaudeExecutable } from './claude-code-client'
 import * as path from 'path'
@@ -285,6 +286,7 @@ export class CodexSettingsComponent implements OnDestroy {
   }
   async checkNativeSpace (loginCommand = false): Promise<void> {
     if (this.nativeBusy) return
+    const engine = this.nativeEngine, mode = this.nativeSpaceDraft.mode
     this.nativeBusy = true; this.nativeNotice = ''; this.nativeCommand = ''
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000)
     this.nativeCheck = controller
@@ -294,18 +296,31 @@ export class CodexSettingsComponent implements OnDestroy {
     try {
       const space = this.selectedNativeSpace()
       await prepareSessionSpace(space)
-      const executable = space.engine === 'codex' ? (await resolveCodexLaunch(this.settings.executable || 'codex', { signal: controller.signal, codeModeTools: false })).executable : resolveClaudeExecutable(this.settings.claudeExecutable || 'claude')
-      if (loginCommand) { this.nativeCommand = nativeLoginCommand(space, executable); this.nativeNotice = 'Run this command in a local terminal, then check login here. The command targets this space only.' }
-      else if (space.engine === 'codex') {
-        await client.connect(executable, space, { codeModeTools: false })
-        const result = await client.request('account/read', { refreshToken: false })
-        this.nativeNotice = result.account ? 'Selected space is logged in; model access is unverified.' : 'Selected space is not logged in. Generate its login command.'
+      const codexSelector = this.settings.executable || 'codex'
+      if (loginCommand) {
+        const executable = space.engine === 'codex' ? (await resolveCodexLaunch(codexSelector, { signal: controller.signal, codeModeTools: false })).executable : resolveClaudeExecutable(this.settings.claudeExecutable || 'claude')
+        this.nativeCommand = nativeLoginCommand(space, executable)
+        this.nativeNotice = 'Run this command in a local terminal, then check login here. The command targets this space only.'
+      } else if (space.engine === 'codex') {
+        if (controller.signal.aborted) return
+        await client.connect(codexSelector, space, { codeModeTools: false })
+        if (space.native) {
+          await client.verifyChatgptLogin()
+          this.nativeNotice = 'Codex accepted the selected space’s ChatGPT login.'
+        } else {
+          const result = await client.request('account/read', { refreshToken: false })
+          this.nativeNotice = result.account ? 'Selected space is logged in; model access is unverified.' : 'Selected space is not logged in. Generate its login command.'
+        }
       } else {
+        const executable = resolveClaudeExecutable(this.settings.claudeExecutable || 'claude')
         await initializeNativeAuth(space, process.env)
         await inspectClaudeCode(executable, this.settings.cwd || process.cwd(), controller.signal, sessionEnvironment(space, process.env))
         this.nativeNotice = 'Selected space is logged in; model access is unverified.'
       }
-    } catch (error: any) { this.nativeNotice = error.message }
+    } catch (error: any) {
+      this.nativeNotice = engine === 'codex' && mode === 'tabby' && isNativeAuthenticationError(error)
+        ? 'Codex rejected the selected space’s login. Sign in from the sidebar or generate its login command.' : error.message
+    }
     finally { clearTimeout(timer); controller.signal.removeEventListener('abort', close); await client.close(); this.nativeCheck = undefined; this.nativeBusy = false; if (!this.destroyed) this.changeDetector?.markForCheck() }
   }
   copyNativeCommand (): void { if (this.nativeCommand) this.platform?.setClipboard({ text: this.nativeCommand }) }

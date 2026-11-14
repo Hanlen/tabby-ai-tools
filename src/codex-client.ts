@@ -7,7 +7,8 @@ import { normalizeExecutable } from './codex-executable'
 import { CodexLaunch, resolveCodexLaunch } from './codex-discovery'
 import { checkCodexInstallation, codexHelperFailure, installationFailure, CodexCapabilities } from './codex-installation'
 import { terminateCodexProcess } from './codex-process'
-import { NativeSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment, codexSpaceArgs } from './session-space'
+import { NativeSessionSpace, prepareSessionSpace, initializeNativeAuth, preferLocalCodexLogin, requirePrivateCodexLogin, sessionEnvironment, codexSpaceArgs } from './session-space'
+import { AgentStore } from './agent-store'
 
 export interface RpcMessage {
   id?: number
@@ -46,17 +47,79 @@ export class CodexClient extends EventEmitter {
   async waitUntilReady (): Promise<void> { if (this.ready) await this.ready }
   waitForCleanup (): Promise<void> { return this.stopping || Promise.resolve() }
 
-  async refreshAuthentication (executable: string, space?: NativeSessionSpace): Promise<void> {
+  async refreshAuthentication (executable: string, space?: NativeSessionSpace, automatic = false): Promise<void> {
     if (!space?.native || space.engine !== 'codex') throw new Error('Select a private Codex space to copy the local login cache')
-    await this.close()
     const resolved = await resolveCodexLaunch(normalizeExecutable(executable) || 'codex', { onInvalidExecutable: this.onInvalidExecutable })
-    await prepareSessionSpace(space)
-    if (!await initializeNativeAuth(space, resolved.env, { replaceExisting: true })) {
-      throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
-    }
-    await this.connect(executable, space)
+    await this.withPrivateAuthLock(space, async () => {
+      if (this.activeTurns.size) throw new Error('Wait for the active Codex turn to finish before restoring login.')
+      const capabilities = this.capabilities
+      if (!await initializeNativeAuth(space, resolved.env, { replaceExisting: true, automatic })) {
+        throw new Error('没有可用的更新凭据，请登录 Tabby 独立空间。')
+      }
+      await this.close()
+      await this.connect(executable, space, capabilities)
+      await this.verifyChatgptLogin()
+    })
+  }
+
+  async verifyChatgptLogin (): Promise<void> {
     const result = await this.request('account/read', { refreshToken: false })
-    if (result.account?.type !== 'chatgpt') throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
+    if (result?.account?.type !== 'chatgpt') throw new Error('Codex is not logged in to ChatGPT.')
+    await this.request('account/rateLimits/read')
+  }
+
+  private async withPrivateAuthLock (space: NativeSessionSpace, action: () => Promise<void>): Promise<void> {
+    if (space.engine !== 'codex' || !space.native) throw new Error('Select a private Codex space.')
+    await prepareSessionSpace(space)
+    const release = await new AgentStore(path.join(space.native, 'tabby-auth')).lockNativeSession('codex-auth')
+    try { await action() } finally { await release() }
+  }
+
+  async signIn (executable: string, space: NativeSessionSpace, openBrowser: (url: string) => void, signal: AbortSignal): Promise<void> {
+    await this.withPrivateAuthLock(space, () => this.browserSignIn(executable, space, openBrowser, signal))
+  }
+
+  private async browserSignIn (executable: string, space: NativeSessionSpace, openBrowser: (url: string) => void, signal: AbortSignal): Promise<void> {
+    if (this.activeTurns.size) throw new Error('Wait for the active Codex turn to finish before signing in.')
+    await this.connect(executable, space, this.capabilities)
+    if (signal.aborted) throw new Error('Codex login cancelled.')
+    let loginId: string | undefined
+    let finish!: (result: boolean) => void
+    const completed = new Promise<boolean>(resolve => { finish = resolve })
+    const onEvent = ({ method, params }: RpcMessage) => {
+      if (method === 'account/login/completed' && loginId && params?.loginId === loginId) finish(params.success === true)
+    }
+    const cancel = () => finish(false)
+    this.on('event', onEvent)
+    this.once('disconnected', cancel)
+    signal.addEventListener('abort', cancel, { once: true })
+    const timer = setTimeout(cancel, 10 * 60_000)
+    try {
+      const attempt = await this.request('account/login/start', { type: 'chatgpt' })
+      if (typeof attempt?.loginId === 'string' && attempt.loginId) loginId = attempt.loginId
+      let url: URL
+      try { url = new URL(attempt?.authUrl) } catch { throw new Error('Invalid Codex login URL.') }
+      if (!loginId || url.protocol !== 'https:' || url.origin !== 'https://auth.openai.com' || url.username || url.password) throw new Error('Invalid Codex login URL.')
+      if (!signal.aborted) openBrowser(url.href)
+      if (!await completed) throw new Error(signal.aborted ? 'Codex login cancelled.' : 'Codex login was not completed.')
+      loginId = undefined
+      await preferLocalCodexLogin(space)
+      await this.verifyChatgptLogin()
+    } finally {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', cancel)
+      this.off('disconnected', cancel)
+      this.off('event', onEvent)
+      if (loginId && this.connected) await this.request('account/login/cancel', { loginId }).catch(() => {})
+    }
+  }
+
+  async signOut (space: NativeSessionSpace): Promise<void> {
+    await this.withPrivateAuthLock(space, async () => {
+      if (this.activeTurns.size) throw new Error('Wait for the active Codex turn to finish before signing out.')
+      await this.close()
+      await preferLocalCodexLogin(space, true)
+    })
   }
 
   async connect (executable: string, space?: NativeSessionSpace, capabilities: CodexCapabilities = {}): Promise<void> {
@@ -249,7 +312,7 @@ export class CodexClient extends EventEmitter {
       const thread = message.result?.thread
       if (typeof thread?.id === 'string' && (thread.status?.type === 'active' ||
           !thread.status?.type && thread.turns?.some((turn: any) => turn.status === 'inProgress'))) this.activeTurns.add(thread.id)
-      if (message.error) pending.reject(Object.assign(new Error(message.error.message), { rpcRejected: true }))
+      if (message.error) pending.reject(Object.assign(new Error(message.error.message), { rpcRejected: true, code: message.error.code }))
       else pending.resolve(message.result)
       if (message.error && codexHelperFailure(message.error.message)) this.recordInstallationFault(new Error(message.error.message))
       this.tryRecovery()
@@ -312,6 +375,7 @@ export class CodexClient extends EventEmitter {
   async request (method: string, params: any = {}): Promise<any> {
     if (!this.ready) throw new Error('Codex app-server is not connected')
     await this.ready
+    if (this.space?.native && (method === 'turn/start' || method === 'turn/steer')) await requirePrivateCodexLogin(this.space)
     // Admission is closed after a confirmed fault. The current turn may finish,
     // but another request must not start work on the invalid installation.
     if (this.fault && ['turn/start', 'turn/steer', 'thread/start', 'thread/resume'].includes(method)) throw new Error(`${this.fault.message}\nConnection recovery is pending or exhausted; no new task was sent.`)

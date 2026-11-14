@@ -85,7 +85,7 @@ test('an empty private Codex home inherits only the ChatGPT cache, once and with
   assert.equal(copied.filter(Boolean).length, 1)
   const target = path.join(space.native, 'auth.json')
   assert.equal(await fs.promises.readFile(target, 'utf8'), cache)
-  assert.deepEqual(await fs.promises.readdir(space.native), ['auth.json'])
+  assert.deepEqual((await fs.promises.readdir(space.native)).sort(), ['.tabby-codex-auth-import', 'auth.json'])
   if (process.platform !== 'win32') assert.equal((await fs.promises.stat(target)).mode & 0o777, 0o600)
   await fs.promises.writeFile(target, 'space-local-login')
   assert.equal(await initializeNativeAuth(space, {}, { home }), false)
@@ -113,14 +113,13 @@ test('login initialization honors the discovered Codex home and leaves missing o
   assert.equal(await fs.promises.readFile(path.join(space.native, 'auth.json'), 'utf8'), cache)
 })
 
-for (const engine of ['codex', 'claude-code']) {
+for (const engine of ['claude-code']) {
   test(`${engine}: explicit recovery replaces expired credentials without changing the source or history`, async t => {
     const root = await temporary(t), source = path.join(root, 'original CLI directory')
     const space = resolveSessionSpace(root, engine, privateSpaceConfig(engine))
-    const filename = engine === 'codex' ? 'auth.json' : '.credentials.json'
-    const env = { [engine === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: source }
-    const cache = engine === 'codex' ? { auth_mode: 'chatgpt', tokens: { access_token: 'new-fixture-token' } }
-      : { claudeAiOauth: { accessToken: 'new-fixture-token', refreshToken: 'fixture-refresh', expiresAt: Date.now() + 3600000 } }
+    const filename = '.credentials.json'
+    const env = { CLAUDE_CONFIG_DIR: source }
+    const cache = { claudeAiOauth: { accessToken: 'new-fixture-token', refreshToken: 'fixture-refresh', expiresAt: Date.now() + 3600000 } }
     await fs.promises.mkdir(source)
     await fs.promises.writeFile(path.join(source, filename), JSON.stringify(cache))
     await prepareSessionSpace(space)
@@ -140,11 +139,43 @@ for (const engine of ['codex', 'claude-code']) {
   })
 }
 
+function fixtureLogin (day, { user = 'same-user', account = 'same-workspace', owner = 'original-grant', expired = false } = {}) {
+  const claims = { 'https://api.openai.com/auth': { chatgpt_user_id: user }, exp: Math.floor(Date.now() / 1000) + (expired ? -60 : 3600), jti: day }
+  return { auth_mode: 'chatgpt', tokens: { access_token: 'jwt.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.fixture',
+    refresh_token: 'fixture-refresh-' + day, login_owner_id: owner, account_id: account }, last_refresh: `2026-01-0${day}T00:00:00Z` }
+}
+
+test('automatic Codex recovery requires a newer system cache for the imported user and workspace', async t => {
+  const root = await temporary(t), source = path.join(root, 'original CLI directory')
+  const space = resolveSessionSpace(root, 'codex', privateSpaceConfig('codex'))
+  const target = path.join(space.native, 'auth.json'), system = path.join(source, 'auth.json')
+  const env = { CODEX_HOME: source }, retry = { replaceExisting: true, automatic: true }
+  await fs.promises.mkdir(source)
+  await prepareSessionSpace(space)
+  await fs.promises.writeFile(system, JSON.stringify(fixtureLogin(1)))
+  assert.equal(await initializeNativeAuth(space, env), true)
+  // Codex can rotate the private refresh token while retaining login ownership.
+  await fs.promises.writeFile(target, JSON.stringify(fixtureLogin(2)))
+  for (const invalid of [fixtureLogin(1), fixtureLogin(3, { user: 'another-user' }), fixtureLogin(3, { account: 'another-workspace' }), fixtureLogin(3, { expired: true })]) {
+    await fs.promises.writeFile(system, JSON.stringify(invalid))
+    assert.equal(await initializeNativeAuth(space, env, retry), false)
+    assert.deepEqual(JSON.parse(await fs.promises.readFile(target, 'utf8')), fixtureLogin(2))
+  }
+  const newest = fixtureLogin(3, { owner: 'system-new-grant' })
+  await fs.promises.writeFile(system, JSON.stringify(newest))
+  assert.equal(await initializeNativeAuth(space, env, retry), true)
+  assert.equal(await initializeNativeAuth(space, env, retry), false)
+  await fs.promises.writeFile(target, JSON.stringify(fixtureLogin(2, { owner: 'independent-private-login' })))
+  assert.equal(await initializeNativeAuth(space, env, retry), false)
+  assert.deepEqual(JSON.parse(await fs.promises.readFile(system, 'utf8')), newest)
+})
+
 test('real app-server transport separates two persistent stores and restarts when the selected space changes', async t => {
   const root = await temporary(t)
   const source = path.join(root, 'shell Codex home')
   await fs.promises.mkdir(source)
-  await fs.promises.writeFile(path.join(source, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'fixture-access' } }))
+  const system = path.join(source, 'auth.json')
+  await fs.promises.writeFile(system, JSON.stringify(fixtureLogin(1)))
   // Discovery may get CODEX_HOME from a login shell rather than process.env.
   t.mock.method(require('../src/codex-discovery.ts'), 'resolveCodexLaunch', async executable => ({ executable, env: { ...process.env, CODEX_HOME: source } }))
   const executable = await launcher(root, 'fixture-codex', `
@@ -161,7 +192,18 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     result = { thread: { id: msg.params.id }, home, sqlite: process.env.CODEX_SQLITE_HOME, args: process.argv.slice(2) }
   }
   if (msg.method === 'thread/list') result = { data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : [] }
-  if (msg.method === 'account/read') result = { account: JSON.parse(fs.readFileSync(path.join(home, 'auth.json'))).tokens.access_token === 'fixture-access' ? { type: 'chatgpt' } : null }
+  const auth = path.join(home, 'auth.json')
+  if (msg.method === 'account/read') result = { account: fs.existsSync(auth) ? { type: 'chatgpt' } : null }
+  if (msg.method === 'account/rateLimits/read' && fs.existsSync(path.join(home, 'reject-login'))) {
+    return process.stdout.write(JSON.stringify({ id: msg.id, error: { code: 401, message: 'Unauthorized' } }) + '\\n')
+  }
+  if (msg.method === 'account/login/start') {
+    result = { loginId: 'fixture-login', authUrl: 'https://auth.openai.com/authorize' }
+    setTimeout(() => {
+      fs.writeFileSync(auth, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'private-login' } }))
+      process.stdout.write(JSON.stringify({ method: 'account/login/completed', params: { loginId: 'fixture-login', success: true } }) + '\\n')
+    }, 30)
+  }
   process.stdout.write(JSON.stringify({ id: msg.id, result }) + '\\n')
 })`)
   const a = resolveSessionSpace(root, 'codex', privateSpaceConfig('codex'))
@@ -182,14 +224,26 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   await client.close(); await client.connect(executable, a)
   assert.deepEqual((await client.request('thread/list')).data, ['A'])
   assert.deepEqual(JSON.parse(await fs.promises.readFile(path.join(b.native, 'fixture-sessions.json'))), ['B'])
-  await fs.promises.writeFile(path.join(a.native, 'auth.json'), JSON.stringify({ tokens: { access_token: 'expired-fixture' } }))
-  assert.equal((await client.request('account/read')).account, null)
-  await client.refreshAuthentication(executable, a)
+  await fs.promises.writeFile(system, JSON.stringify(fixtureLogin(2)))
+  await client.refreshAuthentication(executable, a, true)
   assert.equal((await client.request('account/read')).account.type, 'chatgpt')
   assert.deepEqual((await client.request('thread/list')).data, ['A'])
-  await fs.promises.unlink(path.join(source, 'auth.json'))
-  await assert.rejects(client.refreshAuthentication(executable, a), /本机没有可复用的登录缓存/)
-  assert.equal(JSON.parse(await fs.promises.readFile(path.join(a.native, 'auth.json'))).tokens.access_token, 'fixture-access')
+  await fs.promises.writeFile(system, JSON.stringify(fixtureLogin(3)))
+  const denied = path.join(a.native, 'reject-login')
+  await fs.promises.writeFile(denied, '')
+  await assert.rejects(client.refreshAuthentication(executable, a, true), /Unauthorized/)
+  await fs.promises.unlink(denied)
+  await client.signOut(a)
+  await client.connect(executable, a)
+  assert.equal((await client.request('account/read')).account, null, 'sign-out persists without importing the system login')
+  await assert.rejects(client.request('turn/start', { threadId: 'A' }), /not logged in/)
+  let authUrl
+  await client.signIn(executable, a, url => { authUrl = url }, new AbortController().signal)
+  assert.equal(authUrl, 'https://auth.openai.com/authorize')
+  assert.deepEqual((await client.request('thread/list')).data, ['A'])
+  assert.deepEqual(JSON.parse(await fs.promises.readFile(system, 'utf8')), fixtureLogin(3))
+  await assert.rejects(client.refreshAuthentication(executable, a), /没有可用的更新凭据/)
+  assert.equal(JSON.parse(await fs.promises.readFile(path.join(a.native, 'auth.json'))).tokens.access_token, 'private-login')
 })
 
 test('Claude auth and inference use the same private space; restart resumes there and foreign IDs are rejected', async t => {

@@ -64,7 +64,7 @@ Terminal output is read on demand with `read_tab`; it is no longer automatically
 
 | Connection | How to use it |
 | --- | --- |
-| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. Check selected-space login in Settings → AI Tools → Instructions and sessions; a missing private cache inherits a local ChatGPT file cache when available. Generate a login command if needed. |
+| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. An empty private space can import the local ChatGPT login. Use **Sign in** next to the sidebar connection button if recovery is unavailable. |
 | **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Check the selected-space login; a missing private cache inherits a local OAuth file cache when available. Generate a login command if needed. |
 | **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
 | **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
@@ -100,7 +100,7 @@ When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same 
 ## Start with your local ChatGPT subscription login
 
 1. Install [Codex CLI](https://learn.chatgpt.com/docs/cli) on the computer running Tabby.
-2. Open **Settings → AI Tools → Codex → Instructions and sessions**. Check the selected-space login first; a missing private cache imports an available local ChatGPT file cache. If needed, generate the selected-space login command, run it in a local terminal, complete the official ChatGPT login and check again. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
+2. Open **Settings → AI Tools → Codex → Instructions and sessions**. An empty private space can import your local ChatGPT login. If it cannot recover an expired login, open the dropdown next to the sidebar connection button and choose **Sign in**. You can also generate a login command for the selected space in Settings. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
 
    ```bash
    codex login

@@ -310,6 +310,45 @@ test('a warning after a rolled-back provider switch repairs the failed native pr
   assert.deepEqual(f.sent, [])
 })
 
+test('private Codex repairs a terminal 401 once, preserves the draft, and offers browser login and logout', async t => {
+  const f = await setup(t), { panel } = f
+  const backend = panel.codex
+  backend.sessionSpace = { engine: 'codex', key: 'private', native: '/fixture/private' }
+  const attempts = [], opened = []
+  backend.refreshAuthentication = async (_, automatic) => { attempts.push(automatic); throw new Error('System login unavailable') }
+  backend.signIn = async (_, open, signal) => {
+    assert.equal(signal.aborted, false)
+    open('https://auth.openai.com/authorize')
+  }
+  backend.signOut = async () => {}
+  panel.platform = { openExternal: url => opened.push(url) }
+  panel.reconnect = async () => { panel.connected = panel.codexSignedIn = true; return true }
+  panel.prompt = 'keep this draft'
+  const error = { message: 'token_revoked' }
+  panel.busy = true
+  panel.handleEvent({ method: 'error', params: { threadId: 'thread', turnId: 'one', willRetry: true, error } })
+  assert.deepEqual(attempts, [])
+  for (const id of ['one', 'two']) {
+    panel.turnId = id
+    panel.handleEvent({ method: 'turn/completed', params: { threadId: 'thread', turn: { id, status: 'failed', error } } })
+    await flush()
+  }
+  assert.deepEqual(attempts, [true])
+  assert.equal(panel.authWarning, true)
+  assert.equal(panel.codexSignedIn, false)
+  await panel.loginToPrivateCodex()
+  assert.deepEqual(opened, ['https://auth.openai.com/authorize'])
+  assert.equal(panel.codexSignedIn, true)
+  assert.equal(panel.authWarning, false)
+  await panel.logoutOfPrivateCodex()
+  assert.equal(panel.codexSignedIn, false)
+  await panel.send()
+  assert.equal(panel.authWarning, true)
+  assert.equal(panel.threadId, 'thread')
+  assert.equal(panel.prompt, 'keep this draft')
+  assert.deepEqual(f.sent, [])
+})
+
 test('/remember starts execution rather than saving a preference; workflow picker fills an alias', async t => {
   const f = await setup(t)
   f.panel.prompt = '/remember build frontend'
