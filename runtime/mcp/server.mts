@@ -86,7 +86,7 @@ export async function startMcpServer (invoke: Invoke, initial: Snapshot, port = 
   }, { maxRequestBodySize: 1024 * 1024 })
   const nodeHandler = toNodeHandler(handler, { maxRequestBodySize: 1024 * 1024 })
   const http = createServer(async (req, res) => {
-    const answer = (status: number) => { res.writeHead(status); res.end() }
+    const answer = (status: number) => { req.resume(); res.writeHead(status); res.end() }
     const address = http.address()
     if (!address || typeof address === 'string') return answer(503)
     if (req.headers.host !== `127.0.0.1:${address.port}` || req.headers.origin !== undefined) return answer(403)
@@ -109,7 +109,12 @@ export async function startMcpServer (invoke: Invoke, initial: Snapshot, port = 
       if (remaining) counts.set(client.id, remaining); else counts.delete(client.id)
     }
     res.once('close', finish); res.once('finish', finish)
+    // A body-limit exception must not destroy IncomingMessage's socket before
+    // the adapter can flush its 413 response (notably on macOS). Drain unread
+    // bytes afterward; the request timeout still bounds an unfinished upload.
+    req[Symbol.asyncIterator] = () => req.iterator({ destroyOnReturn: false })
     try { activity(client.id); await nodeHandler(req, res) } catch { if (!res.headersSent) answer(500); else res.destroy() }
+    finally { req.resume() }
   })
   http.headersTimeout = 5000; http.requestTimeout = 10000; http.timeout = 35000
   http.on('clientError', (_error, socket) => socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'))

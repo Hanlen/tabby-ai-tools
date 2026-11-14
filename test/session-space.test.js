@@ -139,8 +139,9 @@ for (const engine of ['claude-code']) {
   })
 }
 
+const fixtureEpoch = Math.floor(Date.now() / 1000)
 function fixtureLogin (day, { user = 'same-user', account = 'same-workspace', owner = 'original-grant', expired = false } = {}) {
-  const claims = { 'https://api.openai.com/auth': { chatgpt_user_id: user }, exp: Math.floor(Date.now() / 1000) + (expired ? -60 : 3600), jti: day }
+  const claims = { 'https://api.openai.com/auth': { chatgpt_user_id: user }, exp: fixtureEpoch + (expired ? -60 : 3600), jti: day }
   return { auth_mode: 'chatgpt', tokens: { access_token: 'jwt.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.fixture',
     refresh_token: 'fixture-refresh-' + day, login_owner_id: owner, account_id: account }, last_refresh: `2026-01-0${day}T00:00:00Z` }
 }
@@ -244,6 +245,36 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   assert.deepEqual(JSON.parse(await fs.promises.readFile(system, 'utf8')), fixtureLogin(3))
   await assert.rejects(client.refreshAuthentication(executable, a), /没有可用的更新凭据/)
   assert.equal(JSON.parse(await fs.promises.readFile(path.join(a.native, 'auth.json'))).tokens.access_token, 'private-login')
+})
+
+test('Codex browser login handles completion in the same stdout chunk as the start reply', async t => {
+  const root = await temporary(t)
+  t.mock.method(require('../src/codex-discovery.ts'), 'resolveCodexLaunch', async executable => ({ executable, env: { ...process.env, CODEX_HOME: root } }))
+  const executable = await launcher(root, 'fixture-login', `
+const readline = require('node:readline')
+readline.createInterface({ input: process.stdin }).on('line', line => {
+  const msg = JSON.parse(line)
+  if (msg.id === undefined) return
+  const result = msg.method === 'account/login/start' ? { loginId: 'immediate', authUrl: 'https://auth.openai.com/authorize' } : msg.method === 'account/read' ? { account: { type: 'chatgpt' } } : {}
+  const replies = [{ id: msg.id, result }]
+  if (msg.method === 'account/login/start') replies.push({ method: 'account/login/completed', params: { loginId: 'immediate', success: true } })
+  process.stdout.write(replies.map(value => JSON.stringify(value)).join('\\n') + '\\n')
+})`)
+  const client = new CodexClient(), controller = new AbortController()
+  t.after(() => client.close())
+  const deadline = setTimeout(() => controller.abort(), 15000)
+  t.after(() => clearTimeout(deadline))
+  const space = resolveSessionSpace(root, 'codex', privateSpaceConfig('codex'))
+  let opened = 0
+  await client.signIn(executable, space, () => opened++, controller.signal)
+  assert.equal(opened, 1)
+  assert.equal(controller.signal.aborted, false)
+  assert.equal(await fs.promises.readFile(path.join(space.native, '.tabby-codex-local-login'), 'utf8'), '1')
+  clearTimeout(deadline)
+  const cancelled = new AbortController()
+  const other = resolveSessionSpace(root, 'codex', { mode: 'tabby', spaceId: 'c'.repeat(32) })
+  await assert.rejects(client.signIn(executable, other, () => cancelled.abort(), cancelled.signal), /cancelled/)
+  assert.equal(fs.existsSync(path.join(other.native, '.tabby-codex-local-login')), false, 'cancellation wins even if completion was already received')
 })
 
 test('Claude auth and inference use the same private space; restart resumes there and foreign IDs are rejected', async t => {

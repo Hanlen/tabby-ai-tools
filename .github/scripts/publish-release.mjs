@@ -38,7 +38,7 @@ export function verifyArchiveNames (names) {
     assert.ok(name.startsWith('package/') && !name.split('/').includes('..') && !name.includes('\\'), 'Unsafe archive path')
     assert.ok(!/(?:AGENTS\.md|roadmap|research|(?:^|\/)node_modules\/|(?:^|\/)\.env|(?:^|\/)\.npmrc|(?:^|\/)\.git\/)/i.test(name), `Unexpected private/package content: ${name}`)
   }
-  for (const file of ['package.json', 'dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt', 'README.md', 'README.zh-CN.md', 'docs/assets/overview.png', 'docs/assets/overview.svg', 'docs/assets/robot-multitask.gif', 'docs/assets/robot-multitask.png', 'skills/tabby/SKILL.md']) assert.ok(names.includes('package/' + file), `Missing artifact: ${file}`)
+  for (const file of ['package.json', 'dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt', 'dist/mcp/utility.cjs', 'dist/mcp/electron-host.cjs', 'dist/mcp/THIRD_PARTY_NOTICES.txt', 'skills/tabby-mcp/SKILL.md', 'skills/tabby-mcp/references/connection.md', 'README.md', 'README.zh-CN.md', 'docs/assets/overview.png', 'docs/assets/overview.svg', 'docs/assets/robot-multitask.gif', 'docs/assets/robot-multitask.png', 'skills/tabby/SKILL.md']) assert.ok(names.includes('package/' + file), `Missing artifact: ${file}`)
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function github (path) {

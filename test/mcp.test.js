@@ -198,6 +198,25 @@ test('HTTP gates enforce token, exact host/origin, body limits and concurrent re
   f.terminal.session.output$.next('release concurrent observations')
   await Promise.all(pending)
 })
+test('oversized chunked HTTP bodies return 413 without resetting the connection', async t => {
+  const f = await httpFixture(t)
+  const status = await new Promise((resolve, reject) => {
+    const req = http.request(f.url, { method: 'POST', headers: { authorization: `Bearer ${f.grant.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' } }, res => {
+      res.resume(); res.once('end', () => resolve(res.statusCode))
+    })
+    req.once('error', reject)
+    req.write('x'.repeat(512 * 1024))
+    req.write('x'.repeat(512 * 1024))
+    req.write('x')
+    // Leave the request incomplete when the adapter detects the limit. Its
+    // default async iterator otherwise destroys the socket before 413 flushes.
+    const finish = setTimeout(() => req.end('tail'), 30)
+    t.after(() => clearTimeout(finish))
+  })
+  assert.equal(status, 413)
+  assert.equal(value(await f.client.callTool({ name: 'get_capabilities', arguments: {} })).mode, 'read_only')
+})
+
 test('legacy cancellation still reaches a full observation quota without cancelling other clients with the same RPC ID', async t => {
   const f = await httpFixture(t)
   const other = await f.connect(f.second.token)

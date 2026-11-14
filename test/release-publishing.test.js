@@ -38,7 +38,8 @@ test('release artifact identity cannot redirect publication or add installation 
 
 test('release artifacts reject traversal and local instructions or research', async () => {
   const { verifyArchiveNames } = await policy
-  const files = ['package.json', 'dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt', 'README.md', 'README.zh-CN.md', 'docs/assets/overview.png', 'docs/assets/overview.svg', 'docs/assets/robot-multitask.gif', 'docs/assets/robot-multitask.png', 'skills/tabby/SKILL.md'].map(name => 'package/' + name)
+  const files = ['package.json', 'dist/index.js', 'dist/pi/sidecar.mjs', 'dist/pi/electron-host.cjs', 'dist/pi/THIRD_PARTY_NOTICES.txt', 'dist/mcp/utility.cjs', 'dist/mcp/electron-host.cjs', 'dist/mcp/THIRD_PARTY_NOTICES.txt', 'skills/tabby-mcp/SKILL.md', 'skills/tabby-mcp/references/connection.md', 'README.md', 'README.zh-CN.md', 'docs/assets/overview.png', 'docs/assets/overview.svg', 'docs/assets/robot-multitask.gif', 'docs/assets/robot-multitask.png', 'skills/tabby/SKILL.md'].map(name => 'package/' + name)
   verifyArchiveNames(files)
+  for (const file of files.filter(name => name.includes('/mcp/') || name.includes('/tabby-mcp/'))) assert.throws(() => verifyArchiveNames(files.filter(name => name !== file)), /Missing artifact/)
   for (const entry of ['../package.json', 'package/../credentials', 'package/AGENTS.md', 'package/research/plan.md', 'package/.npmrc', 'package/docs/provider-roadmap.md', 'package/node_modules/example/package.json']) assert.throws(() => verifyArchiveNames([...files, entry]))
 })

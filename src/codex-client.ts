@@ -84,10 +84,17 @@ export class CodexClient extends EventEmitter {
     await this.connect(executable, space, this.capabilities)
     if (signal.aborted) throw new Error('Codex login cancelled.')
     let loginId: string | undefined
+    const earlyCompletions = new Map<string, boolean>()
     let finish!: (result: boolean) => void
     const completed = new Promise<boolean>(resolve => { finish = resolve })
     const onEvent = ({ method, params }: RpcMessage) => {
-      if (method === 'account/login/completed' && loginId && params?.loginId === loginId) finish(params.success === true)
+      if (method !== 'account/login/completed' || typeof params?.loginId !== 'string') return
+      if (loginId) {
+        if (params.loginId === loginId) finish(params.success === true)
+      } else if (earlyCompletions.size < 8) {
+        // readline may deliver both lines before the start request's await resumes.
+        earlyCompletions.set(params.loginId, params.success === true)
+      }
     }
     const cancel = () => finish(false)
     this.on('event', onEvent)
@@ -97,11 +104,13 @@ export class CodexClient extends EventEmitter {
     try {
       const attempt = await this.request('account/login/start', { type: 'chatgpt' })
       if (typeof attempt?.loginId === 'string' && attempt.loginId) loginId = attempt.loginId
+      if (loginId && earlyCompletions.has(loginId)) finish(earlyCompletions.get(loginId)!)
+      earlyCompletions.clear()
       let url: URL
       try { url = new URL(attempt?.authUrl) } catch { throw new Error('Invalid Codex login URL.') }
       if (!loginId || url.protocol !== 'https:' || url.origin !== 'https://auth.openai.com' || url.username || url.password) throw new Error('Invalid Codex login URL.')
       if (!signal.aborted) openBrowser(url.href)
-      if (!await completed) throw new Error(signal.aborted ? 'Codex login cancelled.' : 'Codex login was not completed.')
+      if (!await completed || signal.aborted) throw new Error(signal.aborted ? 'Codex login cancelled.' : 'Codex login was not completed.')
       loginId = undefined
       await preferLocalCodexLogin(space)
       await this.verifyChatgptLogin()

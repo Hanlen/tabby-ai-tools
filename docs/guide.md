@@ -407,7 +407,7 @@ Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与
 
 运行时复用 Tabby/Electron 的 Node，不要求用户额外安装 Node。首次启动保存空闲 loopback 端口，之后重用；占用时停止并报告，停用服务后可明确修改端口，不会杀其他进程或静默换 URL。权限摘要与端口在真实 Tabby 配置目录的私有 `ai-tools-mcp/state.json`，不复用模型 API key。只适用于同一台机器、同一网络命名空间的 `127.0.0.1`，不包含 LAN／公网、OAuth 服务端、云连接器或 WSL／容器隧道。
 
-Linux 官方 Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）与 Codex CLI 0.167.1 已验证真实终端读取、未授权终端隐藏、增量／等待、撤销／轮换／停用；无模型请求。Cursor／Claude Code 的真实客户端、Windows/macOS／旧宿主／用户 SSH 尚待验。已发布 0.9.4 不含本轮源码预览，不能将配置示例当作三个客户端均已验收。完整步骤与配置位置见 [MCP guide](mcp.md)。
+Linux 官方 Tabby 1.0.238（Electron 43.7.0 / Node 24.21.0）与 Codex CLI 0.167.1 已验证真实终端读取、未授权终端隐藏、增量／等待、撤销／轮换／停用；无模型请求。Cursor／Claude Code 的真实客户端、Windows/macOS／旧宿主／用户 SSH 尚待验。此功能包含于 v1.0.0；不能将配置示例当作三个客户端均已验收。完整步骤与配置位置见 [MCP guide](mcp.md)。
 
 ### 通用 Agent 发现与首次配对
 

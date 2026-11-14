@@ -1,6 +1,6 @@
 # External AI connections: MCP terminal preview
 
-This feature is currently an **unreleased source preview**. The published 0.9.4
+This feature ships in **v1.0.0**, with controlled terminal input in preview. The older 0.9.4
 package does not include it. It exposes explicitly selected, running Tabby
 terminals to a local MCP client. A sidebar model or API key is not required.
 The service runs on Tabby's built-in Electron Node runtime; there is no separate

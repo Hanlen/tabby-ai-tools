@@ -18,6 +18,8 @@
 
 </div>
 
+**v1.0.0：外部 MCP 终端连接、读取提速与 Codex 独立空间登录。** 本机 AI 客户端可访问明确共享的终端，使用只读或受控输入权限；新输出可提前唤醒读取。Codex 独立空间支持官方浏览器登录与有界缓存恢复，不重发任务。[发布说明](docs/releases/1.0.0.md)。
+
 **v0.9.4：会话内问题导航与更安全的 CLI 恢复。** 通用 Agent 面板在右侧滚动条区域提供问题索引：悬停或聚焦预览原问题，点击跳转，回到最新消息恢复流式跟随。居中的紧凑 1px 短线不附加符号，与聊天滚动滑块共用右侧 18px 窄区域，去掉左侧占位；预览向左展开，过多时使用主题一致的 ↑ / ↓ 按钮翻动。绿色表示确认完成，淡绿色表示没有用户 Stop 证据的普通中断，蓝色表示执行中或等待外部条件，红色表示确认主动 Stop、任务未完成便终止或达到执行上限。回合结束后等待 Goal 确认，自动续行恢复蓝色；证据不足的历史保持灰色。
 
 <br>
@@ -40,7 +42,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 <sub>根据当前功能绘制的英文界面示意，任务和连接均为示例；实际外观随 Tabby 主题与窗口尺寸变化。</sub>
 
-对话中实时显示默认折叠的思考过程与工具调用，展开可查看服务返回的思考文本、工具参数和结果，正文回复直接显示。**源码未发布优化：** 默认读屏在新输出到达或可靠 Shell 完成时提前返回，也能读取本任务输入后、读屏前已到达的未观察输出。出现输出不代表命令完成，多行脚本仍保留输入锁。[等待行为](docs/terminal-logs.md)。收到可读文本后才显示思考记录，Codex 与支持的 OpenAI 推理请求会开启摘要；在侧栏选中文字并复制时，不会向活动终端发送 Ctrl+C。
+对话中实时显示默认折叠的思考过程与工具调用，展开可查看服务返回的思考文本、工具参数和结果，正文回复直接显示。**v1.0.0 终端读取：** 默认读屏在新输出到达或可靠 Shell 完成时提前返回，也能读取本任务输入后、读屏前已到达的未观察输出。出现输出不代表命令完成，多行脚本仍保留输入锁。[等待行为](docs/terminal-logs.md)。收到可读文本后才显示思考记录，Codex 与支持的 OpenAI 推理请求会开启摘要；在侧栏选中文字并复制时，不会向活动终端发送 Ctrl+C。
 
 **v0.7.1 修复：** Windows 默认查找会比较已安装 Codex CLI 的真实版本，避免 PATH 中的旧版遮住桌面新版，并支持桌面升级后的路径恢复。详见[发布说明](docs/releases/0.7.1.md)。
 
@@ -109,6 +111,8 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 
 3. 启动 Tabby 后 AI Tools 会自动打开，默认使用 **Codex（本机登录）**。在选定空间登录后点击侧栏重连，再选择账号可用模型，或沿用 Codex 默认模型。
 
+独立 Codex 空间还可在连接菜单使用官方浏览器登录或本地退出。自动缓存恢复只接受同一用户／工作区较新的已导入凭据；主动登录或退出后停用导入，恢复不会重发任务。
+
 只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 
 自动查找覆盖 standalone 安装（含 `CODEX_INSTALL_DIR` 和 `CODEX_HOME/packages/standalone/current/bin`）、Homebrew/npm 全局 prefix，并以 VS Code 扩展中的兼容 Codex 作为最后兜底。macOS 检查 `/Applications` 和 `~/Applications` 下的 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` 及旧 `Contents/Resources/codex` 入口，也兼容原 `Codex.app` 名称。其他位置可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写完整路径。[查看完整发现矩阵](docs/guide.md#cli-自动发现与启动排查)。
@@ -137,7 +141,7 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 
 ## 安装与开始使用
 
-**源码未发布预览：外部 MCP 终端连接。** 在「设置 → AI Tools → 外部 AI 连接（MCP）」添加客户端并勾选终端。默认只读；另选「每次操作确认」或「允许自动操作」后，可用 `send_input`、`send_keys`、`attach_process`、`release_tab` 执行命令和交互。输入与侧栏／调度共用控制，不自动中断已有任务，租约绑定客户端；撤销或租约到期仅解锁，不终止进程。复用 Tabby 内置运行时，侧栏关闭仍可用，配置手动复制合并。Linux Tabby/Codex 已有只读验收；受控输入验证及平台／客户端边界见指南。已发布 0.9.4 不含该预览。[配置与边界](docs/mcp.md)。 随附通用 `tabby-mcp` Agent Skill 与无凭据发现记录，帮助支持技能的本机 Agent 找到服务和配对入口；首次仍需独立客户端配置与授权。
+**v1.0.0：外部 MCP 终端连接（受控输入预览）。** 在「设置 → AI Tools → 外部 AI 连接（MCP）」添加客户端并勾选终端。默认只读；另选「每次操作确认」或「允许自动操作」后，可用 `send_input`、`send_keys`、`attach_process`、`release_tab` 执行命令和交互。输入与侧栏／调度共用控制，不自动中断已有任务，租约绑定客户端；撤销或租约到期仅解锁，不终止进程。复用 Tabby 内置运行时，侧栏关闭仍可用，配置手动复制合并。Linux Tabby/Codex 已有只读验收；受控输入验证及平台／客户端边界见指南。此功能包含于 v1.0.0。[配置与边界](docs/mcp.md)。 随附通用 `tabby-mcp` Agent Skill 与无凭据发现记录，帮助支持技能的本机 Agent 找到服务和配对入口；首次仍需独立客户端配置与授权。
 
 1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完成后点击设置页的重启提示（**Restart the app to apply changes**）；安装和升级均在重启后生效。
 2. 使用本机 Codex 登录，或在 **Settings → AI Tools** 添加 API 连接。
