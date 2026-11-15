@@ -48,6 +48,8 @@ Thinking and tool activity stream into collapsed entries in the conversation. Ex
 
 **Pi API configuration (v0.8.0):** new API connections recommend Pi SDK, with searchable native providers (including Gemini and OpenRouter), an offline SDK 1.4.0 model catalog, capability-based reasoning/output limits and four explicit custom protocols. Connection edits now use Save / Discard / Copy drafts. Existing connections keep their runtime and product presets. Local checks and paid model/tool tests are separate; OAuth/cloud identity and advanced import/export remain pending. See [Pi configuration and boundaries](docs/pi.md#unreleased-native-providers-and-connection-drafts-p0--p1).
 
+**Unreleased Claude private-login fix:** the authentication warning provides a space-specific official login command and a check/reconnect action. System OAuth caches are no longer copied; history and drafts are retained without task replay.
+
 **Custom instructions and private CLI history:** configure shared or per-connection instruction text/local AGENTS.md with previews and saved session snapshots. Unused Codex/Claude Code connections default to Tabby private history; existing CLI references retain an explicit compatibility mode. Generate a space-specific login command, check its authentication and switch when idle. See [instructions, authentication and migration](docs/instructions-sessions.md).
 
 **New in v0.7.0:** readable thinking/tool activity, safe sidebar copying and earlier terminal readback after verified command completion. See the [release notes](docs/releases/0.7.0.md) for validation and limits.
@@ -67,7 +69,7 @@ Terminal output is read on demand with `read_tab`; it is no longer automatically
 | Connection | How to use it |
 | --- | --- |
 | **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. An empty private space can import the local ChatGPT login. Use **Sign in** next to the sidebar connection button if recovery is unavailable. |
-| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Check the selected-space login; a missing private cache inherits a local OAuth file cache when available. Generate a login command if needed. |
+| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Generate the selected private space’s official login command, complete it in a local terminal, then check and reconnect. Claude OAuth caches are no longer copied between spaces (unreleased fix). |
 | **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
 | **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
 | **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |

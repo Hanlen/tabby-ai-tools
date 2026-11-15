@@ -635,3 +635,33 @@ test('Claude max-turn result retains a structured execution limit without retryi
   assert.equal(saved.turns.at(-1).terminationReason, 'execution_limit')
   assert.equal(saved.turns.length, 1)
 })
+
+
+test('Claude login recovery rejects active turns and preserves native session on failed status checks', async t => {
+  const f = await fixture(t, { hang: true })
+  f.agent.sessionSpace = { engine: 'claude-code', key: 'private', root: path.join(f.root, 'private'), native: path.join(f.root, 'private', 'native') }
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const finished = done(f.agent)
+  const turn = await f.agent.startTurn(id, 'do not replay', f.root, f.settings)
+  await waitFor(() => fs.existsSync(path.join(f.root, 'capture.json')))
+  await assert.rejects(f.agent.refreshAuthentication(f.settings), /active Claude Code turn/)
+  assert.equal(f.agent.running.size, 1)
+  await f.agent.interrupt(id, turn)
+  assert.equal((await finished).status, 'interrupted')
+  const before = await f.store.load(id)
+  before.claudeSession = { id: '11111111-1111-1111-1111-111111111111', messageCount: before.messages.length }
+  await f.store.save(before)
+  await f.agent.resumeThread(id, f.root, f.settings)
+  await fs.promises.writeFile(path.join(f.root, 'scenario.json'), JSON.stringify({ loggedIn: false }))
+  const capture = fs.readFileSync(path.join(f.root, 'capture.json'), 'utf8')
+  await assert.rejects(f.agent.refreshAuthentication(f.settings), /not logged in/)
+  assert.deepEqual((await f.store.load(id)).claudeSession, before.claudeSession)
+  assert.equal(fs.readFileSync(path.join(f.root, 'capture.json'), 'utf8'), capture)
+  const custom = path.join(f.root, process.platform === 'win32' ? 'updated.cmd' : 'updated')
+  await fs.promises.copyFile(f.executable, custom)
+  await fs.promises.chmod(custom, 0o700)
+  assert.ok((await f.agent.authenticationCommand({ ...f.settings, claudeExecutable: custom })).includes(custom))
+  await fs.promises.unlink(custom)
+  await assert.rejects(f.agent.authenticationCommand({ ...f.settings, claudeExecutable: custom }), /找不到/)
+})

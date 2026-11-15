@@ -1077,5 +1077,12 @@
   "installed": "Installed",
   "present": "Present",
   "conflict": "Existing skill preserved; copy or reconcile manually",
-  "error": "Installation failed; retry or copy the bundled skill"
+  "error": "Installation failed; retry or copy the bundled skill",
+  "请在本地终端运行此空间的官方登录命令，完成后检查并重连。当前会话和输入会保留，任务不会自动重发。": "Führe den offiziellen Anmeldebefehl dieses Bereichs in einem lokalen Terminal aus und prüfe dann die Anmeldung. Verlauf und Entwurf bleiben erhalten; Aufgaben werden nicht erneut gesendet.",
+  "独立空间登录命令": "Anmeldebefehl für privaten Bereich",
+  "复制登录命令": "Anmeldebefehl kopieren",
+  "检查登录并重连": "Anmeldung prüfen und verbinden",
+  "已检查 Claude Code 独立空间登录，请重新发送或继续任务。": "Anmeldung im privaten Claude Code-Bereich geprüft. Aufgabe erneut senden oder fortsetzen.",
+  "请在 Claude Code 独立空间完成官方登录，再检查并重连。": "Im privaten Claude Code-Bereich offiziell anmelden, dann prüfen und verbinden.",
+  "Saved. Sign in to the selected Claude Code space with its official login command, then reconnect when idle. Original sessions are retained.": "Gespeichert. Mit dem offiziellen Befehl im gewählten Claude Code-Bereich anmelden und im Leerlauf verbinden. Sitzungen bleiben erhalten."
 }

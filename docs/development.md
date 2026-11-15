@@ -10,6 +10,10 @@ v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions 
 
 `test/api-agent.test.js` 覆盖自定义 Chat Completions 的现有 Agent 回归、Responses 连续工具往返与恢复、协议切换、无密钥模型发现与流式回复、配置失效及原供应商指纹兼容。全部使用本地 HTTP/SSE 夹具；真实第三方服务和桌面端需另行验证。协议参考：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Responses 迁移与原生历史](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
 
+## Claude 独立空间认证（未发布）
+
+Claude 的 connect、设置检查、模型探针和认证恢复不再读取或复制系统 OAuth 缓存。过期后通过官方 `auth login` 在同一 `CLAUDE_CONFIG_DIR` 重新登录；认证提示提供可复制命令及检查重连。恢复禁止打断运行中回合，不删除 native session、不重放推理或工具。`test/session-space.test.js`、`test/claude-code.test.js`、`test/task-memory-panel.test.js` 覆盖系统缓存不导入、失败保留会话、原 selector 更新、活动任务保护和切换失败目标的命令／草稿恢复。真实账号、keychain、桌面、多平台及 SSH 仍需实测；离线夹具不代表这些通过。
+
 ## 本地开发
 
 ### Markdown 输出

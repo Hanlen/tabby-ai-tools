@@ -9,11 +9,11 @@ import { AgentStore, ApiSession } from './agent-store'
 import { portableMessages } from './agent-context'
 import { ApiProviderAdapter, ModelResult, ModelToolCall, ToolResult, ToolDefinition, StreamProgress } from './api-provider'
 import { createClaudeMcp } from './claude-code-mcp'
-import { inspectClaudeCode, runClaudeProcess } from './claude-code-client'
+import { inspectClaudeCode, runClaudeProcess, resolveClaudeExecutable } from './claude-code-client'
 import type { CodexModel } from './codex.service'
 import { redactMemory } from './task-memory'
 import { modelReasoningEfforts } from './model-reasoning'
-import { NativeSessionSpace, prepareSessionSpace, initializeNativeAuth, sessionEnvironment } from './session-space'
+import { NativeSessionSpace, prepareSessionSpace, sessionEnvironment, nativeLoginCommand } from './session-space'
 import { normalizeExecutable } from './codex-executable'
 import { isNativeAuthenticationError } from './cli-auth'
 
@@ -147,7 +147,6 @@ export class ClaudeCodeAgent extends ApiAgent {
       try {
         if (this.sessionSpace) {
           await prepareSessionSpace(this.sessionSpace)
-          await initializeNativeAuth(this.sessionSpace, process.env)
         }
         const resolved = await inspectClaudeCode(executable, cwd, controller.signal, sessionEnvironment(this.sessionSpace, process.env))
         if (controller.signal.aborted) throw new Error('请求已停止')
@@ -161,13 +160,18 @@ export class ClaudeCodeAgent extends ApiAgent {
     this.connecting = { key, ready }
     return ready
   }
-  async refreshAuthentication (settings: AgentSettings): Promise<void> {
-    if (!this.sessionSpace?.native) throw new Error('Select a private Claude Code space to copy the local login cache')
-    this.close()
+  async authenticationCommand (settings: AgentSettings): Promise<string> {
+    if (!this.sessionSpace?.native) throw new Error('Select a private Claude Code space.')
     await prepareSessionSpace(this.sessionSpace)
-    if (!await initializeNativeAuth(this.sessionSpace, process.env, { replaceExisting: true })) {
-      throw new Error('本机没有可复用的登录缓存，请先在原始 CLI 登录；钥匙串登录需在所选空间重新登录。')
-    }
+    // Resolve the original selector again after CLI auto-updates; never cache it.
+    const executable = resolveClaudeExecutable(settings.claudeExecutable ?? this.configuredExecutable)
+    return nativeLoginCommand(this.sessionSpace, executable)
+  }
+  async refreshAuthentication (settings: AgentSettings): Promise<void> {
+    if (!this.sessionSpace?.native) throw new Error('Select a private Claude Code space.')
+    if (this.hasActiveTurns) throw new Error('Wait for the active Claude Code turn to finish before checking login.')
+    // The official CLI must replace/refresh its own credentials in this space.
+    // A failed check must not stop a turn, discard history or copy another grant.
     await this.connect(settings)
   }
   async listModels (): Promise<CodexModel[]> {
@@ -197,7 +201,6 @@ export async function probeClaudeCodeModel (profile: ApiProfile, configuredExecu
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tabby-claude-probe-'))
   try {
     if (space) await prepareSessionSpace(space)
-    await initializeNativeAuth(space, process.env)
     const executable = await inspectClaudeCode(configuredExecutable, directory, signal, sessionEnvironment(space, process.env))
     const nonce = randomBytes(8).toString('hex')
     let confirmed = false

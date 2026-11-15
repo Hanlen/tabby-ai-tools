@@ -3,11 +3,17 @@
     h3
       i.fas.fa-exclamation-triangle(aria-hidden='true')
       |  {{t("{0} 认证失败", [authAgentLabel])}}
-    p {{canSignInToPrivateCodex ? t("请登录 Codex 独立空间。若本机已有更新的同账号登录，也可以尝试恢复。") : canRecoverNativeAuth ? t("认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。") : t("认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。")}}
+    p {{privateClaudeAuthentication ? t("请在本地终端运行此空间的官方登录命令，完成后检查并重连。当前会话和输入会保留，任务不会自动重发。") : canSignInToPrivateCodex ? t("请登录 Codex 独立空间。若本机已有更新的同账号登录，也可以尝试恢复。") : canRecoverNativeAuth ? t("认证失败。可从本机原始 CLI 目录重新复制登录并重连。当前会话和输入会保留，任务不会自动重发。") : t("认证失败。请先在本机 CLI 重新登录，再重连。当前会话和输入会保留，任务不会自动重发。")}}
     p.codex-detail-error(*ngIf='authRecoveryError', role='alert') {{t(authRecoveryError)}}
+    .codex-claude-login(*ngIf='privateClaudeAuthentication && claudeLoginCommand')
+      label
+        | {{t("独立空间登录命令")}}
+        textarea.form-control(readonly, rows='5', [value]='claudeLoginCommand', dir='ltr', spellcheck='false')
+      button.btn.btn-outline-secondary(type='button', (click)='copyClaudeLoginCommand()') {{t("复制登录命令")}}
     .codex-auth-warning-actions
+      button.btn.btn-primary(type='button', *ngIf='privateClaudeAuthentication', (click)='generateClaudeLoginCommand()', [disabled]='loading || busy || !!request || authRecovering') {{t("Generate login command")}}
       button.btn.btn-primary(type='button', *ngIf='canSignInToPrivateCodex', (click)='loginToPrivateCodex(true)', [disabled]='loading || busy || !!request || authRecovering') {{t("登录")}}
-      button.btn.btn-outline-secondary(type='button', *ngIf='canRecoverNativeAuth', (click)='recoverAuthentication()', [disabled]='loading || authRecovering') {{authRecovering && !codexLoginInProgress ? t("正在恢复登录…") : t("重新复制登录并重连")}}
+      button.btn.btn-outline-secondary(type='button', *ngIf='canRecoverNativeAuth', (click)='recoverAuthentication()', [disabled]='loading || busy || !!request || authRecovering') {{authRecovering && !codexLoginInProgress ? t("正在恢复登录…") : privateClaudeAuthentication ? t("检查登录并重连") : t("重新复制登录并重连")}}
       button.btn.btn-outline-secondary(type='button', *ngIf='codexLoginInProgress', (click)='cancelCodexLogin()') {{t("取消登录")}}
       button.btn.btn-outline-secondary(type='button', (click)='dismissAuthWarning()', [disabled]='authRecovering') {{t("关闭")}}
   dialog.codex-image-preview(#attachmentPreviewDialog, [attr.aria-label]='t("图片预览")', (cancel)='$event.preventDefault(); closeAttachmentPreview()', (click)='$event.target === $event.currentTarget && closeAttachmentPreview()', (keydown)='$event.stopPropagation()', (close)='previewAttachment = undefined')

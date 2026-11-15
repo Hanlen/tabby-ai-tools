@@ -1077,5 +1077,12 @@
   "installed": "已安装",
   "present": "已存在",
   "conflict": "保留已有技能，请手动核对或合并",
-  "error": "安装失败，请重试或手动复制"
+  "error": "安装失败，请重试或手动复制",
+  "请在本地终端运行此空间的官方登录命令，完成后检查并重连。当前会话和输入会保留，任务不会自动重发。": "请在本地终端运行此空间的官方登录命令，完成后检查并重连。当前会话和输入会保留，任务不会自动重发。",
+  "独立空间登录命令": "独立空间登录命令",
+  "复制登录命令": "复制登录命令",
+  "检查登录并重连": "检查登录并重连",
+  "已检查 Claude Code 独立空间登录，请重新发送或继续任务。": "已检查 Claude Code 独立空间登录，请重新发送或继续任务。",
+  "请在 Claude Code 独立空间完成官方登录，再检查并重连。": "请在 Claude Code 独立空间完成官方登录，再检查并重连。",
+  "Saved. Sign in to the selected Claude Code space with its official login command, then reconnect when idle. Original sessions are retained.": "已保存。请使用官方登录命令登录所选 Claude Code 空间，空闲时重连；原有会话会保留。"
 }

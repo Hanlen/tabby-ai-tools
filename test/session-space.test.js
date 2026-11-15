@@ -113,31 +113,24 @@ test('login initialization honors the discovered Codex home and leaves missing o
   assert.equal(await fs.promises.readFile(path.join(space.native, 'auth.json'), 'utf8'), cache)
 })
 
-for (const engine of ['claude-code']) {
-  test(`${engine}: explicit recovery replaces expired credentials without changing the source or history`, async t => {
-    const root = await temporary(t), source = path.join(root, 'original CLI directory')
-    const space = resolveSessionSpace(root, engine, privateSpaceConfig(engine))
-    const filename = '.credentials.json'
-    const env = { CLAUDE_CONFIG_DIR: source }
-    const cache = { claudeAiOauth: { accessToken: 'new-fixture-token', refreshToken: 'fixture-refresh', expiresAt: Date.now() + 3600000 } }
-    await fs.promises.mkdir(source)
-    await fs.promises.writeFile(path.join(source, filename), JSON.stringify(cache))
-    await prepareSessionSpace(space)
-    await fs.promises.writeFile(path.join(space.native, filename), 'old-fixture-token')
-    await fs.promises.writeFile(path.join(space.native, 'history.jsonl'), 'private-history')
-    assert.equal(await initializeNativeAuth(space, env), false)
-    assert.equal(await initializeNativeAuth(space, env, { replaceExisting: true }), true)
-    assert.equal(await fs.promises.readFile(path.join(space.native, filename), 'utf8'), JSON.stringify(cache))
-    assert.equal(await fs.promises.readFile(path.join(source, filename), 'utf8'), JSON.stringify(cache))
-    assert.equal(await fs.promises.readFile(path.join(space.native, 'history.jsonl'), 'utf8'), 'private-history')
-    await fs.promises.unlink(path.join(source, filename))
-    assert.equal(await initializeNativeAuth(space, env, { replaceExisting: true }), false)
-    await fs.promises.writeFile(path.join(source, filename), 'invalid-fixture-secret')
-    assert.equal(await initializeNativeAuth(space, env, { replaceExisting: true }), false)
-    assert.equal(await fs.promises.readFile(path.join(space.native, filename), 'utf8'), JSON.stringify(cache))
-    assert.deepEqual((await fs.promises.readdir(space.native)).sort(), [filename, 'history.jsonl'].sort())
-  })
-}
+test('Claude private authentication never imports or replaces a rotating system OAuth grant', async t => {
+  const root = await temporary(t), source = path.join(root, 'system')
+  const space = resolveSessionSpace(root, 'claude-code', privateSpaceConfig('claude-code'))
+  await prepareSessionSpace(space)
+  await fs.promises.mkdir(source)
+  const system = JSON.stringify({ claudeAiOauth: { accessToken: 'system-token', refreshToken: 'rotating-grant' } })
+  await fs.promises.writeFile(path.join(source, '.credentials.json'), system)
+  const env = { CLAUDE_CONFIG_DIR: source }
+  assert.equal(await initializeNativeAuth(space, env), false)
+  assert.deepEqual(await fs.promises.readdir(space.native), [])
+  const local = path.join(space.native, '.credentials.json')
+  await fs.promises.writeFile(local, 'independent-login')
+  for (const automatic of [false, true]) {
+    assert.equal(await initializeNativeAuth(space, env, { replaceExisting: true, automatic }), false)
+    assert.equal(await fs.promises.readFile(local, 'utf8'), 'independent-login')
+  }
+  assert.equal(await fs.promises.readFile(path.join(source, '.credentials.json'), 'utf8'), system)
+})
 
 const fixtureEpoch = Math.floor(Date.now() / 1000)
 function fixtureLogin (day, { user = 'same-user', account = 'same-workspace', owner = 'original-grant', expired = false } = {}) {
@@ -283,7 +276,8 @@ test('Claude auth and inference use the same private space; restart resumes ther
   await fs.promises.writeFile(path.join(root, 'scenario.json'), JSON.stringify({ captureEnvironment: true, requireLoginCache: true }))
   const sourceDirectory = path.join(root, 'original Claude directory')
   await fs.promises.mkdir(sourceDirectory)
-  await fs.promises.writeFile(path.join(sourceDirectory, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'fixture-claude-login' } }))
+  const originalCredentials = JSON.stringify({ claudeAiOauth: { accessToken: 'fixture-claude-login' }, systemMarker: 'preserve-original' })
+  await fs.promises.writeFile(path.join(sourceDirectory, '.credentials.json'), originalCredentials)
   const inherited = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = sourceDirectory
   t.after(() => { if (inherited === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = inherited })
@@ -293,8 +287,21 @@ test('Claude auth and inference use the same private space; restart resumes ther
   const store = new AgentStore(path.join(space.root, 'index'))
   const agent = new ClaudeCodeAgent(claudeCodeProfile(settings), store, executable, space)
   t.after(() => agent.close())
+  await assert.rejects(agent.connect(settings), /not logged in/)
+  assert.equal(fs.existsSync(path.join(space.native, '.credentials.json')), false, 'system login must not be copied')
+  const command = await agent.authenticationCommand(settings)
+  assert.match(command, /CLAUDE_CONFIG_DIR\s*=/)
+  assert.match(command, /'auth' 'login'/)
+  // Execute the generated command with the offline official-CLI simulator.
+  if (process.platform === 'win32') {
+    const { execFileSync } = require('node:child_process')
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { env: { ...process.env, ANTHROPIC_API_KEY: 'must-not-inherit' } })
+  } else {
+    require('node:child_process').execFileSync('/bin/sh', ['-c', command], { env: { ...process.env, ANTHROPIC_API_KEY: 'must-not-inherit' } })
+  }
+  assert.equal(await fs.promises.readFile(path.join(sourceDirectory, '.credentials.json'), 'utf8'), originalCredentials)
+  assert.deepEqual(JSON.parse(await fs.promises.readFile(path.join(root, 'auth-environment.json'), 'utf8')), { configDir: space.native, apiKeyPresent: false })
   await agent.connect(settings)
-  assert.equal(JSON.parse(await fs.promises.readFile(path.join(space.native, '.credentials.json'))).claudeAiOauth.accessToken, 'fixture-claude-login')
   const id = await agent.openThread(root, settings)
   const source = { sourceThreadId: 'source', sourceSpace: 'system:claude-code', sourceFingerprint: 'old', cwd: root, messages: [{ role: 'user', content: 'handoff only' }], turns: [], totalTokens: 0 }
   const transferred = await agent.importContext(source, root, settings)
@@ -317,6 +324,9 @@ test('Claude auth and inference use the same private space; restart resumes ther
   assert.equal((await foreign.listSessions(root)).data.length, 0)
   await fs.promises.writeFile(path.join(space.native, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'expired-fixture' } }))
   await assert.rejects(agent.connect(settings), /Claude Code.*登录|Claude Code.*logged in/)
+  await assert.rejects(agent.refreshAuthentication(settings), /not logged in/)
+  assert.equal(JSON.parse(await fs.promises.readFile(path.join(space.native, '.credentials.json'))).claudeAiOauth.accessToken, 'expired-fixture')
+  await fs.promises.writeFile(path.join(space.native, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'fixture-claude-login' } }))
   await agent.refreshAuthentication(settings)
   assert.equal(JSON.parse(await fs.promises.readFile(path.join(space.native, '.credentials.json'))).claudeAiOauth.accessToken, 'fixture-claude-login')
   assert.equal(await agent.resumeThread(id, root, settings), id)

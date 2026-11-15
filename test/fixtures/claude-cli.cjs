@@ -6,7 +6,11 @@ const args = process.argv.slice(2)
 const flags = ['--tools', '--strict-mcp-config', '--setting-sources', '--disable-slash-commands', '--append-system-prompt-file', '--include-partial-messages', '--system-prompt-snapshot']
 if (args[0] === '--help') { console.log(flags.filter(flag => flag !== scenario.missingFlag).join('\n')); process.exit(0) }
 if (args[0] === 'auth') {
-  if (scenario.captureEnvironment) fs.writeFileSync(path.join(__dirname, 'auth-environment.json'), JSON.stringify({ configDir: process.env.CLAUDE_CONFIG_DIR }))
+  if (args[1] === 'login' && scenario.requireLoginCache) {
+    fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true })
+    fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'fixture-claude-login' } }))
+  }
+  if (scenario.captureEnvironment) fs.writeFileSync(path.join(__dirname, 'auth-environment.json'), JSON.stringify({ configDir: process.env.CLAUDE_CONFIG_DIR, apiKeyPresent: !!process.env.ANTHROPIC_API_KEY }))
   let loggedIn = scenario.loggedIn !== false
   if (scenario.requireLoginCache) {
     try { loggedIn = JSON.parse(fs.readFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.credentials.json'))).claudeAiOauth.accessToken === 'fixture-claude-login' }

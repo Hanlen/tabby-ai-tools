@@ -16,7 +16,7 @@ v0.5.1 起，Pi SDK 及其所需 JavaScript 已打包。通过 Tabby 安装／�
 
 - 本机安装 [Tabby](https://github.com/Eugeny/tabby)，并能访问所选 AI 服务。操作内网服务器时，本机还需能通过 Tabby 连接目标服务器。
 - **ChatGPT 订阅／Codex 登录模式**：本机安装 Codex CLI，选择 **Codex（本机登录）**，在“指令与会话”生成选定空间的登录命令。使用具备 Codex 权限的 ChatGPT 账号完成官方登录，再检查该空间认证，无需填写 API Key。普通 `codex login`／`codex login status` 针对终端当前配置的空间；未使用过的插件连接默认使用 Tabby 独立空间。可用模型、用量和工作区权限以账号实际权益为准。见 [OpenAI 官方认证说明](https://learn.chatgpt.com/docs/auth)。CLI 需支持 `thread/goal/*`；已测试版本见[验证记录](../VALIDATION.md)。
-- **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，选择 **Claude Code（本机登录）**，在“指令与会话”生成并执行选定空间的 `auth login` 命令，再检查该空间认证。普通 `claude auth login`／`auth status` 可能针对另一份系统配置。私有缓存缺失时会继承可用的本机 OAuth 文件缓存；账号权益及系统兼容模式的 API／云计费以官方 CLI 状态为准。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
+- **Claude 订阅／Claude Code 本机模式**：本机安装官方 Claude Code，选择 **Claude Code（本机登录）**，在“指令与会话”生成并执行选定空间的 `auth login` 命令，再检查该空间认证。普通 `claude auth login`／`auth status` 可能针对另一份系统配置。独立空间通过官方命令登录，不再复制本机 OAuth 缓存（未发布修复）；账号权益及系统兼容模式的 API／云计费以官方 CLI 状态为准。完整方案、权限、恢复机制与验证限制见 [Claude Code 接入](claude-code.md)。
 - **API 模式**：准备 OpenAI、DeepSeek、GLM、Kimi、百炼 Coding Plan 或 Claude 对应的 Key，无需安装 Codex CLI。订阅登录与 API 连接是两种独立配置方式。
 
 ### 安装插件
@@ -365,7 +365,7 @@ Pi 的使用、存储、预算和验证限制见 [Pi runtime](pi.md)。开发与
 
 每个连接下方的 **Instructions and sessions／指令与会话** 支持 AI Tools 全局默认与连接级覆盖。可编辑正文、绑定本地 AGENTS.md 文件、继承默认或关闭自定义层；保存和放弃均显式操作。文件要求绝对路径、UTF-8、最多 32 KiB，可预览内容、来源、摘要和修改时间，不会覆盖源文件。新会话保存指令快照；原文件修改或丢失不影响已有会话恢复。使用 `/new` 应用新指令，文件不可读则阻止依赖它的新会话。内置工具说明与宿主权限检查仍生效，Pi 不因此启用自动发现；Codex／Claude 的原生项目规则另由引擎管理。
 
-未使用过的 Codex／Claude Code 默认采用 **Tabby 独立空间**，已有 CLI 会话引用保留 **系统空间（旧版兼容）**。独立空间隔离磁盘历史及索引，而不仅过滤列表；任务 cwd 保持不变。选择目标空间后生成登录命令，在本地终端完成官方登录，再检查该空间认证并保存。系统 CLI 已登录不代表目标空间已登录，私有登录文件缓存缺失时，会从原 CLI 目录初始化有效的 ChatGPT／OAuth 缓存，已有私有登录保持不变；系统历史和配置不随之复制。OS keychain-only 登录仍需在目标空间完成官方认证。Codex 确认认证失败后，可用同一用户、同一工作区的较新系统凭据恢复已导入的登录，最多自动尝试一次。源登录也失效时，从侧栏连接按钮的下拉菜单登录。退出独立空间后会停用自动导入。恢复时保留会话和草稿。Windows 命令使用 PowerShell，Linux/macOS 使用 POSIX shell。
+未使用过的 Codex／Claude Code 默认采用 **Tabby 独立空间**，已有 CLI 会话引用保留 **系统空间（旧版兼容）**。独立空间隔离磁盘历史及索引，而不仅过滤列表；任务 cwd 保持不变。选择目标空间后生成登录命令，在本地终端完成官方登录，再检查该空间认证并保存。系统 CLI 已登录不代表目标空间已登录，Codex 私有登录文件缺失时可初始化有效的本机 ChatGPT 缓存；Claude 不再复制系统 OAuth 缓存，认证提示可生成独立空间的官方登录命令，完成后检查并重连（未发布修复）。已有私有登录保持不变；系统历史和配置不随之复制。OS keychain-only 登录仍需在目标空间完成官方认证。Codex 确认认证失败后，可用同一用户、同一工作区的较新系统凭据恢复已导入的登录，最多自动尝试一次。源登录也失效时，从侧栏连接按钮的下拉菜单登录。退出独立空间后会停用自动导入。恢复时保留会话和草稿。Windows 命令使用 PowerShell，Linux/macOS 使用 POSIX shell。
 
 空闲时点击侧栏重连以切换空间并交接当前对话，或用 `/new` 开始新对话。旧记录保留原处，失败时仍保留原侧栏会话；不会搬走全部系统历史。定时任务后续运行使用连接当前选定空间和新指令快照，活动任务保留启动时的配置。详细路径、认证边界与验证范围见 [指令与会话说明](instructions-sessions.md)。
 

@@ -58,12 +58,14 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   authWarning = false
   authRecovering = false
   authRecoveryError = ''
+  claudeLoginCommand = ''
   authMenuOpen = false
   codexSignedIn = false
   private codexLogin?: AbortController
   private autoAuthAttempted = false
   private authBackend?: AgentBackend
   private authProfileId = ''
+  private authWarningVersion = 0
   @ViewChild('authWarningDialog') private authWarningDialog?: ElementRef<HTMLDialogElement>
 
   get authAgentLabel (): string {
@@ -73,6 +75,31 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   get canRecoverNativeAuth (): boolean {
     const backend = this.authBackend || this.codex
     return (!backend.profile || backend.profile.runtime === 'claude-code') && !!backend.sessionSpace?.native && !!backend.refreshAuthentication
+  }
+
+  get privateClaudeAuthentication (): boolean {
+    const backend = this.authBackend || this.codex
+    return backend.profile?.runtime === 'claude-code' && !!backend.sessionSpace?.native && !!backend.authenticationCommand
+  }
+
+  async generateClaudeLoginCommand (): Promise<void> {
+    if (!this.privateClaudeAuthentication || this.loading || this.busy || this.request || this.authRecovering) return
+    const backend = this.authBackend || this.codex
+    const targetId = this.authBackend ? this.authProfileId : this.profileId
+    const version = this.authWarningVersion
+    const current = () => !this.panelDestroyed && version === this.authWarningVersion
+    this.authRecovering = true
+    this.claudeLoginCommand = ''
+    this.authRecoveryError = ''
+    try {
+      const command = await backend.authenticationCommand!(this.connectionSettings(targetId, backend))
+      if (current()) this.claudeLoginCommand = command
+    } catch (error: any) { if (current()) this.authRecoveryError = error.message }
+    finally { this.authRecovering = false; if (!this.panelDestroyed) this.changeDetector?.detectChanges() }
+  }
+
+  copyClaudeLoginCommand (): void {
+    if (this.claudeLoginCommand) this.platform?.setClipboard({ text: this.claudeLoginCommand })
   }
 
   get privateCodexLogin (): boolean {
@@ -140,6 +167,8 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     if (backend.profile && backend.profile.runtime !== 'claude-code' || !isNativeAuthenticationError(error)) return false
     if (backend === this.codex && this.privateCodexLogin) this.codexSignedIn = false
     if (!this.authWarning) {
+      this.authWarningVersion++
+      this.claudeLoginCommand = ''
       this.authBackend = backend
       this.authProfileId = profileId
       this.authWarning = true
@@ -158,7 +187,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   dismissAuthWarning (): void { if (!this.authRecovering) this.authWarningDialog?.nativeElement.close() }
 
   private clearAuthWarning (): void {
+    this.authWarningVersion++
     this.authWarning = false
+    this.claudeLoginCommand = ''
     this.authRecoveryError = ''
     this.authBackend = undefined
     this.authWarningDialog?.nativeElement.close()
@@ -183,7 +214,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   }
 
   async recoverAuthentication (automatic = false): Promise<void> {
-    if (!this.canRecoverNativeAuth || this.authRecovering || this.loading) return
+    if (!this.canRecoverNativeAuth || this.authRecovering || this.loading || this.busy || this.request) return
     this.authRecovering = true
     this.loading = true
     this.authRecoveryError = ''
@@ -193,12 +224,11 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.cancelWorkflowOperations()
     this.pendingQuestionReply = ''
     try {
-      if (!automatic && backend === this.codex && this.busy && this.turnId) await backend.interrupt(this.threadId, this.turnId)
       await backend.refreshAuthentication!(settings, automatic)
       if (this.panelDestroyed) return
       await this.reconnectAfterAuthentication(backend, targetId)
       this.clearAuthWarning()
-      this.sendNotice = '已重新复制本机登录，请重新发送或继续任务。'
+      this.sendNotice = backend.profile?.runtime === 'claude-code' ? '已检查 Claude Code 独立空间登录，请重新发送或继续任务。' : '已重新复制本机登录，请重新发送或继续任务。'
       this.status = this.sendNotice
     } catch (error: any) {
       this.authRecoveryError = error.message
@@ -1917,7 +1947,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const info = error?.codexErrorInfo
     let hint = ''
     const authenticationFailure = this.warnAuthentication(error)
-    if (authenticationFailure) hint = this.canRecoverNativeAuth ? '登录已失效，请重新复制本机登录并重连。' : '登录已失效，请在本机重新登录后重连。'
+    if (authenticationFailure) hint = this.privateClaudeAuthentication ? '请在 Claude Code 独立空间完成官方登录，再检查并重连。' : this.canRecoverNativeAuth ? '登录已失效，请重新复制本机登录并重连。' : '登录已失效，请在本机重新登录后重连。'
     else if (info === 'contextWindowExceeded' || /context.{0,20}(exceeded|limit|full|long)/i.test(message)) hint = '上下文已超出限制，请使用 /new 创建新会话后重试。'
     else if (info === 'sessionBudgetExceeded' || /budget.{0,20}(exceeded|limit)/i.test(message)) hint = '当前会话已达到预算上限，请调整预算或使用 /new 创建新会话。'
     else if (isRateLimitError(error)) {

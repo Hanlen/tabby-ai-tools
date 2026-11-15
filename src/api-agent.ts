@@ -58,6 +58,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   private modelRequest?: AbortController
   private pending = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void }>()
   constructor (readonly profile: ApiProfile, private store: AgentStore, private getKey: () => Promise<string>, readonly sessionSpace?: NativeSessionSpace) { super() }
+  protected get hasActiveTurns (): boolean { return this.running.size > 0 }
   get isConnected (): boolean { return this.connected }
 
   async connect (_settings: AgentSettings): Promise<void> {

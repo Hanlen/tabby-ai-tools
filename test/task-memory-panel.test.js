@@ -600,3 +600,57 @@ test('installation recovery retains the conversation and draft without sending o
   assert.deepEqual(sent, [])
   assert.deepEqual(goals, [])
 })
+
+
+test('Claude private warning generates the failed target login command and checks it without copying or replay', async t => {
+  const { panel, sent, tools } = await setup(t, true)
+  let checked = 0, selected = 0, copied
+  const command = "env CLAUDE_CONFIG_DIR='/private Claude' '/new/claude' 'auth' 'login'"
+  const target = { profile: { runtime: 'claude-code' }, sessionSpace: { native: '/private Claude' },
+    authenticationCommand: async settings => { assert.ok(settings); return command },
+    refreshAuthentication: async () => { checked++ }, client: { close: async () => {} } }
+  panel.platform = { setClipboard: value => { copied = value.text } }
+  panel.warnAuthentication({ code: 'authentication_required' }, target, 'claude-code')
+  panel.prompt = 'keep unsent draft'
+  panel.selectConnection = async id => { assert.equal(id, 'claude-code'); selected++; panel.profileId = id; panel.codex = target; panel.connected = true }
+  assert.equal(panel.privateClaudeAuthentication, true)
+  await panel.generateClaudeLoginCommand()
+  assert.equal(panel.claudeLoginCommand, command)
+  panel.copyClaudeLoginCommand()
+  assert.equal(copied, command)
+  assert.equal(checked, 0)
+  assert.equal(selected, 0)
+  panel.busy = true
+  await panel.recoverAuthentication()
+  assert.equal(checked, 0, 'recovery cannot interrupt a running turn')
+  panel.busy = false
+  await panel.recoverAuthentication()
+  assert.equal(checked, 1)
+  assert.equal(selected, 1)
+  assert.equal(panel.claudeLoginCommand, '')
+  assert.match(panel.sendNotice, /已检查 Claude Code/)
+  assert.equal(panel.prompt, 'keep unsent draft')
+  assert.deepEqual(sent, [])
+  assert.deepEqual(tools, [])
+})
+
+
+for (const reject of [false, true]) {
+  test(`late Claude login command ${reject ? 'failure' : 'success'} cannot overwrite a replaced warning`, async t => {
+    const { panel, sent } = await setup(t, true)
+    let finish
+    const target = { profile: { runtime: 'claude-code' }, sessionSpace: { native: '/old-space' },
+      authenticationCommand: () => new Promise((resolve, rejectPromise) => { finish = reject ? rejectPromise : resolve }) }
+    panel.warnAuthentication({ code: 'authentication_required' }, target, 'claude-code')
+    const pending = panel.generateClaudeLoginCommand()
+    panel.clearAuthWarning()
+    panel.warnAuthentication({ code: 'authentication_required' }, { ...target, sessionSpace: { native: '/new-space' } }, 'claude-code')
+    finish(reject ? new Error('old target disappeared') : 'old-space login command')
+    await pending
+    assert.equal(panel.claudeLoginCommand, '')
+    assert.equal(panel.authRecoveryError, '')
+    assert.equal(panel.authWarning, true)
+    assert.equal(panel.authRecovering, false)
+    assert.deepEqual(sent, [])
+  })
+}

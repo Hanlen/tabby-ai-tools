@@ -75,6 +75,7 @@ export interface AgentBackend {
   getThreadConfiguration(threadId: string): ThreadConfiguration | undefined
   connect(settings: AgentSettings): Promise<void>
   refreshAuthentication?(settings: AgentSettings, automatic?: boolean): Promise<void>
+  authenticationCommand?(settings: AgentSettings): Promise<string>
   signIn?(settings: AgentSettings, openBrowser: (url: string) => void, signal: AbortSignal): Promise<void>
   signOut?(): Promise<void>
   openThread(cwd: string, settings: AgentSettings, savedId?: string): Promise<string>

@@ -112,34 +112,28 @@ async function publishAuthFile (target: string, content: string, replace: boolea
   }
 }
 
-/** Existing Codex logins are replaced only with a newer credential for the
- * same user and workspace. Unattended recovery also requires proof of import. */
+/** Codex cache imports require provenance. Claude owns its login entirely:
+ * copied rotating OAuth grants can invalidate the original or private login. */
 export async function initializeNativeAuth (space: NativeSessionSpace | undefined, inherited: NodeJS.ProcessEnv, options: { home?: string; replaceExisting?: boolean; automatic?: boolean } = {}): Promise<boolean> {
-  if (!space?.native) return false
-  const codex = space.engine === 'codex'
-  const filename = codex ? 'auth.json' : '.credentials.json'
+  if (!space?.native || space.engine !== 'codex') return false
+  const filename = 'auth.json'
   const home = options.home || os.homedir()
   const target = path.join(space.native, filename)
   const importRecord = path.join(space.native, '.tabby-codex-auth-import')
   try {
     const existing = await fs.lstat(target).catch((error: any) => { if (error.code !== 'ENOENT') throw error })
     if (existing && (!existing.isFile() || existing.isSymbolicLink())) return false
-    if (!codex && existing && !options.replaceExisting) return false
-    const recordedImport = codex && existing ? await readIfPresent(importRecord) : undefined
+    const recordedImport = existing ? await readIfPresent(importRecord) : undefined
     if (existing && !options.replaceExisting && recordedImport) return false
     const localLogin = path.join(space.native, localCodexLoginFile)
-    if (codex && await readIfPresent(localLogin) !== undefined) return false
-    let sourceHome = normalizeExecutable(environmentValue(inherited, codex ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR', process.platform === 'win32') || path.join(home, codex ? '.codex' : '.claude'))
+    if (await readIfPresent(localLogin) !== undefined) return false
+    let sourceHome = normalizeExecutable(environmentValue(inherited, 'CODEX_HOME', process.platform === 'win32') || path.join(home, '.codex'))
     if (/^~[/\\]/.test(sourceHome)) sourceHome = path.join(home, sourceHome.slice(2))
     const source = path.join(sourceHome, filename)
     if (path.resolve(source) === path.resolve(target)) return false
     const cache = await readIfPresent(source)
     if (!cache) return false
     const auth = parseAuthCache(cache)
-    if (!codex) {
-      if (typeof auth?.claudeAiOauth?.accessToken !== 'string' || !auth.claudeAiOauth.accessToken) return false
-      return await publishAuthFile(target, cache, !!options.replaceExisting)
-    }
     if (!codexLogin(auth)) return false
     const sourceImport = importedCredential(auth)
     const previousCache = existing ? await readIfPresent(target) : undefined
