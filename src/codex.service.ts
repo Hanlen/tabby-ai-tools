@@ -240,12 +240,27 @@ export class CodexService {
     if (settings.model.trim()) params.model = settings.model.trim()
     if (settings.reasoningEffort) params.config = { model_reasoning_effort: settings.reasoningEffort }
     let result: any
-    try { result = await this.client.request('thread/resume', params) } catch (error: any) {
-      if (/not found|no rollout|not materialized/i.test(String(error.message))) {
-        const inherited = await this.contextStore?.loadCodexContext(threadId)
-        if (inherited) return this.importContext(inherited, cwd, settings)
+    const generation = this.client.generation
+    const writerDelays = [250, 750, 1500]
+    for (let attempt = 0; ; attempt++) {
+      try { result = await this.client.request('thread/resume', params); break } catch (error: any) {
+        // A retiring renderer may still be releasing its OS writer lock. Retry
+        // only a definite rejection, on the same server, for the same thread.
+        // Never remove CLI locks, kill another writer or replay a model turn.
+        if (error.rpcRejected && error.code === -32600 &&
+          String(error.message).includes(`thread ${threadId} already has an active writer`) &&
+          attempt < writerDelays.length && this.client.isConnected &&
+          this.client.generation === generation && !this.activeTurns.has(threadId)) {
+          await new Promise(resolve => setTimeout(resolve, writerDelays[attempt]))
+          if (!this.client.isConnected || this.client.generation !== generation || this.activeTurns.has(threadId)) throw error
+          continue
+        }
+        if (/not found|no rollout|not materialized/i.test(String(error.message))) {
+          const inherited = await this.contextStore?.loadCodexContext(threadId)
+          if (inherited) return this.importContext(inherited, cwd, settings)
+        }
+        throw error
       }
-      throw error
     }
     this.rememberThreadConfiguration(result, settings)
     this.threadCwds.set(result.thread.id, cwd)

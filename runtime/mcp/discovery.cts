@@ -8,9 +8,13 @@ export class McpDiscovery {
   readonly registry: string
   readonly profile: string
   private last = ''
-  constructor (private home: string, configSpace: string, private skillSource: string, private version: string) {
+  constructor (private home: string, configSpace: string, readonly skillSource: string, private version: string) {
     this.registry = join(home, '.agents', 'tabby', 'mcp')
     this.profile = createHash('sha256').update(configSpace).digest('hex').slice(0, 24)
+  }
+  connectionInstructions (): string {
+    // Only the bundled, credential-free guide; never a renderer-supplied path.
+    return readFileSync(join(this.skillSource, 'references/connection.md'), 'utf8')
   }
   private directory (path: string): void {
     mkdirSync(path, { recursive: true, mode: 0o700 })
@@ -58,7 +62,7 @@ export class McpDiscovery {
   }
   update (state: { enabled: boolean; running: boolean; endpoint: string }): void {
     const status = state.running ? 'running' : state.enabled ? 'unavailable' : 'disabled'
-    const payload = { format: 'tabby-mcp-discovery-v1', profile: this.profile, application: 'Tabby AI Tools', version: this.version, status, endpoint: state.running ? state.endpoint : '', authentication: 'independent_client_bearer', credentialsIncluded: false, setup: 'Tabby > Settings > AI Tools > External AI connections (MCP)', skill: 'tabby-mcp' }
+    const payload = { format: 'tabby-mcp-discovery-v1', profile: this.profile, application: 'Tabby AI Tools', version: this.version, status, endpoint: state.running ? state.endpoint : '', authentication: 'local_no_token', credentialsIncluded: false, setup: 'Tabby > Settings > AI Tools > External AI connections (MCP)', skill: 'tabby-mcp' }
     if (payload.endpoint && !/^http:\/\/127\.0\.0\.1:\d+\/mcp$/.test(payload.endpoint)) throw new Error('Invalid discovery endpoint')
     const value = JSON.stringify(payload)
     if (this.last === value && existsSync(join(this.registry, this.profile + '.json'))) return

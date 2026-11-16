@@ -54,6 +54,23 @@ test('close escalates SIGTERM to SIGKILL, and reconnect waits for the previous s
   assert.equal(client.isConnected, true)
 })
 
+test('window unload closes every private Codex writer and cancels further startup', posix, async t => {
+  const previousWindow = global.window
+  const host = new EventTarget()
+  global.window = host
+  t.after(() => { global.window = previousWindow })
+  const first = fixture(t, server), second = fixture(t, server)
+  await first.client.connect(first.executable)
+  await second.client.connect(second.executable)
+  const children = [first.client.process, second.client.process]
+  host.dispatchEvent(new Event('unload'))
+  assert.equal(first.client.isConnected, false)
+  assert.equal(second.client.isConnected, false)
+  await Promise.all([first.client.waitForCleanup(), second.client.waitForCleanup()])
+  for (const child of children) assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' })
+  await assert.rejects(first.client.connect(first.executable), /window.*unloaded/i)
+})
+
 test('close reaps descendants that ignore SIGTERM, including after the group leader exits', posix, async t => {
   const body = `
 const child = require('child_process').spawn(process.execPath, ['-e',

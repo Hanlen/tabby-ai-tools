@@ -24,8 +24,18 @@ credentials from another agent's configuration. A stale record or loopback URL
 alone does not prove a reachable or authenticated service.
 
 Once paired, list the granted terminals and read the chosen terminal before acting.
+Current source supports token-free loopback access; no token is needed when its
+discovery record advertises `local_no_token`. Local processes share automatic
+read/write access to all terminal tabs and input leases; they are not isolated
+clients. Newly opened/reconnected tabs are included automatically. Older bearer
+connections use their own selected scopes.
+For stale skill conflicts or Codex registration/reload checks, follow
+[the connection guide](references/connection.md). Preserve bearer permission
+modes and checked terminals when repairing a connection.
 Unlisted terminals are unavailable, not permission to enable or expand access.
-Read-only is the default. Input requires the user's confirm/auto grant in Tabby.
+Local connections default to auto with all terminal tabs; no permission or tab
+selection is needed. Bearer connections default to read-only and require the
+user's confirm/auto grant in Tabby.
 Follow live approval, lease and process-inspection requirements. Read results after
 each input; sending input is not evidence of completion. Cancellation/release
 only restores input and does not stop a process. Never repeat a command after an

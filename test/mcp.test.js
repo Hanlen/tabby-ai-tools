@@ -79,6 +79,33 @@ test('client rotation invalidates old digest without modifying a different clien
   assert.throws(() => policy.add(' ')); assert.throws(() => policy.add('a'.repeat(81)))
 })
 
+test('local token-free access automatically covers all live sessions with write access after restart', t => {
+  const { policy, directory, targets } = policyFixture(t)
+  const local = policy.publicState().localClient
+  assert.equal(policy.enabled, false)
+  assert.equal(local.id, 'local'); assert.equal(local.mode, 'auto')
+  assert.deepEqual(local.targets, targets)
+  policy.enabled = true; policy.save()
+  const revision = local.revision
+  policy.register(3, [{ key: 'three', session: 's3', title: 'three' }])
+  assert.equal(policy.client('local').targets.size, 3)
+  policy.register(2, [{ key: 'two', session: 'replacement', title: 'two' }])
+  assert.ok(!policy.client('local').targets.has(targets[1]))
+  assert.equal(policy.client('local').targets.size, 3)
+  policy.authorize('local', revision, targets[0])
+  assert.throws(() => policy.authorize('local', revision, targets[1]), { code: 'permission_denied' })
+  policy.removeOwner(3); assert.equal(policy.client('local').targets.size, 2)
+  const next = new McpPolicy(directory)
+  assert.deepEqual(next.publicState().localClient.targets, [])
+  next.register(1, [{ key: 'one', session: 'restart', title: 'one' }])
+  assert.equal(next.publicState().localClient.targets.length, 1)
+  assert.equal(next.publicState().localClient.mode, 'auto')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(directory, 'state.json'))).clients.length, 0)
+  assert.throws(() => policy.rotate(local.id))
+  assert.throws(() => policy.setScope(local.id, []))
+  assert.throws(() => policy.setMode(local.id, 'read_only'))
+})
+
 async function httpFixture (t, mode = 'legacy') {
   const f = policyFixture(t), { policy, targets } = f
   policy.enabled = true
@@ -88,7 +115,7 @@ async function httpFixture (t, mode = 'legacy') {
   const output = new CodexTerminalOutputService({ tabs: [terminal, terminal2] })
   const reader = new McpTerminalReader(output)
   const entries = [{ key: 'one', session: 's1', terminal }, { key: 'two', session: 's2', terminal: terminal2 }]
-  const updateReader = () => reader.update(entries, [...policy.clients.values()].flatMap(c => [...c.targets].map(id => ({ clientId: c.id, revision: c.revision, targetId: id, key: policy.targets.get(id).key, session: policy.targets.get(id).session }))))
+  const updateReader = () => reader.update(entries, (policy.enabled ? [...policy.clients.values()] : []).flatMap(c => [...c.targets].map(id => ({ clientId: c.id, revision: c.revision, targetId: id, key: policy.targets.get(id).key, session: policy.targets.get(id).session }))))
   updateReader()
   let activeReads = 0
   const readObservers = new Set()
@@ -108,7 +135,7 @@ async function httpFixture (t, mode = 'legacy') {
   const clients = []
   const connect = async token => {
     const client = new Client({ name: 'mcp-tests', version: '1' }, { versionNegotiation: { mode } })
-    await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }))
+    await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: token === undefined ? {} : { Authorization: `Bearer ${token}` } } }))
     clients.push(client); return client
   }
   t.after(async () => { for (const c of clients) await c.close(); reader.destroy(); await server.close() })
@@ -120,6 +147,26 @@ async function httpFixture (t, mode = 'legacy') {
   })
   return { ...f, grant, second, terminal, terminal2, output, reader, server, client, connect, url, waitForReads: count => observeReads(value => value >= count), waitForReadsBelow: count => observeReads(value => value < count), waitForIdle: () => observeReads(value => value === 0), update: () => { updateReader(); server.update(policy.snapshot()) } }
 }
+
+for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`token-free HTTP automatically shares every local terminal: ${JSON.stringify(mode)}`, async t => {
+  const f = await httpFixture(t, mode), local = await f.connect()
+  assert.deepEqual(value(await local.callTool({ name: 'list_tabs', arguments: {} })).map(t => t.tabId), f.targets)
+  assert.equal(value(await local.callTool({ name: 'get_capabilities', arguments: {} })).inputEnabled, true)
+  f.terminal.session.output$.next('local terminal output')
+  assert.deepEqual(value(await local.callTool({ name: 'list_tabs', arguments: {} })).map(t => t.tabId), f.targets)
+  const snapshot = value(await local.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } }))
+  assert.equal(snapshot.text, 'local terminal output')
+  assert.equal((await local.callTool({ name: 'read_tab', arguments: { tabId: f.targets[1] } })).isError, undefined)
+  const otherLocal = await f.connect()
+  assert.equal((await otherLocal.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], cursor: snapshot.nextCursor } })).isError, undefined)
+  const pending = local.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], cursor: snapshot.nextCursor, waitMs: 10000 } })
+  await f.waitForReads(1)
+  f.policy.enabled = false; f.update()
+  assert.ok(['permission_denied', 'cancelled'].includes(value(await pending).code))
+  f.policy.enabled = true; f.update()
+  assert.deepEqual(value(await otherLocal.callTool({ name: 'list_tabs', arguments: {} })).map(t => t.tabId), f.targets)
+  assert.equal((await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } })).isError, undefined, 'token-free revocation must not affect bearer grants')
+})
 for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`client observation cancellation releases in-flight reads: ${JSON.stringify(mode)}`, async t => {
   const f = await httpFixture(t, mode)
   const cursor = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } })).nextCursor
@@ -156,14 +203,14 @@ test('client-bound cursors reject sharing, tampering, different target and chang
   f.policy.setScope(f.grant.id, [f.targets[0]]); f.update()
   assert.equal(value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], cursor } })).code, 'invalid_cursor')
 })
-test('revocation during wait discards output, releases independent watch and rejects old credentials', async t => {
+test('bearer revocation cancels its wait and credentials while preserving shared local access', async t => {
   const f = await httpFixture(t)
   const cursor = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } })).nextCursor
   const pending = f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], cursor, waitMs: 10000 } })
   await delay(35); f.policy.clients.delete(f.grant.id); f.update()
   const denied = await pending
   assert.equal(denied.isError, true); assert.equal(value(denied).code, 'permission_denied')
-  assert.equal(f.output.has(f.terminal), false)
+  assert.equal(f.output.has(f.terminal), true, 'shared local access keeps its own output subscription')
   const response = await fetch(f.url, { headers: { Authorization: `Bearer ${f.grant.token}` } })
   assert.equal(response.status, 401); await response.text()
   assert.equal(f.output.has(f.terminal2), true)
@@ -178,15 +225,16 @@ test('session replacement while waiting drops the old observation and preserves 
   f.terminal.sessionChanged$.next(f.terminal.session)
   const stale = await pending
   assert.equal(stale.isError, true); assert.equal(value(stale).code, 'target_stale')
-  f.policy.setScope(f.grant.id, []); f.update()
+  f.policy.removeTarget(f.targets[0]); f.update()
   assert.equal(f.output.has(f.terminal), true, 'another output subscriber remains attached')
   f.output.unwatch(f.terminal)
   assert.equal(f.output.has(f.terminal), false)
 })
-test('HTTP gates enforce token, exact host/origin, body limits and concurrent reads', async t => {
+test('HTTP gates reject invalid credentials, exact host/origin, body limits and concurrent reads', async t => {
   const f = await httpFixture(t), authorization = `Bearer ${f.grant.token}`
   const raw = headers => new Promise((resolve, reject) => { const req = http.request(f.url, { headers }, res => { res.resume(); res.once('end', () => resolve(res.statusCode)) }); req.once('error', reject); req.end() })
-  assert.equal(await raw({}), 401); assert.equal(await raw({ authorization: 'Bearer no' }), 401)
+  assert.notEqual(await raw({}), 401); assert.equal(await raw({ authorization: 'Bearer no' }), 401)
+  assert.equal(await raw({ host: 'evil.example' }), 403); assert.equal(await raw({ origin: 'null' }), 403)
   assert.equal(await raw({ authorization, host: 'evil.example' }), 403); assert.equal(await raw({ authorization, origin: 'null' }), 403)
   const response = await fetch(f.url, { method: 'POST', headers: { authorization, 'Content-Type': 'application/json', accept: 'application/json, text/event-stream' }, body: 'x'.repeat(1024 * 1024 + 1) })
   assert.equal(response.status, 413); await response.text()
@@ -299,13 +347,24 @@ test('copy-only client configs preserve credentials as headers and reject non-lo
   assert.throws(() => mcpClientConfig('codex', 'http://0.0.0.0:34567/mcp', token))
 })
 
-for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`controlled input HTTP schema and authority: ${JSON.stringify(mode)}`, async t => {
-  const { policy, targets } = policyFixture(t), grant = policy.add('writer')
-  policy.enabled = true; policy.setScope(grant.id, [targets[0]]); policy.setMode(grant.id, 'auto')
+test('token-free client configs need only the local URL and reject malformed supplied tokens', () => {
+  const url = 'http://127.0.0.1:34567/mcp'
+  assert.equal(mcpClientConfig('codex', url), `[mcp_servers.tabby]\nurl = "${url}"\n`)
+  for (const kind of ['cursor', 'claude']) {
+    const entry = JSON.parse(mcpClientConfig(kind, url)).mcpServers.tabby
+    assert.equal(entry.url, url); assert.equal(entry.headers, undefined)
+  }
+  assert.throws(() => mcpClientConfig('codex', url, 'invalid'))
+})
+
+for (const authentication of ['bearer', 'local']) for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`controlled input HTTP schema and authority (${authentication}): ${JSON.stringify(mode)}`, async t => {
+  const { policy, targets } = policyFixture(t), grant = authentication === 'local' ? { id: 'local' } : policy.add('writer')
+  policy.enabled = true
+  if (authentication === 'bearer') { policy.setScope(grant.id, [targets[0]]); policy.setMode(grant.id, 'auto') }
   const calls = []
   const server = await startMcpServer(async (id, revision, tool, args) => { policy.authorize(id, revision, args.tabId); calls.push({ tool, args }); return { sent: true, leaseId: 'server-issued' } }, policy.snapshot())
   const client = new Client({ name: 'writer', version: '1' }, { versionNegotiation: { mode } })
-  await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer '+grant.token } } }))
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: grant.token ? { Authorization: 'Bearer '+grant.token } : {} } }))
   t.after(async () => { await client.close(); await server.close() })
   assert.equal(value(await client.callTool({ name: 'get_capabilities', arguments: {} })).inputEnabled, true)
   for (const args of [{ text: 'pwd', owner: 'sidebar' }, { text: 'pwd', foregroundTaskNeeded: false }, { text: '\x03' }]) await invalidCall(client.callTool({ name: 'send_input', arguments: { tabId: targets[0], ...args } }))
@@ -313,7 +372,9 @@ for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`controlled input HTT
   const sent = value(await client.callTool({ name: 'send_input', arguments: { tabId: targets[0], text: 'pwd' } }))
   assert.equal(sent.leaseId, 'server-issued'); assert.equal(calls[0].args.submit, true); assert.equal(calls[0].args.mode, 'command')
   for (const [name, args] of [['send_keys', { leaseId: sent.leaseId, key: 'c', ctrl: true }], ['send_input', { text: 'answer', mode: 'stdin', leaseId: sent.leaseId }], ['release_tab', { leaseId: sent.leaseId }], ['attach_process', { expectedProcess: 'codex', purpose: 'User requested supervising this agent' }]]) assert.equal((await client.callTool({ name, arguments: { tabId: targets[0], ...args } })).isError, undefined)
-  policy.setMode(grant.id, 'read_only'); server.update(policy.snapshot())
+  if (authentication === 'bearer') policy.setMode(grant.id, 'read_only')
+  else policy.removeTarget(targets[0])
+  server.update(policy.snapshot())
   assert.equal(value(await client.callTool({ name: 'send_keys', arguments: { tabId: targets[0], leaseId: sent.leaseId, key: 'Enter' } })).code, 'permission_denied')
 })
 

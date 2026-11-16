@@ -113,3 +113,31 @@ test('Pi output budgets follow SDK capabilities beyond the legacy API cap', () =
   assert.equal(normalizeApiProfile(p).maxOutputTokens, 200000)
   assert.equal(normalizeApiProfile({ ...profile, maxOutputTokens: 200000 }).maxOutputTokens, 131072)
 })
+
+test('settings categories preserve connection, instruction and native-space drafts without saving or reconnecting', async () => {
+  const f = fixture(), c = f.component
+  c.selectedProfile.name = 'Unfinished connection edit'
+  c.selectedProfile.apiKey = 'draft-secret'
+  c.instructionDraft.mode = 'inline'
+  c.instructionDraft.text = 'Keep my instruction draft'
+  c.selectProfile('')
+  c.changeNativeSpace('system')
+  c.selectSection('general')
+  assert.equal(c.settingsSection, 'general')
+  c.selectSection('mcp')
+  c.selectSection('tasks')
+  assert.equal(c.memoryOpen, true)
+  await c.openSchedules()
+  c.selectSection('connections')
+  assert.equal(c.selectedProfileId, '')
+  assert.equal(c.nativeSpaceDraft.mode, 'system')
+  c.selectProfile('existing')
+  assert.equal(c.settingsSection, 'connections')
+  assert.equal(c.memoryOpen, false)
+  assert.equal(c.schedulesOpen, false)
+  assert.equal(c.selectedProfile.name, 'Unfinished connection edit')
+  assert.equal(c.selectedProfile.apiKey, 'draft-secret')
+  assert.equal(c.instructionDraft.text, 'Keep my instruction draft')
+  assert.deepEqual(f.config.store.codexAgent.apiProfiles[0], profile)
+  assert.equal(f.saves(), 0)
+})

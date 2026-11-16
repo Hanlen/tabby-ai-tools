@@ -447,6 +447,35 @@ test('reconnect renders recovered CLI status and real failures without waiting f
   assert.match(rendered.at(-1)[2], /current CLI not found/)
 })
 
+test('reconnecting a private Codex space reuses its writer and restores the icon without replay', async () => {
+  const { EventEmitter } = require('node:events')
+  const settings = { executable: '', cwd: '/project', threads: { '/project': 'saved-thread' } }
+  const space = { engine: 'codex', key: 'private:codex', native: '/private/codex' }
+  const calls = []
+  const current = {
+    sessionSpace: space,
+    client: Object.assign(new EventEmitter(), { isConnected: true, close: () => assert.fail('must retain the current writer') }),
+    connect: async () => calls.push('reuse'),
+    openThread: async (cwd, config, id) => { assert.equal(id, 'saved-thread'); calls.push('resume'); return id },
+    getGoal: async () => null,
+  }
+  const replacement = { sessionSpace: space, client: Object.assign(new EventEmitter(), { close: () => {} }),
+    connect: async () => { throw new Error('thread saved-thread already has an active writer') } }
+  let created = 0
+  const factory = { defaultProfileId: '', create: () => created++ ? replacement : current }
+  const panel = new CodexPanelComponent({ store: { codexAgent: settings }, save: async () => {} }, {},
+    { run: fn => fn() }, {}, fakeTabTools, factory)
+  Object.assign(panel, { loading: false, connected: false, cwd: '/project', threadId: 'saved-thread', prompt: 'Keep my draft', connectionError: 'old writer conflict' })
+  panel.loadHistory = async () => calls.push('history')
+  await panel.reconnectAgent()
+  assert.equal(panel.codex, current)
+  assert.deepEqual(calls, ['reuse', 'resume', 'history'])
+  assert.equal(panel.connected, true)
+  assert.equal(panel.connectionError, '')
+  assert.equal(panel.threadId, 'saved-thread')
+  assert.equal(panel.prompt, 'Keep my draft')
+})
+
 test('installation recovery clears the old connection alert and renders immediately without replay', () => {
   let renders = 0
   const panel = new CodexPanelComponent({ store: { codexAgent: {} } }, {}, { run: callback => callback() }, {}, fakeTabTools,

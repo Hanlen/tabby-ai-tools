@@ -4,7 +4,7 @@
 
 粘贴、图片预览与附件传输回归直接运行 `npm run test:attachments`，无需切换 Node。`npm test` 自动包含这些用例；真正启动 Pi 的测试会检查当前 Node，低于 22.19 时显示明确的跳过原因。API 压缩测试使用独立的 API 夹具，不启动 Pi，也不因 Pi 的版本要求跳过。完整 Pi 集成验证仍由 Node 22.19+ 的开发环境／CI 执行；脚本不下载或切换运行时。
 
-后续供应商设置页改版尚未实现；规划和研究资料仅保留在本地，不随插件分发。功能与发布状态以实际代码和发布说明为准。
+设置页已本地实现四分类导航、全宽连接编辑与低频分组折叠，尚未发布；跨 Provider 自动任务分配、统一保存和定时任务表单编辑仍待实现。界面沿用宿主主题与单一页面滚动，不引入远程字体或运行依赖。 AI Tools 宿主元素使用专属类，父级宽度覆盖仅匹配包含该元素的 `settings-tab-body`：从宿主默认的 600px 扩展至最多 1080px；其他设置页保持原限制。界面验证须覆盖深浅主题、窄宽窗口、键盘展开与导航、API／指令／会话空间草稿保留；MCP 使用原有独立组件。规划和研究资料仅保留在本地，不随插件分发。功能与发布状态以实际代码和发布说明为准。
 
 v0.4.1 已优先加入 `provider: custom`：可选 `apiFormat: chat-completions | responses`，缺省为 Chat Completions。`apiPath` / `usesResponsesApi` 统一推理路径与工具结果格式；模型发现仍用 `/models`。`keySource: none` 仅限自定义连接，密钥服务返回空值且请求省略认证头。自定义协议加入历史指纹，既有供应商指纹不变；切换协议通过已有通用上下文导入路径处理。设置中变更协议、端点或密钥会取消并清除旧连接测试和模型列表，旧异步结果不能覆盖新状态。自定义接口不推断厂商 Thinking 参数，不硬编码模型能力。
 
@@ -229,21 +229,30 @@ See [installation recovery and SSH process identity](codex-installation-recovery
 
 ## MCP 终端预览开发增量（v1.0.0）
 
-`runtime/mcp` 独立于 Angular TS 4.9，使用 `typescript-pi` 对应的 TS 5.9 做类型检查。`scripts/build-mcp.mjs` 将官方 SDK server/core、Node adapter 和 schema 依赖打入 `dist/mcp/utility.cjs`，main 协调器为 `electron-host.cjs`，附上 `THIRD_PARTY_NOTICES.txt`；生产包不安装 SDK，也没有新增安装脚本。`mcp:build` 纳入 build/pretest；MCP 运行在 Electron utilityProcess，PATH 为空，没有系统 Node 回退。
+`runtime/mcp` 独立于 Angular TS 4.9，使用 `typescript-pi` 对应的 TS 5.9 做类型检查。`scripts/build-mcp.mjs` 将官方 SDK server/core、Node adapter 和 schema 依赖打入 `dist/mcp/utility.cjs`，main 协调器为 `electron-host.cjs`，附上 `THIRD_PARTY_NOTICES.txt`；生产包不安装 SDK，也没有新增安装脚本。`mcp:build` 纳入 build/pretest；MCP 运行在 Electron utilityProcess，保留宿主 OS 环境（包括 Windows SystemRoot/TEMP），大小写变体的 PATH、NODE_OPTIONS、NODE_PATH、ELECTRON_RUN_AS_NODE 均清空，没有系统 Node 回退。窗口桥接初始化失败不会永久缓存成功状态，后续显式刷新可重新注册；不重放设置变更或终端操作。对应回归见 `test/mcp-electron.test.js` 和 `test/mcp-renderer.test.js`。
+
+未发布源码的 MCP 默认本机免令牌。policy 的 local 虚拟身份不持久化凭据，默认 auto 并动态纳入全部终端 Tab；headerless 请求使用共享 local 身份，绝不合并旧 bearer 客户端权限。所有免令牌本机程序共享权限、游标、限流和租约；显式无效 Authorization 不回退。旧 bearer 客户端独立保留，轮换／撤销不作用于 local；local 关闭服务撤权，设置页不再提供 local 模式／Tab 选择。新增／重连会话自动获得新 opaque target；删除旧 target 即撤销旧会话，不增加 local revision，避免打断其他 Tab 的观察／租约。停服／崩溃仍推进 revision、清理观察和租约，重启后当前终端自动纳入，绝不重放输入。Host／Origin 检查、loopback bind、有界 HTTP 和工具观察、目标窗口批准及 IPC 最终授权均保留。UI 默认直接复制 URL 配置，可选令牌入口折叠；发现记录标记 local_no_token。
+
+MCP utility 在 parentPort 控制监听安装后发送 `ready`；main 为冷进程创建／bundle 加载保留独立 20 秒上限，收到握手后才发送一次 `start`，HTTP 启动回复另限 20 秒。普通控制回复和退出清理仍保留各自 5 秒上限。超时分别标明未 spawn、未 ready 或 HTTP 未回复；保留有界停止和未观察退出时的进程槽，不启动重叠实例，不重放请求。启动期 stderr 仅保留末尾 4096 字符供内部分类，UI 只显示退出码与白名单错误代码／类型，不暴露原始日志、路径或凭据。
 
 main 从 Tabby 主进程的 `TABBY_CONFIG_DIRECTORY`（缺省 userData）取 canonical 配置空间，不接受 renderer/HTTP 传入路径或窗口路由。实际 Electron IPC sender、顶层 frame 与 Tabby document URL 校验后注册 renderer。main 管理持久 token 摘要、空初始范围、不透明目标与授权代际，utility 只持有最小认证快照，renderer 在读取前后再验证实际 session/stream 与范围。snapshot/delta cursor 绑定客户端、revision、target、stream，客户端不能指定内部 owner/log scope。范围变更、取消、异常和退出不重放请求；只读适配器不调用输入工具。`mcp-execution.ts` 延迟获取共享 `TabbyTabToolsService`，仅映射四个输入／控制工具；context.beforeInput 在最终发送边界复核，allowTakeover=false 禁止自动中断，onInput 区分尚未发送与未知结果。
 
-`src/mcp.service.ts` 从模块启动，设置关闭时不监听网络；`mcp-terminals.ts` 按授权引用计数 watch/unwatch 并取消等待。`mcp-settings.*` 是现有 Settings 内的可折叠分组；`mcp-client-config.ts` 仅生成复制预览，不写客户端文件。新增 MCP 界面文案在简体中文以外可使用英文回退，既有语言选择与翻译不变。权限与端口写入私有文件，终端范围不跨重启恢复。
+`src/mcp.service.ts` 从模块启动，设置关闭时不监听网络；`mcp-terminals.ts` 按授权引用计数 watch/unwatch 并取消等待。`mcp-settings.*` 是现有 Settings 内的可折叠分组；`mcp-client-config.ts` 仅生成复制预览，不写客户端文件。新增 MCP 界面文案在简体中文以外可使用英文回退，既有语言选择与翻译不变。独立令牌客户端凭据摘要与端口写入私有文件，其终端范围不跨重启恢复；local 始终自动覆盖当前终端，不持久化终端 ID。
 
 `test/mcp.test.js` 覆盖官方 SDK 实际 HTTP 和真实输出服务，`mcp-electron.test.js` 覆盖可信路由／双窗口／崩溃／端口与撤销竞态；它们不能替代真实桌面。Linux Tabby/Codex 无模型真实终端闭环已取得；真实 Cursor／Claude、Windows/macOS、SSH 和旧宿主待补。更新后的 overview 是示意图，明确标注版本与示例，不能冒充运行截图。
 
-main 的 confirm/auto 权限以客户端绑定所选目标；重启回到 read_only。输入预约和 lease 在 main 同步创建，批准等待不占用 IPC 串行控制队列。目标窗口可批准／拒绝具体参数，25 秒超时；120 秒输入空闲 lease 自动释放。取消、撤销、范围／模式／会话变化、停止或崩溃清观察和 lease，通过独立 release 消息还原 renderer 控制，不发 Ctrl+C、不重放。客户端不能提供 owner、内部 tabId、sudo、foreground takeover 或日志 scope。33 秒总观察预算含批准等待，晚批准可能得到 unknown_outcome；不得将“已发送”当作命令完成。
+main 的独立令牌客户端 confirm/auto 权限绑定所选目标；其重启回到 read_only。本机连接默认 auto／全部终端，重启自动覆盖当前会话。输入预约和 lease 在 main 同步创建，批准等待不占用 IPC 串行控制队列。目标窗口可批准／拒绝具体参数，25 秒超时；120 秒输入空闲 lease 自动释放。取消、撤销、范围／模式／会话变化、停止或崩溃清观察和 lease，通过独立 release 消息还原 renderer 控制，不发 Ctrl+C、不重放。客户端不能提供 owner、内部 tabId、sudo、foreground takeover 或日志 scope。33 秒总观察预算含批准等待，晚批准可能得到 unknown_outcome；不得将“已发送”当作命令完成。
 renderer 同时持有独立 lease 截止计时器：即使 main 无法再投递 release/state，输入控制也会在本地截止时解除；续期只使用 main 签发的 expiresAt。
 
 输出遮蔽先作用于完整快照；若正文被替换，则省略 interaction 元数据，不能对高亮片段分别调用有状态的 sanitizeView。utility 对已转发的四类写操作在总截止、取消或父通道断开时返回 unknown_outcome；HTTP 边界也将写入 observation_timeout／cancelled 保守映射为未知，只有明确的 main 拒绝保留具体原因。回归覆盖附件重复快照／其他读取者先识别 footer，以及两代真实 HTTP 协议经过 main 的晚批准、丢失 renderer 回复、清理租约和不重放；合成终端与宿主 fixture 不代表实机验证。
 
 `runtime/mcp/discovery.cts` 管理独立标准 Agent Skill 的首次发现安装及无凭据位置记录。以 main 的真实 home/config-space 为准，绝不接受 HTTP 传入用户目录；同名已有技能只比较不覆盖。复制支持文件后最后写 SKILL.md，独占创建冲突不覆盖用户文件。每配置空间独立 hash 记录，内容白名单不含客户端摘要／凭据或目标范围；状态未变不写盘。发现写入失败与 MCP 生命周期分开，不修改授权，不注册客户端。设置页提供重试／检查，自定义技能路径仍手动导入。
 
+已有 skill 冲突时，设置页说明旧说明可能仍要求 token，显示包内当前 skill 来源，允许复制固定的 `references/connection.md` 供备份后协调；不接受 renderer 指定读取路径，不改已有 skill／客户端配置，也不调用 policy.save 或重启 utility。Codex 接入说明分开描述目标主机／CODEX_HOME 注册、客户端重载、握手／工具与授权目标读取；auto 与勾选范围独立。`mcp-discovery`、`mcp-renderer` 和 `mcp-electron` 回归覆盖自定义旧文档保留、当前说明可用、auto 单目标不扩权及无重启。
+
 ### v1.0.0 review fixes
 
 Codex browser sign-in retains completion notifications received before the login-start await resumes, including a reply and notification in one stdout chunk. Cancellation still prevents accepting a completed login. MCP HTTP body iteration retains the socket on early body-limit exit and drains unread bytes after the adapter responds, so oversized requests can receive HTTP 413 rather than a connection reset. Regressions cover real fixture subprocess output and known-length/chunked HTTP requests; these do not establish real account or desktop acceptance.
+
+
+Header actions share `.codex-header-action`: 32px border-box targets, 16px inline SVGs, theme colors, stable hover/pressed/focus states and reduced-motion progress. The optional Codex account disclosure retains outside/focus dismissal and Escape return-focus; Arrow Down opens it and focuses the first enabled action. Reconnect retains existing busy/request guards. Collapse keeps the running session. Validate actual button rectangles and menu actions in both themes, narrow panes and RTL; stub authentication and reconnection in UI checks to avoid account changes or paid model requests.

@@ -18,6 +18,14 @@ Only the connection is restored. No historical `turn/start`, steering prompt, to
 
 If recovery cannot find an allowed complete installation, it stops with the original helper/CLI/install path, attempted rescan and action to select a complete CLI and reconnect. Background runtime timers do not defeat this limit. An explicit user reconnect may start a fresh lifecycle; this still never replays old actions.
 
+## Active writer during session recovery
+
+The unreleased restart fix registers window-unload cleanup for every owned Codex client, including private session spaces. Reconnecting the same space reuses its existing client; a replacement server previously attempted to resume the thread while the original server still held its writer.
+
+If `thread/resume` receives a confirmed `thread … already has an active writer` rejection, recovery retries the same thread up to three times over 2.5 seconds. It stops if the server changes, disconnects or starts work. It preserves the session ID, history, draft, model and permissions, and submits no model turns or terminal input. Transport timeouts and unrelated failures are not retried by this path.
+
+A writer held beyond this wait remains a real recovery error. Close the conversation in the other owning Codex application, then reconnect. The plugin does not delete CLI lock files or terminate an unidentified process to acquire ownership. Window-unload cleanup is not a guarantee after an application or operating-system crash; actual Windows restart recovery remains a desktop validation item.
+
 ## Why existing SSH agents were blocked
 
 Tabby's native SSH shell `getChildProcesses()` returns a placeholder empty array, not a remote process list. The plugin correctly treated it as unknown, but had no alternate identity path, so repeated screen reads could never authorize attachment.

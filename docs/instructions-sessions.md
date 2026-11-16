@@ -1,6 +1,6 @@
 # Custom instructions and CLI session spaces
 
-In Settings → AI Tools, select a connection and open **Instructions and sessions**. These settings have explicit Save / Discard actions. Saving does not run a model or interrupt an active task.
+In Settings → AI Tools → Connections & models, select a connection and expand **Custom instructions** or **CLI session storage** (unreleased layout). These settings have explicit Save / Discard actions. Saving does not run a model or interrupt an active task.
 
 ## Choose instructions
 
@@ -36,7 +36,7 @@ Tabby only lists/resumes private native sessions whose local metadata belongs to
 ## Log in and migrate
 
 1. Select the target space and use **Check selected-space login**. For Codex, this automatically initializes a missing private login cache from the local ChatGPT login when available, including for previously created empty spaces. For a private Codex space, the check reads account information and queries the Codex account service without running a model. A successful check does not establish model entitlement or available quota.
-2. If the check reports no login, sign in with the sidebar connection dropdown for the saved private Codex space, or use **Generate login command** and run the command in a local terminal. The generated command uses POSIX shell syntax on Linux/macOS and PowerShell syntax on Windows, quotes paths, and targets the selected space. Complete the official account login there, then check again. This fallback is needed when no ChatGPT file cache is available, when the local login exists only in an OS credential store, or when the cached login has expired. API-key-only caches are not imported.
+2. If the check reports no login, sign in with the sidebar account menu for the saved private Codex space, or use **Generate login command** and run the command in a local terminal. The generated command uses POSIX shell syntax on Linux/macOS and PowerShell syntax on Windows, quotes paths, and targets the selected space. Complete the official account login there, then check again. This fallback is needed when no ChatGPT file cache is available, when the local login exists only in an OS credential store, or when the cached login has expired. API-key-only caches are not imported.
 3. Existing private logins are preserved, including a login for a different account. Codex initialization is a one-time copy when the cache is absent. Claude Code requires official login in the selected space; its system OAuth cache is not copied.
 4. **Save session space**, then click the sidebar's reconnect control when idle. When switching spaces, the current conversation can be transferred through Tabby's portable context handoff into a new native session. Existing source records stay in their original location. Use `/new` to start fresh instead.
 

@@ -71,6 +71,64 @@ test('resume errors never replace a thread with recoverable context or unrelated
   }
 })
 
+test('resume waits for a retiring writer without replacing history or submitting work', async () => {
+  const service = new CodexService(), calls = []
+  service.client.connected = true
+  service.client.generation = 1
+  service.client.request = async (method, params) => {
+    calls.push({ method, params })
+    if (calls.length === 1) throw Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 })
+    return { thread: { id: 'saved', status: { type: 'idle' } } }
+  }
+  const settings = { model: 'chosen', reasoningEffort: 'high', approvalPolicy: 'never', sandbox: 'read-only', tabToolThreads: { '/project': 'saved' } }
+  assert.equal(await service.openThread('/project', settings, 'saved'), 'saved')
+  assert.deepEqual(calls.map(call => call.method), ['thread/resume', 'thread/resume'])
+  assert.deepEqual(calls[0].params, calls[1].params)
+  assert.equal(settings.tabToolThreads['/project'], 'saved')
+})
+
+test('writer recovery is bounded and never replaces a busy thread or retries an unknown transport result', async () => {
+  for (const failure of [
+    Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 }),
+    new Error('thread saved already has an active writer: observation timed out'),
+    Object.assign(new Error('permission denied'), { rpcRejected: true, code: -32600 }),
+  ]) {
+    const service = new CodexService(), calls = []
+    service.client.connected = true
+    service.client.request = async method => { calls.push(method); throw failure }
+    const settings = { model: '', tabToolThreads: { '/project': 'saved' } }
+    await assert.rejects(service.openThread('/project', settings, 'saved'), error => error === failure)
+    assert.equal(calls.length, failure.rpcRejected && failure.message.includes('active writer') ? 4 : 1)
+    assert.ok(calls.every(method => method === 'thread/resume'))
+    assert.equal(settings.tabToolThreads['/project'], 'saved')
+  }
+})
+
+test('writer wait stops when its app-server is replaced', async () => {
+  const service = new CodexService()
+  service.client.connected = true
+  let calls = 0
+  const failure = Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 })
+  service.client.request = async () => {
+    calls++
+    setImmediate(() => { service.client.generation++ })
+    throw failure
+  }
+  await assert.rejects(service.resumeThread('saved', '/project', { model: '' }), error => error === failure)
+  assert.equal(calls, 1)
+})
+
+test('writer recovery does not retry over a known active turn', async () => {
+  const service = new CodexService()
+  service.client.connected = true
+  service.client.emit('event', { method: 'turn/started', params: { threadId: 'saved' } })
+  let calls = 0
+  const failure = Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 })
+  service.client.request = async () => { calls++; throw failure }
+  await assert.rejects(service.resumeThread('saved', '/project', { model: '' }), error => error === failure)
+  assert.equal(calls, 1)
+})
+
 test('session history lists this plugin\'s sessions for the current directory', async () => {
   const service = new CodexService()
   const calls = []

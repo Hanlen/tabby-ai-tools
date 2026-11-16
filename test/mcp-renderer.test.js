@@ -26,10 +26,10 @@ const { emptyMcpState } = require('../src/mcp-types.ts')
 Module._load = oldLoad; require.extensions['.ts'] = oldTs; require.extensions['.pug'] = oldPug; require.extensions['.css'] = oldCss
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
-async function renderer (t) {
+async function renderer (t, options = {}) {
   const app = { tabs: [new Terminal('A')], tabsChanged$: new Subject() }, ipc = new EventEmitter(), requests = []
   const output = { watch: () => 0, unwatch: () => {}, streamId: () => 'stream', cursor: () => 0, isClosed: () => false, isSuppressed: () => false, readSince: () => ({ text: 'observed', cursor: 0, truncated: false, hasMore: false }), updates$: new Subject(), lifecycle$: new Subject() }
-  let hook
+  let hook = options.hook
   ipc.invoke = (_channel, message) => {
     requests.push(message)
     try { return Promise.resolve(hook ? hook(message) : emptyMcpState()) } catch (error) { return Promise.reject(error) }
@@ -38,14 +38,33 @@ async function renderer (t) {
   const remote = { getGlobal: () => ({ getBuiltinModule: () => ({ createRequire: () => () => ({ install: () => undefined }) }) }) }
   const descriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron')
   Object.defineProperty(process.versions, 'electron', { value: 'fixture', configurable: true })
-  Module._load = function (name, parent, main) { return name === '@electron/remote' ? remote : name === 'electron' ? { ipcRenderer: ipc } : oldLoad.call(this, name, parent, main) }
   const service = new McpService(app, output, { run: fn => fn() })
-  const started = service.start()
+  const start = async action => {
+    Module._load = function (name, parent, main) { return name === '@electron/remote' ? remote : name === 'electron' ? { ipcRenderer: ipc } : oldLoad.call(this, name, parent, main) }
+    let pending
+    try { pending = action ? action() : service.start() } finally { Module._load = oldLoad }
+    await pending; await flush()
+  }
   Module._load = oldLoad
-  await started; await flush()
+  await start()
   t.after(() => { service.ngOnDestroy(); if (descriptor) Object.defineProperty(process.versions, 'electron', descriptor); else delete process.versions.electron })
-  return { service, app, ipc, requests, hook: value => { hook = value } }
+  return { service, app, ipc, requests, start, hook: value => { hook = value } }
 }
+test('a failed bridge registration can recover on explicit refresh without duplicate listeners or replaying an action', async t => {
+  const f = await renderer(t, { hook: message => { if (message.type === 'register') throw new Error('MCP bridge temporarily unavailable'); return emptyMcpState() } })
+  assert.match(f.service.state.error, /temporarily unavailable/)
+  f.hook(message => {
+    if (message.type === 'register') f.ipc.emit(CHANNEL, {}, { type: 'state', state: emptyMcpState() })
+    return emptyMcpState()
+  })
+  await f.start(() => f.service.action('state'))
+  assert.equal(f.requests.filter(r => r.type === 'register').length, 2)
+  assert.equal(f.ipc.listenerCount(CHANNEL), 1)
+  assert.equal(f.service.state.error, '')
+  assert.ok(f.requests.some(r => r.type === 'targets'))
+  assert.equal(f.requests.filter(r => r.type === 'state').length, 1)
+  assert.ok(!f.requests.some(r => ['enabled', 'execute', 'add'].includes(r.type)))
+})
 test('terminal change arriving between metadata drain and finally is not lost', async t => {
   const f = await renderer(t)
   let resolve
@@ -100,4 +119,43 @@ test('late rotated credential cannot attach to a different selected client', asy
   resolve({ id: 'a', token: 'a'.repeat(43) })
   await pending
   assert.equal(f.component.selectedId, 'b'); assert.equal(f.component.token, '')
+})
+
+test('token-free settings select local access and can copy config repeatedly without creating or rotating a client', async t => {
+  const calls = [], clipboard = []
+  const f = settings(t, async (type, args, state) => { calls.push(type); return state })
+  f.component.platform = { setClipboard: async value => clipboard.push(value.text) }
+  f.changes$.next({ ...f.changes$.value, clients: [], localClient: { id: 'local', name: 'Local connection (no token)', revision: 1, mode: 'read_only', targets: [] } })
+  assert.equal(f.component.selectedId, 'local'); assert.equal(f.component.localConnection, true)
+  assert.equal(f.component.configuration, '[mcp_servers.tabby]\nurl = "http://127.0.0.1:43210/mcp"\n')
+  await f.component.copy(); await f.component.copy()
+  assert.deepEqual(calls, [])
+  assert.equal(clipboard.length, 2); assert.equal(clipboard[0], clipboard[1])
+  f.changes$.next({ ...f.changes$.value, running: false })
+  assert.equal(f.component.configuration, '')
+})
+
+test('conflict guidance and copying current instructions preserve automatic access to all local terminals', async t => {
+  const calls = [], clipboard = [], guide = 'Current bundled connection guide'
+  const f = settings(t, async (type, args, state) => {
+    calls.push({ type, args })
+    return type === 'agent-connection-instructions' ? guide : state
+  })
+  f.component.platform = { setClipboard: async value => clipboard.push(value.text) }
+  f.changes$.next({ ...f.changes$.value,
+    localClient: { id: 'local', name: 'Local connection', revision: 3, mode: 'auto', targets: ['remote', 'local-1', 'local-2'] },
+    targets: [{ id: 'remote', title: '10.0.0.3', window: 1 }, { id: 'local-1', title: 'Local 1', window: 1 }, { id: 'local-2', title: 'Local 2', window: 1 }],
+    discovery: { source: '/plugin/skills/tabby-mcp', registry: '/home/.agents/tabby/mcp', error: '', skillInstallations: [{ path: '/home/.agents/skills/tabby-mcp', status: 'conflict' }] },
+  })
+  f.component.select('local')
+  const before = JSON.stringify(f.changes$.value)
+  assert.equal(f.component.skillConflict, true)
+  await f.component.copyConnectionInstructions()
+  await f.component.installAgentSkill()
+  await f.component.copy()
+  assert.deepEqual(calls.map(item => item.type), ['agent-connection-instructions', 'install-agent-skill'])
+  assert.deepEqual(clipboard, [guide, '[mcp_servers.tabby]\nurl = "http://127.0.0.1:43210/mcp"\n'])
+  assert.equal(JSON.stringify(f.changes$.value), before)
+  assert.equal(f.component.selected.mode, 'auto')
+  assert.deepEqual(f.component.selected.targets, ['remote', 'local-1', 'local-2'])
 })

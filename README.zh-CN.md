@@ -18,6 +18,10 @@
 
 </div>
 
+**未发布的侧栏交互修复：**登录／退出菜单支持点外部或 Esc 收起；移除重复的顶部 Detail 按钮，状态摘要仍可打开详情。
+
+**未发布的 MCP 接入提示修复：**保留旧 skill 时明确提示令牌模式差异，提供当前来源和可复制连接说明。生成配置仍需在目标 Codex 空间注册、重载客户端并验证 MCP 工具；`auto` 只作用于已勾选终端。[连接步骤](docs/mcp.md)。
+
 **未发布的 Claude 独立登录修复：**认证提示提供目标空间的官方登录命令和检查重连；不再复制系统 OAuth 缓存，保留历史及草稿，不重发任务。
 
 **v1.0.0：外部 MCP 终端连接、读取提速与 Codex 独立空间登录。** 本机 AI 客户端可访问明确共享的终端，使用只读或受控输入权限；新输出可提前唤醒读取。Codex 独立空间支持官方浏览器登录与有界缓存恢复，不重发任务。[发布说明](docs/releases/1.0.0.md)。
@@ -68,7 +72,7 @@ Tabby AI Tools 是集成在 [Tabby](https://github.com/Eugeny/tabby) 中的 AI �
 
 | 连接方式 | 如何使用 |
 | --- | --- |
-| **ChatGPT 订阅 → 本机 Codex** | 安装 Codex CLI 并选择 **Codex（本机登录）**，先在设置的“指令与会话”检查选定空间登录；私有缓存缺失时会继承可用的本机 ChatGPT 文件缓存，必要时生成登录命令。 |
+| **ChatGPT 订阅 → 本机 Codex** | 安装 Codex CLI 并选择 **Codex（本机登录）**，先在设置的“CLI 会话存储”检查选定空间登录；私有缓存缺失时会继承可用的本机 ChatGPT 文件缓存，必要时生成登录命令。 |
 | **Claude 订阅 → 本机 Claude Code** | 安装官方 CLI 并选择 **Claude Code（本机登录）**，生成目标独立空间的官方登录命令，在本地终端完成后检查并重连。不再复制系统 OAuth 缓存（未发布修复）。 |
 | **OpenAI API** | 添加 OpenAI 连接，配置 API Key、Base URL 和模型 ID。 |
 | **DeepSeek** | 添加 DeepSeek API 连接，选择模型与 Thinking 设置。 |
@@ -104,7 +108,7 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 ## ChatGPT 订阅用户如何开始
 
 1. 在运行 Tabby 的本机安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)。
-2. 打开 **Settings → AI Tools → Codex → 指令与会话**，空的独立空间可以导入本机 ChatGPT 登录。登录失效且无法恢复时，在侧栏连接按钮旁的下拉菜单选择**登录**，也可以在设置中生成所选空间的登录命令。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
+2. 打开 **Settings → AI Tools → 连接与模型 → Codex → CLI 会话存储**，空的独立空间可以导入本机 ChatGPT 登录。登录失效且无法恢复时，在侧栏右上角账号菜单选择**登录**，也可以在设置中生成所选空间的登录命令。未使用过的连接默认采用独立空间。已有的**系统空间（旧版兼容）**连接可使用以下普通命令：
 
    ```bash
    codex login
@@ -113,11 +117,11 @@ v0.4.1 已支持自定义连接。Base URL 示例为 `https://gateway.example/v1
 
 3. 启动 Tabby 后 AI Tools 会自动打开，默认使用 **Codex（本机登录）**。在选定空间登录后点击侧栏重连，再选择账号可用模型，或沿用 Codex 默认模型。
 
-独立 Codex 空间还可在连接菜单使用官方浏览器登录或本地退出。自动缓存恢复只接受同一用户／工作区较新的已导入凭据；主动登录或退出后停用导入，恢复不会重发任务。
+独立 Codex 空间还可在账号菜单使用官方浏览器登录或本地退出。自动缓存恢复只接受同一用户／工作区较新的已导入凭据；主动登录或退出后停用导入，恢复不会重发任务。
 
 只需在本机安装和登录 Codex，即可沿用 Tabby 已连接的 SSH 终端协助操作服务器；服务器无需逐台登录 ChatGPT 或安装 AI Agent。
 
-自动查找覆盖 standalone 安装（含 `CODEX_INSTALL_DIR` 和 `CODEX_HOME/packages/standalone/current/bin`）、Homebrew/npm 全局 prefix，并以 VS Code 扩展中的兼容 Codex 作为最后兜底。macOS 检查 `/Applications` 和 `~/Applications` 下的 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` 及旧 `Contents/Resources/codex` 入口，也兼容原 `Codex.app` 名称。其他位置可在 **Settings → AI Tools → Codex CLI 可执行文件** 中填写完整路径。[查看完整发现矩阵](docs/guide.md#cli-自动发现与启动排查)。
+自动查找覆盖 standalone 安装（含 `CODEX_INSTALL_DIR` 和 `CODEX_HOME/packages/standalone/current/bin`）、Homebrew/npm 全局 prefix，并以 VS Code 扩展中的兼容 Codex 作为最后兜底。macOS 检查 `/Applications` 和 `~/Applications` 下的 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` 及旧 `Contents/Resources/codex` 入口，也兼容原 `Codex.app` 名称。其他位置可在 **Settings → AI Tools → 连接与模型 → Codex → CLI 路径与工作目录** 中填写完整路径。[查看完整发现矩阵](docs/guide.md#cli-自动发现与启动排查)。
 
 Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalone 和已知 npm 安装的实际版本，选择已发现的最新 CLI，每次新连接重新扫描。明确填写文件路径可固定版本；填写稳定的 `OpenAI\Codex\bin` 目录则只比较这套安装。[查看路径查找说明](docs/guide.md#cli-自动发现与启动排查)。
 
@@ -131,7 +135,7 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 
 支持按执行结果决定下一步，也可以操作终端中的其他交互式 Agent。用 `/remember 任务描述` 开始录制，任务成功结束后可在侧栏或直接告诉助手设置别名（如 `task1`），下次发送 `/task1` 即执行该流程，并重新核对当前环境。各步骤保存服务器 IP、持久连接／服务器 ID、操作路径及验收条件；多服务器按顺序执行，前一步通过结果验收后才放行下一步。助手可用 `workflow_status` / `workflow_set_alias` 查询录制、归档状态并保存别名；checkpoint 成功不等于归档成功，无法归档时显示原因。普通任务不录制，也不能事后补存。含 sudo 的流程会提前提示在各执行终端运行 `sudo -v` 或 `sudo ls`，任务期间保持认证有效。[查看编排与复用方法](docs/guide.md#任务编排与多服务器协作)。
 
-交互式 `/remember` 流程可保存 stdin、按键、进程接管和侧栏提问的条件规则与回答意图。运行器本地处理已保存的 if/else，不确定交互交给当前连接的可选辅助模型，再从当前步骤继续。在 **AI Tools → 任务流程与偏好 → 交互辅助模型** 配置；辅助用量计入任务预算，缺少机器验收时仍由主模型核对。[条件与交互流程](docs/task-workflows.md#条件与交互流程)。 更新：命令和多行脚本可按终端上限完整录制最多 10000 字符；固定步骤通过机器验收推进，需现场判断的步骤用 `policy.decision` 在执行前交回主 AI，处理后继续脚本流程。
+交互式 `/remember` 流程可保存 stdin、按键、进程接管和侧栏提问的条件规则与回答意图。运行器本地处理已保存的 if/else，不确定交互交给当前连接的可选辅助模型，再从当前步骤继续。在 **AI Tools → 任务与流程 → 任务流程与偏好 → 交互辅助模型** 配置；辅助用量计入任务预算，缺少机器验收时仍由主模型核对。[条件与交互流程](docs/task-workflows.md#条件与交互流程)。 更新：命令和多行脚本可按终端上限完整录制最多 10000 字符；固定步骤通过机器验收推进，需现场判断的步骤用 `policy.decision` 在执行前交回主 AI，处理后继续脚本流程。
 
 ## 定时任务：到点检查、判断、执行与验证
 
@@ -145,9 +149,16 @@ Windows 默认留空（或填 `codex`）即可比较 PATH、桌面版、standalo
 
 **v1.0.0：外部 MCP 终端连接（受控输入预览）。** 在「设置 → AI Tools → 外部 AI 连接（MCP）」添加客户端并勾选终端。默认只读；另选「每次操作确认」或「允许自动操作」后，可用 `send_input`、`send_keys`、`attach_process`、`release_tab` 执行命令和交互。输入与侧栏／调度共用控制，不自动中断已有任务，租约绑定客户端；撤销或租约到期仅解锁，不终止进程。复用 Tabby 内置运行时，侧栏关闭仍可用，配置手动复制合并。Linux Tabby/Codex 已有只读验收；受控输入验证及平台／客户端边界见指南。此功能包含于 v1.0.0。[配置与边界](docs/mcp.md)。 随附通用 `tabby-mcp` Agent Skill 与无凭据发现记录，帮助支持技能的本机 Agent 找到服务和配对入口；首次仍需独立客户端配置与授权。
 
+侧栏右上角统一为 32px 图标按钮：重连、Codex 账号菜单（可用时）和收起。账号菜单显示登录状态，按 ↓ 可进入操作，Esc 关闭并返回按钮；连接中的动画遵循减少动态效果设置。
+
+**未发布：本机 MCP 免令牌连接。** 启用服务并复制仅含地址的配置即可，无需创建客户端、签发令牌或选择权限和 Tab。本机程序默认共享所有终端 Tab 的读写权限及输入租约，新开和重连的终端自动纳入；独立令牌客户端保留为可选项。见[最新配置步骤](docs/mcp.md)。
+
+
+新版设置分为 **连接与模型、任务与流程、外部 AI 连接（MCP）、通用设置**。紧凑连接选择栏让详情使用可用宽度（最多 1080px），优先显示模型与权限；CLI 路径、自定义指令、会话存储、操作偏好和交互辅助模型按需展开。默认连接与语言移入通用设置，启动和日志开关默认折叠。连接草稿仍需保存，指令与会话存储保留各自的保存操作。本次布局调整尚未发布。
+
 1. 在 Tabby 的 **Settings → Plugins** 搜索并安装 **`tabby-ai-tools`**，完成后点击设置页的重启提示（**Restart the app to apply changes**）；安装和升级均在重启后生效。
 2. 使用本机 Codex 登录，或在 **Settings → AI Tools** 添加 API 连接。
-3. 重启后 AI Tools 会默认自动打开。打开目标终端，在侧栏输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。收起后可点击工具栏机器人图标重新打开；如需关闭自动打开，在 **Settings → AI Tools** 取消勾选 **启动 Tabby 时自动打开 AI Tools**。已明确关闭的配置会保留。
+3. 重启后 AI Tools 会默认自动打开。打开目标终端，在侧栏输入任务，按 **Ctrl+Enter / Cmd+Enter** 发送。收起后可点击工具栏机器人图标重新打开；如需关闭自动打开，在 **Settings → AI Tools → 通用设置 → 启动与日志** 取消勾选 **启动 Tabby 时自动打开 AI Tools**。已明确关闭的配置会保留。
 
 **[完整配置与使用指南 →](docs/guide.md)** 包含环境准备、源码安装、连接与模型配置、权限、sudo、任务编排、全部操作入口和常见问题。
 

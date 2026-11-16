@@ -19,12 +19,15 @@ export class McpSettingsComponent implements OnDestroy {
   port = 0
   private destroyed = false
   private subscription: Subscription
-  get selected () { return this.state.clients.find(c => c.id === this.selectedId) }
-  get configuration (): string { return this.token && this.state.endpoint ? mcpClientConfig(this.kind, this.state.endpoint, this.token) : '' }
+  get connections () { return [...(this.state.localClient ? [this.state.localClient] : []), ...this.state.clients] }
+  get localConnection (): boolean { return !!this.state.localClient && this.selectedId === this.state.localClient.id }
+  get skillConflict (): boolean { return !!this.state.discovery?.skillInstallations.some(item => item.status === 'conflict') }
+  get selected () { return this.connections.find(c => c.id === this.selectedId) }
+  get configuration (): string { return this.state.running && this.state.endpoint && (this.localConnection || this.token) ? mcpClientConfig(this.kind, this.state.endpoint, this.localConnection ? undefined : this.token) : '' }
   private acceptState (state: McpState): void {
     if (this.destroyed) return
     this.state = state; this.port = state.port
-    if (!state.clients.some(c => c.id === this.selectedId)) this.select(state.clients[0]?.id || '')
+    if (!this.connections.some(c => c.id === this.selectedId)) this.select(this.connections[0]?.id || '')
     if (!state.running) this.token = ''
     this.change.markForCheck()
   }
@@ -81,6 +84,12 @@ export class McpSettingsComponent implements OnDestroy {
     await this.request('scope', { id: this.selectedId, targets: [...targets] })
   }); if (input) input.checked = this.selected?.targets.includes(target) || false }
   installAgentSkill (): Promise<void> { return this.run(async () => { await this.request('install-agent-skill') }) }
+  copyConnectionInstructions (): Promise<void> { return this.run(async () => {
+    const text = await this.request('agent-connection-instructions')
+    if (this.destroyed) return
+    await this.platform.setClipboard({ text })
+    this.notice = '当前连接说明已复制；已有 skill 未修改，请备份后协调更新并重新加载客户端。'
+  }) }
   setMode (mode: string, input?: HTMLSelectElement): Promise<void> { return this.run(async () => { await this.request('mode', { id: this.selectedId, mode }) }).finally(() => { if (input) input.value = this.selected?.mode || 'read_only' }) }
   decide (id: string, accept: boolean): Promise<void> { return this.run(async () => { await this.request('decide', { id, accept }) }) }
   releaseLease (id: string): Promise<void> { return this.run(async () => { await this.request('release-lease', { id }) }) }

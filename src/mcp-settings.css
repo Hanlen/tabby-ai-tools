@@ -1,4 +1,6 @@
 :host { display: block; min-width: 0; }
+.mcp-legacy { margin-block-start: 16px; }
+.mcp-legacy summary { cursor: pointer; padding-block: 8px; }
 .mcp-settings { padding: 12px; border: 1px solid rgba(127,127,127,.27); border-radius: 8px; margin-block: 8px 16px; }
 .mcp-heading, .mcp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .mcp-heading { justify-content: space-between; }
@@ -19,9 +21,12 @@
 .mcp-client select, .mcp-config select { width: 100%; }
 .mcp-config textarea { width: 100%; max-width: 100%; font-family: monospace; font-size: 12px; white-space: pre; overflow: auto; }
 .mcp-config > p { width: 100%; }
+.mcp-config details { flex: 1 0 100%; min-width: 0; }
+.mcp-config summary { cursor: pointer; padding-block: 8px; overflow-wrap: anywhere; }
+.mcp-skill-conflict { margin-block: 12px; }
 .mcp-targets { min-width: 0; margin-block: 16px; padding: clamp(4px, 2vw, 12px); border: 1px solid rgba(127,127,127,.27); border-radius: 8px; }
 .mcp-targets legend { width: auto; max-width: 100%; padding-inline: 6px; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid #528ee8; outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid #528ee8; outline-offset: 2px; }
 
 .mcp-approvals, .mcp-lease { margin-block: 12px; padding: 10px; border: 1px solid rgba(127,127,127,.4); border-radius: 6px; }
 .mcp-approvals pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; font-size: 12px; }

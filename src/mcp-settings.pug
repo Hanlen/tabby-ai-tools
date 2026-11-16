@@ -4,15 +4,21 @@
       input#mcp-enabled(type='checkbox', [checked]='state.enabled', [disabled]='busy', (change)='toggle($any($event.target).checked, $any($event.target))')
       strong {{t("启用本机 MCP 服务")}}
     button.btn.btn-outline-secondary(type='button', (click)='refresh()', [disabled]='busy') {{t("刷新")}}
-  p.mcp-muted {{t("让外部 AI 客户端读取或操作明确授权的终端，无需侧栏模型。客户端默认为只读；写入需另选批准或自动操作模式。")}}
+  p.mcp-muted {{t("让外部 AI 客户端读取或操作终端，无需侧栏模型。本机连接默认读写所有终端 Tab，无需选择权限或终端。")}}
+  p.mcp-muted {{t("本机连接免令牌；所有本机程序共享全部终端的读写权限和输入租约。关闭服务可撤销本机访问。")}}
   p.mcp-status(role='status', aria-live='polite') {{state.running ? t("服务已启动") : state.enabled ? t("服务未启动") : t("服务已关闭")}}
     code(*ngIf='state.endpoint') {{state.endpoint}}
   p.mcp-notice(role='alert', *ngIf='state.error') {{t(state.error)}}
   p.mcp-notice(role='status', aria-live='polite', *ngIf='notice') {{t(notice)}}
   .mcp-discovery(*ngIf='state.discovery')
-    p.mcp-muted {{t("通用 Agent Skill：让支持技能的客户端发现 Tabby 的 MCP 接入方式；首次连接仍需独立凭据和终端授权。")}}
+    p.mcp-muted {{t("通用 Agent Skill：帮助本机客户端发现服务地址；本机免令牌连接自动读写所有终端 Tab。")}}
     button.btn.btn-outline-secondary(type='button', (click)='installAgentSkill()', [disabled]='busy') {{t("安装／检查 Agent Skill")}}
     p.mcp-muted(*ngFor='let item of state.discovery.skillInstallations') {{t(item.status)}} · {{item.path}}
+    .mcp-skill-conflict(*ngIf='skillConflict')
+      p.mcp-notice(role='status', aria-live='polite') {{t("已有 skill 与当前版本不同，可能仍要求令牌。本机免令牌连接请以此设置页和当前连接说明为准；独立令牌客户端仍使用各自凭据。")}}
+      p.mcp-muted {{t("备份上方已有 skill，对照当前版本的 SKILL.md 和 references/connection.md 协调更新，保留自定义内容，然后重新加载客户端。")}}
+      p.mcp-muted(*ngIf='state.discovery.source') {{t("当前 skill 来源")}}: {{state.discovery.source}}
+      button.btn.btn-outline-secondary(type='button', (click)='copyConnectionInstructions()', [disabled]='busy') {{t("复制当前连接说明")}}
     p.mcp-muted {{t("发现记录（不含凭据）")}}: {{state.discovery.registry}}
     p.mcp-notice(role='status', *ngIf='state.discovery.error') {{state.discovery.error}}
   .mcp-port(*ngIf='!state.enabled')
@@ -20,15 +26,11 @@
     input#mcp-port.form-control(type='number', min='0', max='65535', [(ngModel)]='port', [disabled]='busy')
     button.btn.btn-outline-secondary(type='button', (click)='setPort()', [disabled]='busy') {{t("保存端口")}}
   ng-container(*ngIf='state.running')
-    .mcp-add
-      label(for='mcp-name') {{t("客户端名称")}}
-      input#mcp-name.form-control(type='text', maxlength='80', autocomplete='off', [(ngModel)]='name', [disabled]='busy', (keydown.enter)='add()')
-      button.btn.btn-primary(type='button', (click)='add()', [disabled]='busy || !name.trim()') {{t("添加客户端")}}
-    p.mcp-muted(*ngIf='!state.clients.length') {{t("添加客户端后，复制配置并选择可读取的终端。新客户端默认没有终端权限。")}}
     .mcp-client(*ngIf='state.clients.length')
       label(for='mcp-client') {{t("管理客户端")}}
       select#mcp-client.form-control([ngModel]='selectedId', (ngModelChange)='select($event)', [disabled]='busy')
-        option(*ngFor='let client of state.clients', [value]='client.id') {{client.name}}
+        option(*ngFor='let client of connections', [value]='client.id') {{client.id === state.localClient?.id ? t("本机连接（免令牌）") : client.name}}
+    p.mcp-muted(*ngIf='localConnection') {{t("将下方地址配置注册到客户端后连接，即可读写所有终端 Tab，包括新开和重连的终端，无需逐个勾选。")}}
     .mcp-approvals(*ngFor='let approval of state.approvals')
       p.mcp-notice(role='alert') {{t("待批准的终端操作")}} · {{approval.client}} · {{approval.title}} · {{t("窗口")}} {{approval.window}}
       p.mcp-muted {{t("请在目标终端所在窗口批准。25 秒内有效；拒绝、撤销或超时均不自动重试。")}}
@@ -40,22 +42,24 @@
       p.mcp-muted {{t("当前输入控制")}} · {{lease.client}} · {{lease.title}} · {{t("窗口")}} {{lease.window}}
       button.btn.btn-outline-secondary(type='button', (click)='releaseLease(lease.id)', [disabled]='busy') {{t("释放输入控制（不停止进程）")}}
     ng-container(*ngIf='selected')
-      label(for='mcp-mode') {{t("终端操作权限")}}
-      select#mcp-mode.form-control([ngModel]="selected.mode || 'read_only'", (ngModelChange)='setMode($event, modeInput)', #modeInput, [disabled]='busy')
-        option(value='read_only') {{t("只读")}}
-        option(value='confirm') {{t("每次操作确认")}}
-        option(value='auto') {{t("允许自动操作")}}
-      p.mcp-muted {{t("操作权限仅适用于该客户端已勾选的终端。自动操作按终端账户权限执行；不会自动中断已有任务。取消、释放或租约到期仅解锁输入，不终止进程。")}}
       p.mcp-muted {{t("最近请求")}}: {{selected.lastSeen || t("尚未收到客户端请求")}} · {{t("最近请求不代表持续在线。")}}
-      fieldset.mcp-targets([disabled]='busy')
-        legend {{t("允许读取的终端")}}
-        p.mcp-muted {{t("勾选即允许该客户端读取整个终端的输出，可能包含敏感信息。取消勾选立即撤销并中止等待；关闭、重连或重启后需要重新授权。")}}
-        p.mcp-muted {{t("窗口与终端标题用于识别目标；嵌套 SSH 或容器身份不会自动验证。")}}
-        p.mcp-muted(*ngIf='!state.targets.length') {{t("请先打开一个终端。")}}
-        label.mcp-check(*ngFor='let target of state.targets')
-          input(type='checkbox', [checked]='selected.targets.includes(target.id)', (change)='scope(target.id, $any($event.target).checked, $any($event.target))')
-          span {{target.title}} · {{t("窗口")}} {{target.window}}
-      .mcp-actions
+      ng-container(*ngIf='!localConnection')
+        label(for='mcp-mode') {{t("终端操作权限")}}
+        select#mcp-mode.form-control([ngModel]="selected.mode || 'read_only'", (ngModelChange)='setMode($event, modeInput)', #modeInput, [disabled]='busy')
+          option(value='read_only') {{t("只读")}}
+          option(value='confirm') {{t("每次操作确认")}}
+          option(value='auto') {{t("允许自动操作")}}
+        p.mcp-muted {{t("操作权限仅适用于该客户端已勾选的终端。自动操作按终端账户权限执行；不会自动中断已有任务。取消、释放或租约到期仅解锁输入，不终止进程。")}}
+        p.mcp-muted {{t("自动操作不会勾选或开放其他终端；权限模式与可见终端范围分别设置。")}}
+        fieldset.mcp-targets([disabled]='busy')
+          legend {{t("允许读取的终端")}}
+          p.mcp-muted {{t("勾选即允许该客户端读取整个终端的输出，可能包含敏感信息。取消勾选立即撤销并中止等待；关闭、重连或重启后需要重新授权。")}}
+          p.mcp-muted {{t("窗口与终端标题用于识别目标；嵌套 SSH 或容器身份不会自动验证。")}}
+          p.mcp-muted(*ngIf='!state.targets.length') {{t("请先打开一个终端。")}}
+          label.mcp-check(*ngFor='let target of state.targets')
+            input(type='checkbox', [checked]='selected.targets.includes(target.id)', (change)='scope(target.id, $any($event.target).checked, $any($event.target))')
+            span {{target.title}} · {{t("窗口")}} {{target.window}}
+      .mcp-actions(*ngIf='!localConnection')
         button.btn.btn-outline-secondary(type='button', (click)='rotate()', [disabled]='busy') {{t("轮换凭据并生成配置")}}
         button.btn.btn-outline-danger(type='button', (click)='revoke()', [disabled]='busy') {{t("撤销客户端")}}
       .mcp-config(*ngIf='configuration')
@@ -64,9 +68,27 @@
           option(value='codex') Codex CLI · config.toml
           option(value='cursor') Cursor · mcp.json
           option(value='claude') Claude Code · JSON
-        p.mcp-muted {{t("凭据仅在此处临时显示。请将片段手动合并到所选客户端的个人配置；保留其他条目，名称冲突时使用新名称。插件不会改写客户端文件。")}}
-        textarea#mcp-configuration.form-control(readonly, rows='8', [value]='configuration', [attr.aria-label]='t("含凭据的客户端配置")', spellcheck='false')
+        p.mcp-muted(*ngIf='localConnection') {{t("将地址配置合并到客户端的个人配置。已有旧配置时，移除该连接的 Authorization 或令牌环境变量设置。")}}
+        p.mcp-muted {{t("生成或复制配置不会自动注册客户端，也不代表 MCP 握手成功。")}}
+        p.mcp-muted(*ngIf='!localConnection') {{t("凭据仅在此处临时显示。请将片段手动合并到所选客户端的个人配置；保留其他条目，名称冲突时使用新名称。插件不会改写客户端文件。")}}
+        textarea#mcp-configuration.form-control(readonly, rows='5', [value]='configuration', [attr.aria-label]='t("客户端配置")', spellcheck='false')
         .mcp-actions
           button.btn.btn-primary(type='button', (click)='copy()', [disabled]='busy') {{t("复制配置")}}
-          button.btn.btn-outline-secondary(type='button', (click)='token = ""', [disabled]='busy') {{t("隐藏凭据")}}
-      p.mcp-muted(*ngIf='!configuration') {{t("如需再次复制配置，请轮换凭据；旧凭据会立即失效。")}}
+          button.btn.btn-outline-secondary(type='button', *ngIf='!localConnection', (click)='token = ""', [disabled]='busy') {{t("隐藏凭据")}}
+        details(*ngIf='kind === "codex"')
+          summary {{t("Codex 注册、重新加载与验证")}}
+          ol.mcp-muted
+            li
+              span {{t("在目标 Codex 所在主机及其实际 CODEX_HOME 中合并配置；默认路径为 ~/.codex/config.toml，保留其他条目。同名条目冲突时选择新名称。")}}
+              ng-container(*ngIf='localConnection')
+                p {{t("也可在该配置空间运行以下命令注册免令牌连接：")}}
+                code codex mcp add tabby --url {{state.endpoint}}
+            li {{t("保存后重新加载 MCP 客户端或在当前任务结束后打开新的 Codex 会话。无需重启 Tabby；本机连接自动覆盖当前终端，令牌客户端重启后需重新授权。")}}
+            li {{t("先用 codex mcp list --json 确认条目，再验证 MCP 握手及工具发现，调用 get_capabilities、read_skill、list_tabs 并读取已授权终端。HTTP 响应或最近请求时间不能代替这些验证。")}}
+      p.mcp-muted(*ngIf='!localConnection && !configuration') {{t("如需再次复制配置，请轮换凭据；旧凭据会立即失效。")}}
+    details.mcp-legacy
+      summary {{t("独立令牌客户端（可选）")}}
+      .mcp-add
+        label(for='mcp-name') {{t("客户端名称")}}
+        input#mcp-name.form-control(type='text', maxlength='80', autocomplete='off', [(ngModel)]='name', [disabled]='busy', (keydown.enter)='add()')
+        button.btn.btn-outline-secondary(type='button', (click)='add()', [disabled]='busy || !name.trim()') {{t("添加客户端")}}

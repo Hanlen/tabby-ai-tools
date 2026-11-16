@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { McpPolicy, failure, randomId } from './policy.cjs'
+import { McpPolicy, failure, randomId, LOCAL_CLIENT_ID } from './policy.cjs'
 import { McpDiscovery } from './discovery.cjs'
 declare const TABBY_MCP_VERSION: string
 
@@ -30,7 +30,7 @@ export function install () {
     try { return !event.sender.isDestroyed() && event.senderFrame === event.sender.mainFrame && event.sender.getURL() === expectedUrl } catch { return false }
   }
   const enqueue = <T,>(action: () => Promise<T>): Promise<T> => { const next = chain.then(action); chain = next.then(() => undefined, () => undefined); return next }
-  const state = () => ({ ...policy.publicState(), discovery: { registry: discovery.registry, skillInstallations, error: discoveryError }, approvals: [...observations].filter(([,o]) => o.approval).map(([id,o]) => ({ id, ...o.approval, target: o.target, window: o.sender.id })), leases: [...leases.values()].map(l => ({ id: l.id, client: policy.clients.get(l.clientId)?.name || '', target: l.targetId, title: policy.targets.get(l.targetId)?.title || '', window: l.sender.id, expiresAt: l.expiresAt })), running: !!child && !faulted && !!port, port: policy.port, endpoint: port ? `http://127.0.0.1:${port}/mcp` : '', error, hostNode: process.versions.node, utilityNode })
+  const state = () => ({ ...policy.publicState(), discovery: { registry: discovery.registry, source: discovery.skillSource, skillInstallations, error: discoveryError }, approvals: [...observations].filter(([,o]) => o.approval).map(([id,o]) => ({ id, ...o.approval, target: o.target, window: o.sender.id })), leases: [...leases.values()].map(l => ({ id: l.id, client: policy.clients.get(l.clientId)?.name || '', target: l.targetId, title: policy.targets.get(l.targetId)?.title || '', window: l.sender.id, expiresAt: l.expiresAt })), running: !!child && !faulted && !!port, port: policy.port, endpoint: port ? `http://127.0.0.1:${port}/mcp` : '', error, hostNode: process.versions.node, utilityNode })
   const releaseLease = (id: string) => {
     const lease = leases.get(id)
     if (!lease) return
@@ -48,9 +48,9 @@ export function install () {
     }, 120000)
     lease.timer.unref?.()
   }
-  const clearScopes = () => { for (const id of leases.keys()) releaseLease(id); for (const client of policy.clients.values()) { client.targets.clear(); client.revision++ } }
-  const rejectControls = () => {
-    for (const waiter of controls.values()) { clearTimeout(waiter.timer); waiter.reject(new Error('MCP process unavailable')) }
+  const clearScopes = () => { for (const id of leases.keys()) releaseLease(id); for (const client of policy.clients.values()) { if (client.id !== LOCAL_CLIENT_ID) client.targets.clear(); client.revision++ } }
+  const rejectControls = (reason = 'MCP process unavailable') => {
+    for (const waiter of controls.values()) { clearTimeout(waiter.timer); waiter.reject(new Error(reason)) }
     controls.clear()
   }
   const cancelObservation = (id: string, code: string, notify = true) => {
@@ -116,7 +116,10 @@ export function install () {
   const control = (type: string, data: any = {}) => new Promise<any>((resolve, reject) => {
     const own = child
     if (!own) return reject(new Error('MCP process unavailable'))
-    const id = randomId(), timer = setTimeout(() => { controls.delete(id); reject(new Error('MCP control observation timed out; no request replayed')) }, 5000)
+    // Listening can be delayed by desktop cold-start/endpoint protection after
+    // the runtime is ready. Keep ordinary controls and shutdown at five seconds.
+    const timeoutMs = type === 'start' ? 20000 : 5000
+    const id = randomId(), timer = setTimeout(() => { controls.delete(id); reject(new Error(type === 'start' ? 'MCP HTTP listener did not reply within 20 seconds; no request replayed' : 'MCP control observation timed out; no request replayed')) }, timeoutMs)
     controls.set(id, { resolve, reject, timer })
     if (!postChild(own, { type, ...data, id })) {
       controls.delete(id); clearTimeout(timer); reject(new Error('MCP process unavailable'))
@@ -182,24 +185,58 @@ export function install () {
     if (!policy.enabled || !owners.size) return
     error = ''
     let own: any
-    try { own = utilityProcess.fork(join(__dirname, 'utility.cjs'), [], { stdio: 'pipe', serviceName: 'Tabby AI Tools — MCP', env: { NODE_OPTIONS: '', NODE_PATH: '', ELECTRON_RUN_AS_NODE: '', PATH: '' } }) }
+    // Electron replaces the whole environment when env is supplied. Preserve
+    // host OS variables (notably SystemRoot/TEMP on Windows), while keeping
+    // system Node and loader injection disabled, including mixed-case keys.
+    const env = { ...process.env }
+    for (const key of Object.keys(env)) if (/^(path|node_options|node_path|electron_run_as_node)$/i.test(key)) env[key] = ''
+    Object.assign(env, { NODE_OPTIONS: '', NODE_PATH: '', ELECTRON_RUN_AS_NODE: '', PATH: '' })
+    try { own = utilityProcess.fork(join(__dirname, 'utility.cjs'), [], { stdio: 'pipe', serviceName: 'Tabby AI Tools — MCP', env }) }
     catch { error = 'MCP process could not be launched'; synchronize(); throw new Error(error) }
     child = own; faulted = undefined
-    own.stdout?.resume(); own.stderr?.resume()
+    let spawned = false, runtimeReady = false, diagnostics = '', stderr: any
+    const drain = () => {
+      own.stdout?.resume()
+      if (own.stderr && stderr !== own.stderr) {
+        stderr = own.stderr
+        stderr.on('data', (chunk: Buffer) => { diagnostics = (diagnostics + chunk.toString()).slice(-4096) })
+      }
+    }
+    drain()
+    own.once('spawn', () => { spawned = true; drain() })
+    // Cold process creation and bundle loading have their own bounded budget.
+    // Never send start until the runtime has installed its parent-port listener.
+    const ready = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controls.delete('runtime-ready')
+        reject(new Error(spawned ? 'MCP runtime did not become ready within 20 seconds (loading the bundled runtime)' : 'MCP utility process did not spawn within 20 seconds'))
+      }, 20000)
+      controls.set('runtime-ready', { resolve, reject, timer })
+    })
     let resolveExit: () => void
     exits.set(own, new Promise<void>(resolve => { resolveExit = resolve }))
-    own.once('exit', () => {
+    own.once('exit', (code: number) => {
       exitedChildren.add(own); resolveExit()
       if (child !== own) return
+      const wasRunning = !!port
       child = undefined; faulted = undefined; port = 0; utilityNode = ''
-      if (!stopping && policy.enabled && !error) error = 'MCP process exited. Disable and enable to restart; no request was replayed.'
+      if (!stopping && policy.enabled && !error) {
+        // Surface only recognized error classes/codes, never raw stderr, paths,
+        // environment values or credentials in diagnostics from dependencies.
+        const detail = diagnostics.match(/\b(MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ERR_REQUIRE_ESM|ERR_REQUIRE_ASYNC_MODULE|ERR_UNKNOWN_BUILTIN_MODULE|SyntaxError|ReferenceError|TypeError)\b/)?.[0]
+        error = wasRunning ? 'MCP process exited. Disable and enable to restart; no request was replayed.' : `MCP process exited ${runtimeReady ? 'while starting the HTTP listener' : 'before the runtime became ready'} (exit ${code}${detail ? '; ' + detail : ''}). Disable and enable to restart; no request was replayed.`
+      }
       for (const id of observations.keys()) cancelObservation(id, 'cancelled')
-      rejectControls(); clearScopes(); synchronize()
+      rejectControls(error || undefined); clearScopes(); synchronize()
     })
     own.once('error', () => faultChild(own, 'MCP process failed. Waiting for process exit; no request was replayed.'))
     own.on('message', (message: any) => {
       if (child !== own || !message) return
-      if (message.type === 'tool') {
+      if (message.type === 'ready' && !faulted) {
+        const waiter = controls.get('runtime-ready')
+        if (!waiter) return
+        runtimeReady = true; controls.delete('runtime-ready'); clearTimeout(waiter.timer); waiter.resolve(undefined)
+      } else if (message.type === 'tool') {
         void dispatch(message).then(value => { postChild(own, { type: 'tool-result', id: message.id, value }) }, (error: any) => { postChild(own, { type: 'tool-result', id: message.id, error: error.code || 'internal_error' }) })
       } else if (message.type === 'cancel') {
         for (const [id, item] of observations) if (item.callId === message.id) cancelObservation(id, 'cancelled')
@@ -215,6 +252,7 @@ export function install () {
       }
     })
     try {
+      await ready
       const info = await control('start', { port: policy.port, snapshot: policy.snapshot() })
       if (child !== own || faulted) throw new Error('MCP process unavailable')
       port = info.port; utilityNode = info.node; policy.port = port; policy.save(); synchronize()
@@ -276,6 +314,7 @@ export function install () {
       synchronize(); return state()
     }
     if (!owners.has(sender.id)) throw new Error('MCP renderer is not registered')
+    if (message.type === 'agent-connection-instructions') return discovery.connectionInstructions()
     let value: any
     if (message.type === 'install-agent-skill') installSkill()
     else if (message.type === 'decide') {
@@ -294,7 +333,7 @@ export function install () {
     else if (message.type === 'state') return state()
     else if (message.type === 'enabled') {
       policy.enabled = message.enabled === true
-      for (const client of policy.clients.values()) { client.revision++; if (!policy.enabled) client.targets.clear() }
+      for (const client of policy.clients.values()) { client.revision++; if (!policy.enabled && client.id !== LOCAL_CLIENT_ID) client.targets.clear() }
       await commit()
       if (policy.enabled) await start(); else { error = ''; await stop() }
     } else if (message.type === 'port') {
@@ -303,7 +342,10 @@ export function install () {
       policy.port = message.port; await commit()
     } else if (message.type === 'add') { value = policy.add(message.name); await commit() }
     else if (message.type === 'rotate') { value = policy.rotate(message.id); await commit() }
-    else if (message.type === 'revoke') { policy.client(message.id); policy.clients.delete(message.id); await commit() }
+    else if (message.type === 'revoke') {
+      if (message.id === LOCAL_CLIENT_ID) throw new Error('Disable MCP to revoke local access')
+      policy.client(message.id); policy.clients.delete(message.id); await commit()
+    }
     else if (message.type === 'scope') { policy.setScope(message.id, message.targets); await commit() }
     else if (message.type === 'unregister') await removeOwner(sender.id)
     else throw new Error('Unknown MCP action')

@@ -67,6 +67,38 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private authProfileId = ''
   private authWarningVersion = 0
   @ViewChild('authWarningDialog') private authWarningDialog?: ElementRef<HTMLDialogElement>
+  @ViewChild('authMenuControl') private authMenuControl?: ElementRef<HTMLElement>
+  private removeAuthMenuListeners?: () => void
+
+  toggleAuthMenu (focusFirst = false): void {
+    if (!this.privateCodexLogin) return
+    this.authMenuOpen = focusFirst || !this.authMenuOpen
+    if (focusFirst) {
+      this.changeDetector?.detectChanges()
+      this.authMenuControl?.nativeElement.querySelector<HTMLButtonElement>('.codex-auth-menu button:not(:disabled)')?.focus()
+    }
+  }
+
+  closeAuthMenu (returnFocus = false): void {
+    if (!this.authMenuOpen) return
+    this.authMenuOpen = false
+    if (returnFocus) this.authMenuControl?.nativeElement.querySelector<HTMLButtonElement>('.codex-auth-toggle')?.focus()
+  }
+
+  private bindAuthMenuDismissal (): void {
+    const control = this.authMenuControl?.nativeElement
+    if (!control) return
+    const document = control.ownerDocument
+    const outside = (event: Event) => {
+      if (!this.authMenuOpen || control.contains(event.target as Node)) return
+      this.zone.run(() => { this.closeAuthMenu(); this.changeDetector?.markForCheck() })
+    }
+    // Capture also sees interactions stopped by terminal or editor widgets.
+    for (const type of ['pointerdown', 'click', 'focusin']) document.addEventListener(type, outside, true)
+    this.removeAuthMenuListeners = () => {
+      for (const type of ['pointerdown', 'click', 'focusin']) document.removeEventListener(type, outside, true)
+    }
+  }
 
   get authAgentLabel (): string {
     return (this.authBackend || this.codex).profile?.runtime === 'claude-code' ? 'Claude Code' : 'Codex'
@@ -1033,7 +1065,13 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       previousToolId = targetSettings.tabToolThreads?.[targetCwd]
       let transferredId = ''
       const sameCodexSpace = reload && id === this.profileId && !backend.profile && this.codex.sessionSpace?.key === backend.sessionSpace?.key
-      if (!sameCodexSpace && this.threadId && this.codex.exportContext && backend.importContext) {
+      if (sameCodexSpace) {
+        // The existing app-server still owns this thread's writer. Replacing it
+        // before restore would make the new server contend with our own client.
+        await this.reconnect()
+        return
+      }
+      if (this.threadId && this.codex.exportContext && backend.importContext) {
         const context = await this.codex.exportContext(this.threadId)
         // Prepare the new connection before releasing the current conversation.
         await backend.connect(targetSettings)
@@ -1114,6 +1152,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit (): void {
     this.zone.runOutsideAngular(() => {
+      this.bindAuthMenuDismissal()
       this.chatScroll = new ChatScroll(this.chatFeed.nativeElement, this.chatContent.nativeElement, visible => {
         this.zone.run(() => { this.showJumpToLatest = visible })
       })
@@ -2213,6 +2252,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy (): void {
     this.panelDestroyed = true
+    this.removeAuthMenuListeners?.()
     this.cancelCodexLogin()
     this.cliConfigurationSubscription?.unsubscribe()
     this.attachmentsDestroyed = true

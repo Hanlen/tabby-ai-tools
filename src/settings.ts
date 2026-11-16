@@ -25,12 +25,13 @@ import { resolveCodexLaunch } from './codex-discovery'
 import { inspectClaudeCode, resolveClaudeExecutable } from './claude-code-client'
 import * as path from 'path'
 
-@Component({ template: require('./settings.pug'), styles: [require('./settings.css')] })
+@Component({ host: { class: 'ai-tools-settings-host' }, template: require('./settings.pug'), styles: [require('./settings.css')] })
 export class CodexSettingsComponent implements OnDestroy {
   readonly t = translate
   readonly languages = SUPPORTED_LANGUAGES
   get direction (): string { return textDirection() }
   get languageCode (): string { return getLanguage() }
+  settingsSection: 'connections' | 'tasks' | 'mcp' | 'general' = 'connections'
   selectedProfileId = ''
   readonly piCatalog = piCatalog
   readonly piProtocols = piProtocols
@@ -347,7 +348,14 @@ export class CodexSettingsComponent implements OnDestroy {
       this.changeDetector?.markForCheck()
     }))
   }
+  selectSection (section: 'connections' | 'tasks' | 'mcp' | 'general'): void {
+    if (section === this.settingsSection) return
+    if (section === 'connections') this.selectProfile(this.selectedProfileId)
+    else if (section === 'tasks') { void this.openMemory() }
+    else this.settingsSection = section
+  }
   selectProfile (id: string): void {
+    this.settingsSection = 'connections'
     this.instructionGeneration++; this.instructionNotice = ''; this.instructionPreview = undefined; this.nativeNotice = ''; this.nativeCommand = ''
     this.memoryOpen = false
     this.schedulesOpen = false
@@ -359,6 +367,7 @@ export class CodexSettingsComponent implements OnDestroy {
     this.advancedOpen = false
   }
   async openMemory (): Promise<void> {
+    this.settingsSection = 'tasks'
     this.schedulesOpen = false
     this.scheduleDeleteId = ''
     this.memoryOpen = true
@@ -366,6 +375,7 @@ export class CodexSettingsComponent implements OnDestroy {
     await this.refreshMemory()
   }
   async openSchedules (): Promise<void> {
+    this.settingsSection = 'tasks'
     this.memoryOpen = false
     this.schedulesOpen = true
     this.scheduleDeleteId = ''

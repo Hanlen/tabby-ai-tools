@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2600" viewBox="0 0 1800 2600" role="img" aria-labelledby="title desc">
-<title id="title">Tabby AI Tools v1.0.0 interface illustration — external MCP controlled-input preview, Markdown replies, terminal tools, local login and API connections</title>
-<desc id="desc">MCP controlled terminal preview: portable Agent Skill, credential-free service discovery, Settings external AI connections, default disabled/read-only, explicit terminal grants and confirm/auto permissions, input leases, snapshot/delta/wait and revoke/rotate. Example panel only; actual Linux Tabby/Codex verification is documented separately. Tabby AI Tools v1.0.0 shared Agent question navigation: hover or focus to preview, click to jump. Centered compact 1px lines share an 18px right strip with a draggable conversation scrollbar; previews open left and there is no left gutter; theme-aware up/down buttons appear on overflow. Green indicates completion; pale green indicates ordinary interruption. Blue indicates running or external prerequisites; red indicates user Stop or unfinished/limited work. Turns with no known execution result remain neutral; overall goal completion is separate. Markdown output: assistant tables preserve column alignment, code blocks have syntax highlighting and copy buttons and wide content scrolls inside messages. Codex checks known Windows companions and recovers once at an idle boundary without replay; Unreleased Claude private-login fix: official selected-space login command, no OAuth cache copying; Claude rechecks its original CLI selector before every invocation; native Linux SSH agents use an independent PID and output-only PTY identity proof; clipboard attachments with clickable thumbnails and larger image previews and native tab progress; custom instructions/private CLI session spaces and Pi configuration: native provider search, offline SDK 1.4.0 catalog, four custom protocols and Save/Discard/Copy drafts. Interface illustration, not a running screenshot. Windows default Codex discovery compares actual CLI versions across PATH and desktop/standalone installations; a stable directory limits selection to its own children. Commands and multiline workflow scripts retain up to 10,000 characters; explicit AI decision steps return to scripted execution after judgment. Conditional recordings preserve interaction intent; local rules run first, with an optional current-connection helper model and rebind-before-resume checkpoints. Settings use two-row connection cards and editor summaries, compact headings and full-page scrolling for connections, workflows/preferences and scheduled tasks, with no fixed-height editor. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. Thinking and tool calls appear as collapsed conversation entries that can be expanded. Internal terminal snapshots wake on unread output or reliable completion; observation never proves completion. Terminal output is read on demand without automatic forwarding; an example health table and a copyable code block are shown. Archive status distinguishes successful checkpoints from successful persistence. Pi runtime settings show the built-in runtime and an optional Node override, host-only tools and opt-in automatic context compaction. The provider list includes Kimi and Alibaba Cloud Coding Plan connections. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. Compact navigation UI with optional Pi SDK runtime, built-in Node 22.19+, manual context compaction and structured retry waiting.</desc>
+<title id="title">Tabby AI Tools v1.1.0 interface illustration — external MCP controlled-input preview, Markdown replies, terminal tools, local login and API connections</title>
+<desc id="desc">MCP controlled terminal preview: portable Agent Skill, credential-free service discovery, Settings external AI connections, service disabled by default, local automatic read/write access to all terminal tabs and optional bearer grants, input leases, snapshot/delta/wait, token-free local access with shared grants, and optional bearer clients. Preserved skill conflicts show current instructions; Codex registration, reload and handshake are separate from terminal scope. Example panel only; actual Linux Tabby/Codex verification is documented separately. Tabby AI Tools v1.1.0 shared Agent question navigation: hover or focus to preview, click to jump. Centered compact 1px lines share an 18px right strip with a draggable conversation scrollbar; previews open left and there is no left gutter; theme-aware up/down buttons appear on overflow. Green indicates completion; pale green indicates ordinary interruption. Blue indicates running or external prerequisites; red indicates user Stop or unfinished/limited work. Turns with no known execution result remain neutral; overall goal completion is separate. Markdown output: assistant tables preserve column alignment, code blocks have syntax highlighting and copy buttons and wide content scrolls inside messages. Codex checks known Windows companions and recovers once at an idle boundary without replay; Claude private-login fix: official selected-space login command, no OAuth cache copying; Claude rechecks its original CLI selector before every invocation; native Linux SSH agents use an independent PID and output-only PTY identity proof; clipboard attachments with clickable thumbnails and larger image previews and native tab progress; custom instructions/private CLI session spaces and Pi configuration: native provider search, offline SDK 1.4.0 catalog, four custom protocols and Save/Discard/Copy drafts. Interface illustration, not a running screenshot. Windows default Codex discovery compares actual CLI versions across PATH and desktop/standalone installations; a stable directory limits selection to its own children. Commands and multiline workflow scripts retain up to 10,000 characters; explicit AI decision steps return to scripted execution after judgment. Conditional recordings preserve interaction intent; local rules run first, with an optional current-connection helper model and rebind-before-resume checkpoints. Settings redesign uses four category buttons, a compact connection picker and an adaptive editor up to 1080px, lifting the default 600px host limit only for AI Tools. Low-frequency CLI paths, custom instructions, session storage, startup/log switches, preferences and helper models default to collapsed; workflows appear before helper configuration. One page scrolls without a nested connection sidebar. The assistant sidebar coordinates example staging database and application terminals. Connection and model controls share one compact row. Header actions use matching 32px reconnect/account/collapse buttons and 16px stroke icons; the account disclosure shows sign-in state, supports Arrow Down and closes on outside interactions or Escape; status summaries open details without a duplicate header button. Scheduled tasks, provider connections, startup opening enabled by default and twelve interface languages and the Claude Code local-login connection are shown below. Active goals continue automatically by default. Thinking and tool calls appear as collapsed conversation entries that can be expanded. Internal terminal snapshots wake on unread output or reliable completion; observation never proves completion. Terminal output is read on demand without automatic forwarding; an example health table and a copyable code block are shown. Archive status distinguishes successful checkpoints from successful persistence. Pi runtime settings show the built-in runtime and an optional Node override, host-only tools and opt-in automatic context compaction. The provider list includes Kimi and Alibaba Cloud Coding Plan connections. Custom OpenAI-compatible settings show an example Base URL, model, protocol and authentication. Compact navigation UI with optional Pi SDK runtime, built-in Node 22.19+, manual context compaction and structured retry waiting.</desc>
 <defs>
 <linearGradient id="background" x2="1" y2="1"><stop stop-color="#0c1622"/><stop offset="1" stop-color="#151729"/></linearGradient>
 <linearGradient id="outline"><stop stop-color="#375d5d"/><stop offset="1" stop-color="#3b3d5c"/></linearGradient>
@@ -15,7 +15,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="56" y="65" font-size="23" font-weight="700" style="fill:#8ae6c2" class="mono">&gt;_</text>
 <text x="106" y="66" font-size="21" font-weight="700" style="fill:#a7b8cb">TABBY AI TOOLS</text>
 <rect x="1534" y="44" width="218" height="28" rx="6" fill="#22313f"/>
-<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">v1.0.0 / MCP preview</text>
+<text x="1544" y="64" font-size="16" font-weight="600" style="fill:#8ae6c2">v1.1.0 / MCP preview</text>
 <text x="48" y="134" font-size="54" font-weight="700" style="fill:#f1f6ff">Your terminals. Working together.</text>
 <text x="50" y="176" font-size="23" font-weight="400" style="fill:#a7b8cb">Codex + Claude Code + APIs + optional Pi SDK  /  Terminal tools  /  Scheduled AI tasks</text>
 <rect x="48" y="210" width="1704" height="632" rx="14" fill="#0d1520" stroke="url(#outline)"/>
@@ -28,15 +28,25 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="1647" y="239" font-size="15" font-weight="400" style="fill:#a7b8cb">+    Settings</text>
 <rect x="49" y="253" width="499" height="588" rx="0" fill="#172130"/>
 <path d="M548 253L548 842" stroke="#3b4b60"/>
-<text x="72" y="285" font-size="23" font-weight="700" style="fill:#eef4ff">Pi example</text>
+<text x="72" y="285" font-size="23" font-weight="700" style="fill:#eef4ff">Codex</text>
 <text x="248" y="284" font-size="16" font-weight="400" style="fill:#8ca0b8">workspace</text>
-<rect x="368" y="263" width="62" height="28" rx="6" fill="#1a4a3a"/>
-<text x="378" y="283" font-size="14" font-weight="600" style="fill:#8ae6c2">Linked</text>
-<rect x="438" y="263" width="64" height="28" rx="6" fill="#253348"/>
-<text x="448" y="283" font-size="14" font-weight="600" style="fill:#a7b8cb">Details</text>
-<text x="519" y="285" font-size="22" font-weight="400" style="fill:#8ca0b8">×</text>
+<g aria-label="Matching reconnect, account and collapse controls — example" fill="none" stroke="#a7b8cb" stroke-width="1.2">
+<rect x="412" y="260" width="32" height="32" rx="7" fill="#202d40" stroke="#3a4c65"/>
+<rect x="448" y="260" width="32" height="32" rx="7" fill="#202d40" stroke="#3a4c65"/>
+<rect x="484" y="260" width="32" height="32" rx="7" fill="#202d40" stroke="#3a4c65"/>
+<g transform="translate(420 268) scale(.6667)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 19.5 9M4.5 15a8 8 0 0 0 13.4 2.9"/>
+</g>
+<circle cx="437" cy="285" r="2.5" fill="#8ae6c2" stroke="none"/>
+<g transform="translate(456 268) scale(.6667)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>
+</g>
+<g transform="translate(492 268) scale(.6667)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m7-11-3 3 3 3"/>
+</g>
+</g>
 <rect x="72" y="302" width="196" height="33" rx="5" fill="#243247" stroke="#3a4c65"/>
-<text x="82" y="325" font-size="15" style="fill:#e8eff9">Pi SDK (example)</text>
+<text x="82" y="325" font-size="15" style="fill:#e8eff9">Codex local</text>
 <text x="246" y="325" font-size="20" style="fill:#a7b8cb">⌄</text>
 <rect x="276" y="302" width="248" height="33" rx="5" fill="#202d40"/>
 <text x="284" y="325" font-size="14" style="fill:#e8eff9">default</text>
@@ -123,33 +133,23 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="574" y="830" font-size="16" font-weight="400" style="fill:#a7b8cb">2 SSH terminals · Output read on demand · Automatic forwarding off</text>
 <rect x="48" y="878" width="1050" height="254" rx="12" fill="#172130" stroke="#35475c"/>
 <text x="72" y="907" font-size="20" font-weight="650" style="fill:#edf5ff">Settings  /  AI Tools</text>
-<text x="348" y="907" font-size="14" style="fill:#8ca0b8">Example · Two-row summaries · Full-page scrolling</text>
-<text x="72" y="952" font-size="18" font-weight="400" style="fill:#a7b8cb">Default connection</text>
-<rect x="496" y="929" width="575" height="33" rx="6" fill="#233246" stroke="#3c5068"/>
-<text x="512" y="952" font-size="17" font-weight="400" style="fill:#e8eff9">Claude Code (local login)</text>
-<text x="1048" y="952" font-size="20" font-weight="400" style="fill:#a7b8cb">⌄</text>
-<text x="72" y="993" font-size="18" font-weight="400" style="fill:#e8eff9">Open AI Tools when Tabby starts</text>
-<text x="740" y="993" font-size="16" font-weight="500" style="fill:#8ae6c2">On by default</text>
-<rect x="1047" y="974" width="22" height="22" rx="4" fill="#2c8062"/>
-<text x="1050" y="991" font-size="18" font-weight="700" style="fill:#e9fff4">✓</text>
-<text x="72" y="1035" font-size="18" font-weight="400" style="fill:#a7b8cb">Interface language</text>
-<rect x="496" y="1012" width="575" height="33" rx="6" fill="#233246" stroke="#3c5068"/>
-<text x="512" y="1035" font-size="17" font-weight="400" style="fill:#e8eff9">Follow Tabby</text>
-<text x="892" y="1035" font-size="15" font-weight="400" style="fill:#8ca0b8">12 languages</text>
-<text x="1048" y="1035" font-size="20" font-weight="400" style="fill:#a7b8cb">⌄</text>
-<path d="M72 1061H1071" stroke="#2b3a4d"/>
-<rect x="72" y="1068" width="240" height="42" rx="5" fill="#233246" stroke="#3c5068"/>
-<text x="84" y="1086" font-size="14" font-weight="600">Codex · Default</text>
-<text x="84" y="1102" font-size="12" style="fill:#a7b8cb">Local login / CLI health checks</text>
-<rect x="322" y="1068" width="240" height="42" rx="5" fill="#233246" stroke="#3c5068"/>
-<text x="334" y="1086" font-size="14" font-weight="600">Claude Code</text>
-<text x="334" y="1102" font-size="12" style="fill:#a7b8cb">Local login / per-call CLI checks</text>
-<rect x="572" y="1068" width="240" height="42" rx="5" fill="#203e36" stroke="#43866f"/>
-<text x="584" y="1086" font-size="14" font-weight="600">Example Pi connection</text>
-<text x="584" y="1102" font-size="12" style="fill:#a7b8cb">Google · gemini-2.5-flash</text>
-<text x="830" y="1086" font-size="14" style="fill:#a7b8cb">Scripted workflows + AI</text>
-<text x="830" y="1104" font-size="14" style="fill:#a7b8cb">Scheduled tasks</text>
-<text x="72" y="1125" font-size="12" style="fill:#8ca0b8">Connection drafts · Reconnect when idle to apply · Active tasks keep their snapshot</text>
+<text x="348" y="907" font-size="14" style="fill:#a7b8cb">Example · Settings layout · Editor up to 1080px</text>
+<rect x="72" y="922" width="208" height="30" rx="5" fill="#294564" stroke="#528ee8"/>
+<text x="84" y="942" font-size="15" font-weight="600">Connections &amp; models</text>
+<text x="302" y="942" font-size="15">Tasks &amp; workflows</text>
+<text x="510" y="942" font-size="15">External AI (MCP)</text>
+<text x="718" y="942" font-size="15">General</text>
+<rect x="72" y="967" width="810" height="31" rx="5" fill="#233246" stroke="#3c5068"/>
+<text x="86" y="988" font-size="16">Select connection: Codex (local login)</text>
+<text x="914" y="988" font-size="15">+ Add API</text>
+<text x="72" y="1030" font-size="16" font-weight="600">Codex · Default</text>
+<text x="302" y="1030" font-size="15" style="fill:#a7b8cb">Model / approvals / sandbox</text>
+<rect x="72" y="1045" width="999" height="31" rx="5" fill="#1c293a" stroke="#3c5068"/>
+<text x="86" y="1066" font-size="14">› CLI path &amp; directory</text>
+<text x="380" y="1066" font-size="14">› Custom instructions</text>
+<text x="684" y="1066" font-size="14">› CLI session storage</text>
+<text x="72" y="1100" font-size="14" style="fill:#a7b8cb">General: default connection / language · Startup &amp; logs collapsed</text>
+<text x="72" y="1121" font-size="12" style="fill:#a7b8cb">Drafts retained across categories · Workflows first; preferences and helper model expand on demand</text>
 <rect x="1122" y="878" width="630" height="254" rx="12" fill="#172130" stroke="#35475c"/>
 <text x="1146" y="915" font-size="22" font-weight="650" style="fill:#edf5ff">Pi SDK  /  Example connection draft</text>
 <text x="1146" y="946" font-size="16" style="fill:#a7b8cb">SDK bundled · Tabby built-in Node by default</text>
@@ -183,10 +183,10 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="1096" y="1288" font-size="16">your-model-id / offline catalog or explicit limits</text>
 <text x="72" y="1342" font-size="16" style="fill:#8ae6c2">Save connection  /  Discard draft  /  Copy as new  ·  Local checks and paid tool tests are separate</text>
 <rect x="48" y="1372" width="1030" height="172" rx="12" fill="#172130" stroke="#35475c"/>
-<text x="72" y="1403" font-size="21" font-weight="650">Instructions and sessions / example</text>
-<text x="72" y="1437" font-size="17" style="fill:#a7b8cb">AI Tools default / per-connection override</text>
-<text x="72" y="1470" font-size="17">AGENTS.md · Inline text · Inherit · No custom layer</text>
-<text x="72" y="1507" font-size="16" style="fill:#8ae6c2">Save / Discard / Preview · New sessions freeze a snapshot</text>
+<text x="72" y="1403" font-size="21" font-weight="650">Collapsed groups / example</text>
+<text x="72" y="1437" font-size="17" style="fill:#a7b8cb">› Custom instructions · Default / connection override</text>
+<text x="72" y="1470" font-size="17">› CLI session storage · Private / system space</text>
+<text x="72" y="1507" font-size="16" style="fill:#8ae6c2">Expand to Save / Discard / Preview · Existing behavior retained</text>
 <rect x="1100" y="1372" width="652" height="172" rx="12" fill="#172130" stroke="#35475c"/>
 <text x="1124" y="1403" font-size="21" font-weight="650">Codex / Claude Code · Private history</text>
 <text x="1124" y="1437" font-size="16" style="fill:#a7b8cb">Tabby space / system compatibility</text>
@@ -206,7 +206,7 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="49" y="2538" font-size="16" font-weight="400" style="fill:#8ca0b8">INTERFACE ILLUSTRATION · Example connections and task output; not a running screenshot.</text>
 <text x="49" y="2570" font-size="14" font-weight="400" style="fill:#8ca0b8">Appearance varies with your Tabby theme, window size and configured connections.</text>
 <rect x="48" y="1830" width="1704" height="145" rx="12" fill="#172130" stroke="#35475c"/>
-<text x="72" y="1866" font-size="22" font-weight="650">Output-aware terminal reads and task logs — v1.0.0 example</text>
+<text x="72" y="1866" font-size="22" font-weight="650">Output-aware terminal reads and task logs — v1.1.0 example</text>
 <text x="72" y="1901" font-size="17" fill="#a7b8cb">New output wakes reads · 50 ms coalescing / 200 ms cap · Output is not completion</text>
 <text x="72" y="1934" font-size="17" fill="#8ae6c2">Settings: Save task terminal logs · Local retention · Paging and literal search</text>
 <text x="72" y="1960" font-size="15" fill="#a7b8cb">Workflows: full scripts up to 10,000 characters · Fixed checks run locally · AI decisions at marked steps</text>
@@ -220,17 +220,16 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <rect x="48" y="2174" width="1704" height="318" rx="12" fill="#172130" stroke="#35475c"/>
 <text x="72" y="2212" font-size="24" font-weight="650">External AI connections (MCP) / controlled terminal preview — example</text>
 <text x="72" y="2248" font-size="18" style="fill:#8ae6c2">Enable local MCP · Service running · http://127.0.0.1:48123/mcp</text>
-<text x="72" y="2283" font-size="17" style="fill:#a7b8cb">Named client: Codex desktop · Read only / Confirm each operation / Allow automatic operations</text>
+<text x="72" y="2283" font-size="17" style="fill:#a7b8cb">Local connection (no token) · Read/write all terminal tabs · No selection needed</text>
 <rect x="72" y="2301" width="780" height="94" rx="7" fill="#111b28" stroke="#3a5267"/>
-<rect x="88" y="2317" width="17" height="17" rx="3" fill="#286a54" stroke="#8ae6c2"/>
-<path d="M91 2325l4 4 7-9" fill="none" stroke="#c4f7df" stroke-width="2"/>
+<circle cx="96" cy="2325" r="5" fill="#8ae6c2"/>
 <text x="118" y="2331" font-size="17">staging-app [ssh deploy@staging.example] · Window 1</text>
-<rect x="88" y="2352" width="17" height="17" rx="3" fill="#172130" stroke="#6e819a"/>
-<text x="118" y="2367" font-size="17" style="fill:#a7b8cb">production terminal · Unshared / invisible to this client</text>
-<text x="908" y="2325" font-size="17">Agent discovery: Codex / Cursor / Claude Code / others</text>
-<text x="908" y="2360" font-size="16" style="fill:#a7b8cb">Portable Agent Skill · No-credential discovery · Pair once</text>
-<text x="72" y="2430" font-size="17" style="fill:#8ae6c2">Read / Command / Keys / Attach / Release · Target-window approval · Client-bound input lease</text>
-<text x="72" y="2470" font-size="16" style="fill:#a7b8cb">No automatic interruption. Release does not stop a process. Reauthorize after reconnect/restart. Other clients pending.</text>
+<circle cx="96" cy="2360" r="5" fill="#8ae6c2"/>
+<text x="118" y="2367" font-size="17" style="fill:#a7b8cb">All current terminals · New / reconnected tabs included</text>
+<text x="908" y="2325" font-size="17">URL-only config → Register Codex → Reload → Handshake</text>
+<text x="908" y="2360" font-size="16" style="fill:#a7b8cb">Skill conflict? Copy current guide; preserve custom files</text>
+<text x="72" y="2430" font-size="17" style="fill:#8ae6c2">All terminal tabs · Read / Command / Keys / Attach / Release · Shared input leases</text>
+<text x="72" y="2470" font-size="16" style="fill:#a7b8cb">No automatic interruption. Release does not stop a process. Local tabs included after reconnect/restart. Other clients pending.</text>
 </g>
 
 <g aria-label="Example right question index and shared conversation scrollbar: completed and interrupted">

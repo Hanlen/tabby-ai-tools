@@ -14,6 +14,17 @@ test('existing, edited and symlinked skills are preserved instead of overwritten
  fs.rmSync(entry.path,{recursive:true});fs.mkdirSync(entry.path);assert.equal(d.installSkill()[0].status,'conflict')
  if(process.platform!=='win32'){fs.rmdirSync(entry.path);fs.symlinkSync(f.home,entry.path);assert.equal(d.installSkill()[0].status,'conflict');assert.ok(fs.lstatSync(entry.path).isSymbolicLink())}
 })
+test('current connection guide remains available when the installed skill has stale custom instructions', t => {
+ const f=fixture(t), d=f.create('one'), [entry]=d.installSkill()
+ const manifest=path.join(entry.path,'SKILL.md'), reference=path.join(entry.path,'references/connection.md')
+ const custom='Custom connection instructions: create a bearer client'
+ fs.writeFileSync(manifest,'user customized skill');fs.writeFileSync(reference,custom)
+ assert.equal(d.installSkill()[0].status,'conflict')
+ assert.equal(d.connectionInstructions(),fs.readFileSync(path.join(d.skillSource,'references/connection.md'),'utf8'))
+ assert.equal(fs.readFileSync(manifest,'utf8'),'user customized skill')
+ assert.equal(fs.readFileSync(reference,'utf8'),custom)
+ assert.equal(fs.existsSync(path.join(f.home,'.codex','config.toml')),false)
+})
 test('discovery metadata contains only location and setup, isolates config spaces, and removes stale endpoints when disabled',t=>{
  const f=fixture(t),a=f.create('one'),b=f.create('two')
  a.update({enabled:true,running:true,endpoint:'http://127.0.0.1:48123/mcp',token:'NEVER_WRITE_THIS',clients:[{digest:'SECRET_DIGEST'}]})

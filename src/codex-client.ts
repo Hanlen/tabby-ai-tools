@@ -39,6 +39,14 @@ export class CodexClient extends EventEmitter {
   private activeTurns = new Set<string>()
   private serverRequests = new Set<number>()
   private idleDisconnected = false
+  private hostWindow?: Window
+  private windowUnloaded = false
+  private readonly onWindowUnload = (): void => {
+    this.windowUnloaded = true
+    // Private panels own clients too; Angular destruction is not guaranteed on
+    // renderer unload. Start owned-tree cleanup before the renderer disappears.
+    void this.close().catch(() => {})
+  }
   /** Changes only after a process has initialized, never after a task retry. */
   generation = 0
   get installationRecoveryStopped (): boolean { return !!this.fault || this.recoveryAttempts >= 1 }
@@ -132,6 +140,7 @@ export class CodexClient extends EventEmitter {
   }
 
   async connect (executable: string, space?: NativeSessionSpace, capabilities: CodexCapabilities = {}): Promise<void> {
+    if (this.windowUnloaded) throw new Error('Codex window has unloaded; no new app-server was started')
     executable = normalizeExecutable(executable) || 'codex'
     // The eager runtime has no space metadata; the panel later supplies the
     // explicit system space. Both use the same CLI home and must share discovery.
@@ -150,6 +159,10 @@ export class CodexClient extends EventEmitter {
     }
     if (this.connected && this.activeTurns.size) throw new Error('Codex has active turns in this connection; wait for them before replacing its app-server')
     this.close()
+    if (typeof window !== 'undefined') {
+      this.hostWindow = window
+      window.addEventListener('unload', this.onWindowUnload)
+    }
     this.executable = executable
     this.space = space
     this.launch = undefined
@@ -419,6 +432,8 @@ export class CodexClient extends EventEmitter {
   }
 
   close (): Promise<void> {
+    this.hostWindow?.removeEventListener('unload', this.onWindowUnload)
+    this.hostWindow = undefined
     this.discovery?.abort()
     this.discovery = undefined
     this.ready = undefined

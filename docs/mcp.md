@@ -1,29 +1,68 @@
 # External AI connections: MCP terminal preview
 
 This feature ships in **v1.0.0**, with controlled terminal input in preview. The older 0.9.4
-package does not include it. It exposes explicitly selected, running Tabby
-terminals to a local MCP client. A sidebar model or API key is not required.
+package does not include it. Current source exposes all running Tabby terminal tabs with automatic read/write
+access to token-free local MCP clients; optional bearer clients use selected terminals. A sidebar model or API key is not required.
 The service runs on Tabby's built-in Electron Node runtime; there is no separate
 Node installation or proxy process for the user to manage.
 
 ## Connect a client
 
+The unreleased source adds **local connections without a token**. Published
+v1.0.0 packages use the optional named-client credential flow described below.
+
 1. Open **Settings → AI Tools → External AI connections (MCP)**. The service is
    disabled by default. Enable it and wait for **Service running** and an endpoint.
-2. Enter a recognizable client name and click **Add client**. Each client has its
-   own credential and starts with **no terminal access**.
-3. Choose a configuration format and copy the generated snippet. Merge it into
+2. The default **Local connection (no token)** needs no client creation or token.
+   Choose a configuration format and copy the generated URL-only snippet. Merge it into
    your client's personal configuration, preserving existing entries. The entry
    name is `tabby`; choose another name if you already use it. The plugin never
    edits these files. Reconnect the client after saving.
-4. Under **Readable terminals**, select the exact terminals that client may read.
-   The client can now use `list_tabs` and `read_tab`. **Last request** changes when
-   the service receives an authenticated request; it is not a persistent online
+3. Local connections automatically have read/write access to **all terminal tabs**,
+   including new/reconnected sessions. No permission mode or tab selection is needed.
+   The client can use `list_tabs`, `read_tab` and the input tools. **Last request** changes when
+   the service receives a request; it is not a persistent online
    indicator and does not by itself prove a tool succeeded.
-5. Uncheck a terminal to revoke that scope, or click **Revoke client** to remove
-   the credential entirely. Pending observations are cancelled and later reads
-   are denied. **Rotate credential and generate config** invalidates the previous
-   credential immediately; replace the client's copied configuration.
+4. Disable MCP to revoke all local access. Optional bearer clients retain their
+   own selected scopes and modes; uncheck a bearer target to revoke that scope.
+   Pending observations are cancelled and later reads are denied.
+
+For Codex, register the shown endpoint with
+`codex mcp add tabby --url http://127.0.0.1:PORT/mcp` (replace `PORT`), or merge:
+
+```toml
+[mcp_servers.tabby]
+url = "http://127.0.0.1:PORT/mcp"
+```
+
+Generating or copying this configuration does not register the server. Use the
+intended CLI host and its actual `CODEX_HOME` (default `~/.codex`); a configuration
+on another host or in another Codex space does not apply. Confirm registration
+with `codex mcp list --json`, then reload the MCP client or open a new Codex
+session after the active task finishes. Local access automatically covers current terminal sessions after restart;
+bearer clients need fresh terminal grants after restart. Verify the MCP handshake/tool discovery, `get_capabilities`,
+`read_skill`, `list_tabs` and an authorized terminal read. HTTP responses and
+last-request timestamps alone are insufficient.
+
+No `Authorization` header or token environment variable is needed. Remove these
+fields from an older entry when switching to the local connection. An invalid
+explicit token still receives 401; it never silently uses local permissions.
+
+**All programs connecting locally without a token share one permission set**, its
+cursors, request limits and input leases. Client-reported names do not provide
+separate identities. The local mode is `auto` and includes every live terminal tab automatically.
+New/reconnected sessions receive fresh opaque targets without manual selection.
+This does not bypass foreground-process checks or input ownership.
+
+### Optional separate token clients
+
+Existing bearer configurations continue to work with their separate grants.
+Under **Separate token clients (optional)**, add a named client, select it, then
+copy its credential configuration and select its terminals. This does not
+restrict the shared local connection, which covers all terminal tabs. Disable
+MCP to revoke local access.
+**Revoke client** removes only that bearer client. **Rotate credential and
+generate config** immediately invalidates its old token.
 
 Credentials are shown temporarily in this settings view and are not recoverable
 from the saved digest. Hide the credential after copying. To copy again, rotate
@@ -33,7 +72,25 @@ If an operation fails, the settings view reads back the current service state
 instead of repeating the operation or leaving a failed uncheck looking like a
 successful revoke. A permissions-file write failure disables the current service;
 the change was not saved, so inspect saved clients after resolving the storage
-problem and restarting. Terminal grants still do not survive a restart.
+problem and restarting. Bearer terminal grants still do not survive a restart; local connections
+automatically cover current terminal sessions.
+
+If the window's MCP bridge temporarily fails to initialize, **Refresh** retries
+its registration and restores the terminal feed once the bridge is available.
+It does not repeat a failed client change or terminal operation. The utility
+retains the host's operating-system environment, including Windows system and
+temporary directories, while disabling system Node discovery and Node loader
+overrides; no separate Node installation is needed.
+
+Startup waits for a runtime-ready handshake before sending its single service
+start request. Cold process creation and bundle loading have a 20-second budget;
+after readiness, the HTTP listener has a separate 20-second reply deadline.
+Ordinary control replies and the bounded process-exit cleanup retain their
+5-second limits; this longer wait applies only to HTTP startup.
+Failures identify process creation, runtime loading or HTTP startup separately.
+An early exit includes its exit code and a recognized error class when available;
+raw dependency diagnostics and credentials are not displayed. Failed or late
+startup replies do not trigger another start request.
 
 The first successful start chooses an available port and saves it. Later starts
 reuse it. If that port is occupied, the service reports the conflict and stops;
@@ -51,9 +108,9 @@ Use the actual configuration space for the client you intend to connect:
 
 | Client | Copy format and personal configuration |
 | --- | --- |
-| Codex CLI | TOML `mcp_servers.tabby`, `url`, and `http_headers`; normally `~/.codex/config.toml`, or the selected custom `CODEX_HOME/config.toml`. [Official configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli). |
-| Cursor | JSON `mcpServers.tabby` with `url` and `headers`; normally `~/.cursor/mcp.json`. [Official configuration](https://cursor.com/docs/mcp). |
-| Claude Code | JSON `mcpServers.tabby` with `type: "http"`, `url`, and `headers`; merge the entry into user-scope configuration in `~/.claude.json`, respecting the client's configured location. [Official scopes and configuration](https://code.claude.com/docs/en/mcp). |
+| Codex CLI | TOML `mcp_servers.tabby` with `url`; optional bearer connections also use `http_headers`. Normally `~/.codex/config.toml`, or the selected custom `CODEX_HOME/config.toml`. [Official configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli). |
+| Cursor | JSON `mcpServers.tabby` with `url`; optional bearer connections also use `headers`. Normally `~/.cursor/mcp.json`. [Official configuration](https://cursor.com/docs/mcp). |
+| Claude Code | JSON `mcpServers.tabby` with `type: "http"` and `url`; optional bearer connections also use `headers`. Merge into user-scope configuration in `~/.claude.json`, respecting the client's configured location. [Official scopes and configuration](https://code.claude.com/docs/en/mcp). |
 
 Do not replace an existing configuration file with a snippet or commit a credential
 into project configuration. Automatic merge, backups and recovery helpers are
@@ -90,9 +147,12 @@ reveal a masked payload.
 
 The MCP reader subscribes independently of the sidebar and does not start task
 log capture or acquire input ownership. Closing or reconnecting a terminal,
-replacing its session, disabling the service, a service crash, or restarting
-Tabby clears applicable terminal grants. **Select the new session again.** Saved
-client names and credential digests survive restart; terminal access does not.
+replacing its session invalidates that target, its observations and its lease.
+Local connections automatically include the new session while preserving access
+and active leases on other tabs. Disabling the service or a crash cancels all
+observations/leases without replay; local access resumes for current sessions
+when explicitly re-enabled. Saved bearer names and credential digests survive
+restart, but bearer clients must **select the new session again**.
 Permissions and the port are stored privately under the actual Tabby config
 directory's `ai-tools-mcp/state.json`, separately from model credentials.
 
@@ -100,10 +160,11 @@ The endpoint is `http://127.0.0.1:PORT/mcp` in the same local network namespace.
 It rejects browser Origins and mismatched Hosts. It is not a LAN/public service,
 OAuth server, cloud connector, stdio bridge or automatic WSL/container tunnel.
 Limits include a 1 MiB request body, four concurrent tool observations per client,
-sixteen globally, and 240 authenticated requests per client per minute. HTTP slots
+sixteen globally, and 240 requests per client identity per minute. Headerless local
+connections all count as one identity. HTTP slots
 are separately bounded at eight per client / thirty-two globally so initialization
 and cancellation can still reach the service while observations are saturated.
-Legacy cancellation notifications are matched to the authenticated client and
+Legacy cancellation notifications are matched to the client identity and
 grant revision; newer HTTP cancellation follows the request's abort signal.
 
 ## Verification and current limits
@@ -130,13 +191,15 @@ retain their separate behavior.
 
 ## Enable command execution and interaction
 
-After selecting a client and its concrete terminals, choose **Terminal operation
-permission**: **Read only** (default), **Confirm each operation**, or **Allow
-automatic operations**. Permission covers only that client's checked terminals.
+Token-free local connections automatically allow read/write operations on all
+terminal tabs. Their settings do not require a mode or terminal selection.
+For an optional bearer client, select its concrete terminals and choose
+**Terminal operation permission**: **Read only** (default), **Confirm each
+operation**, or **Allow automatic operations**. Bearer permission covers only that client's checked terminals.
 Commands use the terminal account's permissions. A mode/scope change invalidates
-pending approvals, in-flight input and leases. Restart resets input permission to
-read-only as well as clearing concrete targets; disable/reconnect requires fresh
-terminal grants. Never infer input permission from readable output.
+pending approvals, in-flight input and leases. For bearer clients, restart resets input permission to read-only and clears
+concrete targets; disable/reconnect requires fresh terminal grants. Local
+connections automatically cover current sessions with auto input permission. Never infer input permission from readable output.
 
 In confirmation mode, each command, attachment, stdin or key request appears in
 **Settings → AI Tools → External AI connections (MCP)** with its client, target and
@@ -200,7 +263,14 @@ same content in the existing `~/.claude` skill directory (Codex and Cursor use t
 It does not create absent client-specific homes. Existing matching skills are
 reported as present; modified, older or unrecognized folders are preserved as a
 conflict, never overwritten. Check/retry with **Install / check Agent Skill** in
-MCP settings. For custom skill roots, another user/host, or other agents, import
+MCP settings. Conflicts now show an explicit warning that preserved instructions
+may still request a token, the bundled source path, and **Copy current connection
+instructions**. Back up the preserved folder and reconcile `SKILL.md` and
+`references/connection.md` with that source, retaining custom content, then reload
+the client. Copying the current guide does not replace the installed skill or
+register a client. Use the live service's authentication mode; local token-free
+access needs no token, while separate bearer clients retain their credentials.
+For custom skill roots, another user/host, or other agents, import
 the bundled folder using that client's installation mechanism. There is no
 universal directory that every agent reads, and no npm install-time script or
 system Node requirement. The skill becomes available after Tabby has started;
@@ -226,8 +296,8 @@ For example, in Codex:
    installed in the intended client's personal configuration and reloaded as
    needed, the client performs the MCP handshake and tool discovery.
 4. `get_capabilities`, `read_skill`, `list_tabs`, and a granted terminal read verify
-   the actual connection. Empty grants and read-only mode remain independent of
-   successful skill or server discovery.
+   the actual connection. Local access includes all terminal tabs with auto input; bearer scope and
+   mode remain independent of successful skill or server discovery.
 
 The same workflow applies to other MCP-capable agents that load Agent Skills.
 An agent without skill support can follow this guide manually. Remote/cloud

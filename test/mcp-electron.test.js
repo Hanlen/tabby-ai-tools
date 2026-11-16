@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const Module = require('node:module')
-const { EventEmitter } = require('node:events')
+const { EventEmitter, once } = require('node:events')
 const { PassThrough } = require('node:stream')
 const { setTimeout: delay } = require('node:timers/promises')
 const { pathToFileURL } = require('node:url')
@@ -13,7 +13,7 @@ const { UtilityRequests } = require('../artifacts/mcp-utility-rpc.cjs')
 const { Client, StreamableHTTPClientTransport } = require('@modelcontextprotocol/client')
 const CHANNEL = 'tabby-ai-mcp-v1'
 
-function fixture (t, saved) {
+function fixture (t, saved, behavior = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-mcp-main-'))
   if (saved) {
     fs.mkdirSync(path.join(directory, 'ai-tools-mcp'))
@@ -29,10 +29,17 @@ function fixture (t, saved) {
   const electron = { app, ipcMain: ipc, utilityProcess: { fork (entry, _args, options) {
     const child = new EventEmitter()
     child.entry = entry; child.options = options; child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.messages = []; child.killed = 0
+    let ready = behavior.autoReady !== false
+    const respond = message => setImmediate(() => child.emit('message', { type: 'control-result', id: message.id, ...(spawnFailure && message.type === 'start' ? { error: 'EADDRINUSE' } : { value: { port: message.port || 45678, node: process.versions.node } }) }))
     child.postMessage = message => {
       child.messages.push(message)
-      if (['start', 'stop'].includes(message.type)) setImmediate(() => child.emit('message', { type: 'control-result', id: message.id, ...(spawnFailure && message.type === 'start' ? { error: 'EADDRINUSE' } : { value: { port: message.port || 45678, node: process.versions.node } }) }))
+      if (ready && !behavior.noControlReply && ['start', 'stop'].includes(message.type)) respond(message)
     }
+    child.markReady = () => {
+      ready = true; child.emit('message', { type: 'ready', node: process.versions.node })
+      for (const message of child.messages) if (!behavior.noControlReply && ['start', 'stop'].includes(message.type)) respond(message)
+    }
+    if (behavior.autoSpawn !== false) setImmediate(() => { child.spawned = true; child.emit('spawn'); if (ready) child.markReady() })
     child.kill = () => { child.killed++; setImmediate(() => child.emit('exit', 0)); return true }
     children.push(child); return child
   } } }
@@ -72,6 +79,153 @@ test('default-off singleton registers actual sender identity; two windows share 
   await f.invoke(a, { type: 'unregister' })
   assert.equal(child.killed, 0); assert.equal((await f.invoke(b, { type: 'state' })).targets.length, 1)
   await f.invoke(b, { type: 'unregister' }); assert.equal(child.killed, 1)
+})
+
+test('local token-free access automatically reaches all tabs and routes to their owning renderer and cannot be rotated or revoked as a bearer client', async t => {
+  const f = fixture(t), a = f.owner(1), b = f.owner(2)
+  await f.invoke(a, { type: 'register' }); await f.invoke(b, { type: 'register' })
+  await f.invoke(a, { type: 'enabled', enabled: true })
+  await f.invoke(a, { type: 'targets', targets: [{ key: 'local-terminal', session: 'a', title: 'A' }] })
+  const initial = await f.invoke(a, { type: 'state' })
+  assert.equal(initial.localClient.id, 'local'); assert.deepEqual(initial.localClient.targets, initial.targets.map(t => t.id)); assert.equal(initial.localClient.mode, 'auto')
+  const target = initial.targets[0]
+  const state = await f.invoke(a, { type: 'state' }), child = f.children[0]
+  child.emit('message', { type: 'tool', id: 'local-read', clientId: 'local', revision: state.localClient.revision, tool: 'read_tab', args: { tabId: target.id, waitMs: 0, maxLines: 100 } })
+  const read = a.sent.find(item => item.message.type === 'read').message
+  assert.ok(!b.sent.some(item => item.message.type === 'read'))
+  f.ipc.emit(CHANNEL + '-reply', { sender: a, senderFrame: a.mainFrame }, { id: read.id, value: { text: 'local output', stream: 's', offset: 12 } })
+  await new Promise(setImmediate)
+  assert.equal(child.messages.find(m => m.type === 'tool-result' && m.id === 'local-read').value.text, 'local output')
+  await assert.rejects(f.invoke(a, { type: 'rotate', id: 'local' }))
+  await assert.rejects(f.invoke(a, { type: 'revoke', id: 'local' }))
+  await f.invoke(a, { type: 'enabled', enabled: false })
+  assert.ok(a.sent.at(-1).message.grants.length === 0)
+  const restored = await f.invoke(a, { type: 'enabled', enabled: true })
+  assert.deepEqual(restored.localClient.targets, restored.targets.map(t => t.id))
+  assert.equal(restored.localClient.mode, 'auto')
+})
+
+test('reading current connection instructions and checking skill conflicts do not change live grants or restart the utility', async t => {
+  const f = fixture(t), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  await f.invoke(a, { type: 'enabled', enabled: true })
+  await f.invoke(a, { type: 'targets', targets: [{ key: 'remote', session: 'remote-session', title: '10.0.0.3' }, { key: 'local', session: 'local-session', title: 'Local terminal' }] })
+  let state = await f.invoke(a, { type: 'state' })
+  const skill = path.join(f.directory, '.agents/skills/tabby-mcp')
+  const stale = 'Custom stale skill requiring a bearer token'
+  fs.writeFileSync(path.join(skill, 'references/connection.md'), stale)
+  state = await f.invoke(a, { type: 'install-agent-skill' })
+  assert.equal(state.discovery.skillInstallations[0].status, 'conflict')
+  const before = JSON.stringify(state.localClient), saved = fs.readFileSync(path.join(f.directory, 'ai-tools-mcp/state.json'))
+  const messages = f.children[0].messages.length
+  const guide = await f.invoke(a, { type: 'agent-connection-instructions', path: '/not-an-allowed-file' })
+  assert.equal(guide, fs.readFileSync(path.join(state.discovery.source, 'references/connection.md'), 'utf8'))
+  assert.equal(fs.readFileSync(path.join(skill, 'references/connection.md'), 'utf8'), stale)
+  assert.equal(JSON.stringify((await f.invoke(a, { type: 'state' })).localClient), before)
+  assert.deepEqual(fs.readFileSync(path.join(f.directory, 'ai-tools-mcp/state.json')), saved)
+  assert.equal(f.children.length, 1); assert.equal(f.children[0].killed, 0)
+  assert.equal(f.children[0].messages.length, messages)
+})
+test('cold utility startup longer than five seconds waits for readiness before sending start exactly once', async t => {
+  const f = fixture(t, undefined, { autoReady: false }), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const pending = f.invoke(a, { type: 'enabled', enabled: true })
+  pending.catch(() => undefined)
+  await new Promise(setImmediate)
+  const child = f.children[0]
+  if (!child.spawned) await once(child, 'spawn')
+  await new Promise(setImmediate)
+  try {
+    t.mock.timers.tick(6000); await new Promise(setImmediate)
+    assert.equal(child.messages.filter(m => m.type === 'start').length, 0)
+    assert.equal(child.killed, 0)
+    child.markReady()
+    const state = await pending
+    assert.equal(state.running, true)
+    assert.equal(child.messages.filter(m => m.type === 'start').length, 1)
+  } finally {
+    child.markReady(); t.mock.timers.tick(2000); await pending.catch(() => undefined)
+    t.mock.timers.reset()
+  }
+})
+test('HTTP startup has its own twenty-second budget after a slow runtime load', async t => {
+  const f = fixture(t, undefined, { autoReady: false, noControlReply: true }), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const pending = f.invoke(a, { type: 'enabled', enabled: true })
+  pending.catch(() => undefined)
+  await new Promise(setImmediate)
+  const child = f.children[0]
+  try {
+    t.mock.timers.tick(19000); await new Promise(setImmediate)
+    child.markReady(); await new Promise(setImmediate)
+    const start = child.messages.find(m => m.type === 'start')
+    assert.ok(start)
+    t.mock.timers.tick(19999); await new Promise(setImmediate)
+    assert.equal(child.messages.some(m => m.type === 'stop'), false, 'HTTP startup must still be pending after five seconds')
+    assert.equal(child.killed, 0)
+    child.emit('message', { type: 'control-result', id: start.id, value: { port: 45678, node: process.versions.node } })
+    assert.equal((await pending).running, true)
+    assert.equal(child.messages.filter(m => m.type === 'start').length, 1)
+    assert.equal(f.children.length, 1)
+  } finally {
+    t.mock.timers.tick(20000); await new Promise(setImmediate)
+    t.mock.timers.tick(250); await new Promise(setImmediate)
+    await pending.catch(() => undefined)
+    t.mock.timers.reset()
+  }
+})
+for (const stage of ['spawn', 'runtime readiness', 'an HTTP reply']) test(`startup without ${stage} times out at its own stage and never replays start`, async t => {
+  const noReady = stage !== 'an HTTP reply'
+  const f = fixture(t, undefined, { autoSpawn: stage !== 'spawn', autoReady: !noReady, noControlReply: true }), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const pending = f.invoke(a, { type: 'enabled', enabled: true })
+  const rejected = assert.rejects(pending, stage === 'spawn' ? /process did not spawn within 20 seconds/ : noReady ? /runtime did not become ready within 20 seconds/ : /HTTP listener did not reply within 20 seconds/)
+  await new Promise(setImmediate)
+  const child = f.children[0]
+  if (stage !== 'spawn' && !child.spawned) await once(child, 'spawn')
+  await new Promise(setImmediate)
+  try {
+    t.mock.timers.tick(20000); await new Promise(setImmediate)
+    t.mock.timers.tick(250); await new Promise(setImmediate)
+    await rejected
+    child.markReady(); await new Promise(setImmediate)
+    assert.equal(child.messages.filter(m => m.type === 'start').length, noReady ? 0 : 1)
+    assert.equal(f.children.length, 1)
+    const state = await f.invoke(a, { type: 'state' })
+    assert.equal(state.running, false); assert.equal(state.endpoint, '')
+  } finally { t.mock.timers.reset() }
+})
+test('an early runtime exit reports its stage and recognized error without exposing raw stderr', async t => {
+  const f = fixture(t, undefined, { autoReady: false }), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  const pending = f.invoke(a, { type: 'enabled', enabled: true })
+  const rejected = assert.rejects(pending, /before the runtime became ready \(exit 1; MODULE_NOT_FOUND\)/)
+  await new Promise(setImmediate)
+  const child = f.children[0]
+  child.stderr.write("Error: Cannot find module '/private/SECRET_FIXTURE'\ncode: 'MODULE_NOT_FOUND'\nBearer SECRET_FIXTURE\n")
+  child.emit('exit', 1)
+  await rejected
+  const state = await f.invoke(a, { type: 'state' })
+  assert.doesNotMatch(state.error, /SECRET_FIXTURE|Bearer|\/private/)
+  assert.equal(child.messages.filter(m => m.type === 'start').length, 0)
+})
+test('MCP utility retains host OS environment while excluding system Node and loader overrides', async t => {
+  // SystemRoot/TEMP are needed by Windows host processes; custom env replaces
+  // Electron's inherited environment rather than merging with it.
+  const keys = ['SystemRoot', 'TEMP', 'NODE_OPTIONS', 'Node_Options', 'NODE_PATH', 'Path', 'ELECTRON_RUN_AS_NODE']
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]))
+  const temporary = os.tmpdir()
+  for (const key of keys) process.env[key] = key === 'SystemRoot' ? 'C:\\Windows' : key === 'TEMP' ? temporary : 'fixture-override'
+  t.after(() => { for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key] } })
+  const f = fixture(t), a = f.owner(1)
+  await f.invoke(a, { type: 'register' }); await f.invoke(a, { type: 'enabled', enabled: true })
+  const env = f.children[0].options.env
+  assert.equal(env.SystemRoot, 'C:\\Windows'); assert.equal(env.TEMP, temporary)
+  for (const [key, value] of Object.entries(env)) if (/^(path|node_options|node_path|electron_run_as_node)$/i.test(key)) assert.equal(value, '', key)
+  assert.equal(env.PATH, '')
 })
 test('only the intended renderer can complete a read; revoke while waiting drops the payload', async t => {
   const f = fixture(t), a = f.owner(1), b = f.owner(2)
@@ -182,7 +336,7 @@ async function writerFixture (t, mode = 'auto') {
   const child = f.children[0]
   const request = async (id, client = c, tool = 'send_input', args = {}) => {
     const state = await f.invoke(a, { type: 'state' })
-    child.emit('message', { type: 'tool', id, clientId: client.id, revision: state.clients.find(x => x.id === client.id).revision, tool, args: { tabId: target.id, text: 'printf marker', mode: 'command', submit: true, ...args } })
+    child.emit('message', { type: 'tool', id, clientId: client.id, revision: (client.id === state.localClient?.id ? state.localClient : state.clients.find(x => x.id === client.id)).revision, tool, args: { tabId: target.id, text: 'printf marker', mode: 'command', submit: true, ...args } })
     await delay(2)
     return a.sent.filter(x => x.message.type === 'execute').at(-1)?.message
   }
@@ -190,6 +344,33 @@ async function writerFixture (t, mode = 'auto') {
   const result = id => child.messages.find(x => x.type === 'tool-result' && x.id === id)
   return { ...f, a, b, c, d, target, child, request, reply, result }
 }
+test('token-free input needs no selection or approval; unrelated tab changes preserve the lease, disable revokes it', async t => {
+  const f = await writerFixture(t), local = { id: 'local' }
+  const command = await f.request('local-auto', local)
+  assert.ok(command)
+  assert.equal((await f.invoke(f.a, { type: 'state' })).approvals.length, 0)
+  await f.reply(command)
+  const lease = f.result('local-auto').value.leaseId
+  assert.ok(lease)
+  await f.invoke(f.b, { type: 'targets', targets: [{ key: 'new', session: 'first', title: 'New tab' }] })
+  await f.invoke(f.b, { type: 'targets', targets: [{ key: 'new', session: 'reconnected', title: 'New tab' }] })
+  await f.invoke(f.b, { type: 'targets', targets: [] })
+  let state = await f.invoke(f.a, { type: 'state' })
+  assert.equal(state.leases[0].id, lease)
+  const input = await f.request('local-stdin', local, 'send_input', { leaseId: lease, mode: 'stdin', text: 'answer' })
+  await f.reply(input)
+  assert.equal(f.result('local-stdin').value.sent, true)
+  await f.invoke(f.a, { type: 'targets', targets: [{ key: 't', session: 'replacement', title: 'Write target' }] })
+  state = await f.invoke(f.a, { type: 'state' })
+  assert.equal(state.leases.length, 0)
+  assert.notEqual(state.targets[0].id, f.target.id)
+  assert.deepEqual(state.localClient.targets, [state.targets[0].id])
+  await f.request('stale-target', local)
+  assert.equal(f.result('stale-target').error, 'permission_denied')
+  await f.invoke(f.a, { type: 'enabled', enabled: false })
+  assert.equal((await f.invoke(f.a, { type: 'state' })).leases.length, 0)
+  assert.equal(f.a.sent.at(-1).message.grants.length, 0)
+})
 test('main issues target-bound leases, blocks another client and concurrent same-lease writes, and release only unlocks', async t => {
   const f = await writerFixture(t)
   const first = await f.request('start'); await f.reply(first)

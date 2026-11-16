@@ -49,7 +49,14 @@ export class McpService implements OnDestroy {
     }
   }
   start (): Promise<void> {
+    if (this.destroyed) return Promise.resolve()
     return this.ready ||= this.initialize().catch((error: any) => {
+      // A transient bridge/register failure must not cache a successful ready
+      // promise forever. A later explicit refresh can register again; actions
+      // and terminal operations are never retried here.
+      this.ready = undefined
+      this.ipc?.removeListener(MCP_CHANNEL, this.listener)
+      this.ipc = undefined
       if (!this.destroyed) this.zone.run(() => this.changes$.next({ ...this.state, error: String(error.message || error) }))
     })
   }

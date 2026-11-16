@@ -38,3 +38,6 @@ parent.on('message', ({ data }: { data: any }) => {
     } catch (error: any) { rpc.post({ type: 'control-result', id: data.id, error: error.code || 'MCP runtime failed' }) }
   })
 })
+// Main waits for this handshake before sending the one startup request. This
+// distinguishes slow cold loading from a missing HTTP-control response.
+rpc.post({ type: 'ready', node: process.versions.node })
