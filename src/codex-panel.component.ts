@@ -18,6 +18,7 @@ import { ChatEntry, activityEntry, thinkingText } from './chat-activity'
 import { AgentBackendFactory } from './agent-backend.service'
 import { AgentBackend, ApiProfile } from './agent-types'
 import { withModelReasoning } from './model-reasoning'
+import { markdownExternalUrl } from './markdown'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions, workflowNeedsSudo } from './task-memory'
 import { runWorkflowTool } from './workflow-session'
@@ -1818,7 +1819,9 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       } else if (event.method === 'item/permissions/requestApproval') {
         this.request = { id: event.id, method: event.method, title: p.reason || 'Codex 请求权限', translateTitle: !p.reason, permissions: p.permissions, answers: {}, otherAnswers: {} }
       } else if (event.method === 'mcpServer/elicitation/request') {
-        this.request = { id: event.id, method: event.method, title: p.message || '外部工具需要输入', translateTitle: !p.message, url: p.url, questions: p.mode === 'url' ? [] : [{ id: 'content', question: '请输入所需内容（JSON）' }], answers: {}, otherAnswers: {} }
+        // Sanitize the URL from external MCP elicitation requests to prevent XSS and unauthorized local file access
+        const elicitationUrl = typeof p.url === 'string' ? markdownExternalUrl(p.url) : undefined
+        this.request = { id: event.id, method: event.method, title: p.message || '外部工具需要输入', translateTitle: !p.message, url: elicitationUrl, questions: p.mode === 'url' ? [] : [{ id: 'content', question: '请输入所需内容（JSON）' }], answers: {}, otherAnswers: {} }
       } else {
         this.codex.client.respondError(event.id, `Unsupported client request: ${event.method}`)
         this.status = `不支持的交互请求：${event.method}`
