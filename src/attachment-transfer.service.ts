@@ -5,8 +5,8 @@ import { promises as fs, readFileSync, statSync, readdirSync } from 'fs'
 import * as path from 'path'
 import { randomUUID, createHash } from 'crypto'
 import { Attachment, AttachmentOperation, AttachmentStore, AttachmentTabProgress, AttachmentError, checkTransfer, safeRemotePath } from './attachments'
-import { TransferTarget, TransferData, sftpTransfer, execTransfer } from './attachment-transport'
-import { ptyTransfer } from './attachment-pty'
+import { TransferTarget, TransferData } from './attachment-transport'
+import { transferAttachment } from './attachment-transfer'
 
 @Injectable()
 export class AttachmentTransferService implements OnDestroy {
@@ -182,20 +182,7 @@ export class AttachmentTransferService implements OnDestroy {
         },
         verifying: () => { value.phase = 'verifying'; progress!.update(value.operationId, value.bytesTransferred, value.totalBytes, true); this.publish() },
       }
-      let result: { bytes: number; hash: string } | undefined
-      for (const transport of ['sftp', 'exec-binary', 'exec-base64', 'pty-base64'] as const) {
-        checkTransfer(signal); value.transport = transport; this.publish()
-        try {
-          result = transport === 'sftp' ? await sftpTransfer(target, data, signal)
-            : transport === 'pty-base64' ? await ptyTransfer(target, data, signal)
-              : await execTransfer(target, data, signal, transport === 'exec-base64')
-          break
-        } catch (error) {
-          if (!(error instanceof AttachmentError) || error.code !== 'UNSUPPORTED' || received) throw error
-          if (transport === 'pty-base64') throw error
-        }
-      }
-      if (!result) throw new Error('No attachment transport is available')
+      const result = await transferAttachment(target, data, signal, transport => { value.transport = transport; this.publish() })
       checkTransfer(signal)
       if (!target.valid()) throw new AttachmentError('UNKNOWN', 'The SSH target changed before its receipt was recorded')
       if (file) {

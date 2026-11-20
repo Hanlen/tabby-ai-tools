@@ -71,7 +71,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private removeAuthMenuListeners?: () => void
 
   toggleAuthMenu (focusFirst = false): void {
-    if (!this.privateCodexLogin) return
+    if (!this.nativeLoginMenu) return
     this.authMenuOpen = focusFirst || !this.authMenuOpen
     if (focusFirst) {
       this.changeDetector?.detectChanges()
@@ -132,6 +132,30 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
 
   copyClaudeLoginCommand (): void {
     if (this.claudeLoginCommand) this.platform?.setClipboard({ text: this.claudeLoginCommand })
+  }
+
+  get privateClaudeLogin (): boolean {
+    return this.codex.profile?.runtime === 'claude-code' && !!this.codex.sessionSpace?.native && !!this.codex.authenticationCommand
+  }
+
+  get nativeLoginMenu (): boolean { return this.privateCodexLogin || this.privateClaudeLogin }
+
+  get loginMenuLabel (): string {
+    return this.t('{0} 登录菜单', [this.privateClaudeLogin ? 'Claude Code' : 'Codex'])
+  }
+
+  async openClaudeLogin (checkOnly = false): Promise<void> {
+    if (!this.privateClaudeLogin || this.loading || this.busy || this.request || this.authRecovering) return
+    this.closeAuthMenu()
+    // The menu belongs to the current connection, even if an earlier switch
+    // left an authentication warning for another backend.
+    this.clearAuthWarning()
+    this.authBackend = this.codex
+    this.authProfileId = this.profileId
+    this.authWarning = true
+    this.showAuthWarningDialog()
+    if (checkOnly) await this.recoverAuthentication()
+    else await this.generateClaudeLoginCommand()
   }
 
   get privateCodexLogin (): boolean {

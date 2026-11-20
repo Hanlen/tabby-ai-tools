@@ -120,12 +120,23 @@ export async function sftpTransfer (target: TransferTarget, data: TransferData, 
 
 /** One non-PTY exec channel. Payload is streamed to disk; only a small trailer is buffered. */
 export async function execStream (target: TransferTarget, script: string, signal: AbortSignal,
-  sink: (bytes: Buffer) => Promise<void>, input?: AsyncIterable<Buffer>, ready = false): Promise<void> {
+  sink: (bytes: Buffer) => Promise<void>, input?: AsyncIterable<Buffer>, ready = false,
+  onResult?: (exitCode: number, stderr: string) => void): Promise<void> {
   valid(target, signal)
   const client = target.ssh?.ssh
   if (typeof client?.openSessionChannel !== 'function') throw new AttachmentError('UNSUPPORTED', 'Independent SSH exec is unavailable')
   let channel: any
-  try { channel = await client.activateChannel(await client.openSessionChannel()) } catch (error) {
+  try {
+    const opening = (async () => {
+      const opened = await client.activateChannel(await client.openSessionChannel())
+      if (signal.aborted || !target.valid()) {
+        await opened.close().catch(() => undefined)
+        valid(target, signal)
+      }
+      return opened
+    })()
+    channel = await interruptible(opening, signal)
+  } catch (error) {
     if (unsupported(error)) throw new AttachmentError('UNSUPPORTED', 'SSH exec channels are not supported')
     throw error
   }
@@ -134,12 +145,13 @@ export async function execStream (target: TransferTarget, script: string, signal
   const token = 'TABBY_ATTACHMENT_' + randomUUID().replace(/-/g, '')
   const trailer = '\n' + token + ':'
   // requestExec uses the account's login shell. All actual syntax lives inside /bin/sh.
-  const command = '/bin/sh -c ' + quote('/bin/sh -c ' + quote(script.replace(/__READY__/g, token + '_READY')) + '\nresult=$?\nprintf "\\n' + token + ':%s\\n" "$result"\nprintf "' + token + '_ERR\\n" >&2\nexit "$result"')
+  const command = '/bin/sh -c ' + quote('/bin/sh -c ' + quote(onResult ? script : script.replace(/__READY__/g, token + '_READY')) + '\nresult=$?\nprintf "\\n' + token + ':%s\\n" "$result"\nprintf "' + token + '_ERR\\n" >&2\nexit "$result"')
   const subscriptions = new Subscription()
   let releaseReady!: () => void
   const inputReady = new Promise<void>(resolve => { releaseReady = resolve })
   if (!ready) releaseReady()
-  let tail = Buffer.alloc(0), errors = '', count = 0, queue = Promise.resolve(), settled = false, inputFinished = false, completing = false
+  const errorTrailer = Buffer.from(token + '_ERR\n')
+  let tail = Buffer.alloc(0), errors = Buffer.alloc(0), count = 0, queue = Promise.resolve(), settled = false, inputFinished = false, completing = false
   return new Promise<void>((resolve, reject) => {
     let drain: ReturnType<typeof setTimeout> | undefined
     const finish = (error?: Error) => {
@@ -155,7 +167,7 @@ export async function execStream (target: TransferTarget, script: string, signal
     const result = () => {
       if (completing) return true
       const text = tail.toString('utf8'), at = text.lastIndexOf(trailer)
-      if (at < 0 || !errors.endsWith(token + '_ERR\n')) return false
+      if (at < 0 || !errors.subarray(-errorTrailer.length).equals(errorTrailer)) return false
       const match = /^(\d{1,3})\n$/.exec(text.slice(at + trailer.length))
       if (!match) return false
       completing = true
@@ -163,7 +175,10 @@ export async function execStream (target: TransferTarget, script: string, signal
       const marker = tail.lastIndexOf(Buffer.from(trailer))
       const bytes = tail.subarray(0, marker)
       queue = queue.then(() => sink(bytes)).then(() => {
-        if (Number(match[1]) !== 0) finish(new AttachmentError(/TABBY_UNSUPPORTED/.test(errors) ? 'UNSUPPORTED' : 'FAILED', 'Remote receiver failed: ' + errors.replace(token + '_ERR\n', '').trim().slice(0, 400)))
+        valid(target, signal)
+        const stderr = errors.subarray(0, -errorTrailer.length).toString('utf8')
+        if (onResult) { onResult(Number(match[1]), stderr); finish() }
+        else if (Number(match[1]) !== 0) finish(new AttachmentError(/TABBY_UNSUPPORTED/.test(stderr) ? 'UNSUPPORTED' : 'FAILED', 'Remote receiver failed: ' + stderr.trim().slice(0, 400)))
         else if (input && !inputFinished) finish(new AttachmentError('UNKNOWN', 'SSH receiver finished before the complete input was sent'))
         else finish()
       }).catch(finish)
@@ -184,13 +199,13 @@ export async function execStream (target: TransferTarget, script: string, signal
       }
       if (!input || inputFinished) result()
     }, error: (error: Error) => finish(new AttachmentError('UNKNOWN', String(error))) }))
-    subscriptions.add(channel.extendedData$.subscribe({ next: ([, bytes]: [number, Uint8Array]) => { errors = (errors + Buffer.from(bytes).toString('utf8')).slice(-4096); if (!input || inputFinished) result() }, error: (error: Error) => finish(new AttachmentError('UNKNOWN', String(error))) }))
+    subscriptions.add(channel.extendedData$.subscribe({ next: ([, bytes]: [number, Uint8Array]) => { errors = Buffer.concat([errors, Buffer.from(bytes)]).subarray(-(4096 + errorTrailer.length)); if (!input || inputFinished) result() }, error: (error: Error) => finish(new AttachmentError('UNKNOWN', String(error))) }))
     subscriptions.add(channel.closed$.subscribe({ next: () => {
       // Native queues can deliver close before data, particularly on Windows.
       drain = setTimeout(() => { if (!result()) finish(new AttachmentError('UNKNOWN', `SSH receiver did not return a complete result frame (received ${count} stdout bytes, ${errors.length} stderr characters)`)) }, 500)
     }, error: (error: Error) => finish(new AttachmentError('UNKNOWN', String(error))) }))
     signal.addEventListener('abort', cancel, { once: true })
-    if (signal.aborted) { cancel(); return }
+    try { valid(target, signal) } catch (error) { finish(error as Error); return }
     void channel.requestExec(command).then(async () => {
       await inputReady
       if (settled) return

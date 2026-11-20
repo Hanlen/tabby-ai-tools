@@ -3,6 +3,7 @@
   "退出登录": "Terminar sessão",
   "取消登录": "Cancelar início de sessão",
   "Codex 登录菜单": "Menu de início de sessão do Codex",
+  "{0} 登录菜单": "Menu de início de sessão do {0}",
   "Codex 独立空间已登录。": "Sessão iniciada no espaço privado do Codex.",
   "已退出 Codex 独立空间。": "Sessão terminada no espaço privado do Codex.",
   "请在浏览器完成 Codex 登录。": "Conclua o início de sessão no Codex no navegador.",

@@ -49,7 +49,7 @@ export async function runAttachmentPty (target: TransferTarget, script: string, 
     if (signal.aborted) { cancel(); return }
     // trap restores echo even when the receiver fails; a foreground Agent is never interrupted.
     const wrapped = `saved=$(stty -g) || exit 70; stty -echo || exit 70; trap 'stty "$saved"' EXIT; /bin/sh -c ${q(body)}; code=$?; printf '\\n${done}:%s\\n' "$code"`
-    send('/bin/sh -c ' + q(wrapped) + '\r')
+    try { send('/bin/sh -c ' + q(wrapped) + '\r') } catch (error) { finish(error as Error); return }
     void (async () => {
       await prepared
       if (settled || !input) return

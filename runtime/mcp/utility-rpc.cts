@@ -26,7 +26,7 @@ export class UtilityRequests {
     return new Promise((resolve, reject) => {
       if (this.closed || signal.aborted) return reject(failure('cancelled'))
       if (this.pending.size >= 16) return reject(failure('busy'))
-      const mutation = ['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(tool)
+      const mutation = ['send_input', 'send_keys', 'attach_process', 'release_tab', 'ssh_exec', 'manage_tab', 'sftp_transfer'].includes(tool)
       const id = randomId()
       const finish = (code: string) => {
         if (!this.pending.delete(id)) return

@@ -121,14 +121,18 @@ clients are modified by Tabby.
 
 | Tool | Behavior |
 | --- | --- |
-| `get_capabilities` | Reports this client's mode, all eight tools, and actual limits. |
-| `read_skill` | Static instructions for these eight external tools only; no arbitrary knowledge sections or upstream files. |
-| `list_tabs` | Only this client's granted, currently valid terminal sessions; opaque IDs, no hidden terminal names or raw profiles. |
+| `get_capabilities` | Reports this client's mode, the advertised tools, and actual limits. |
+| `read_skill` | Static instructions for the external tools only; no arbitrary knowledge sections or upstream files. |
+| `list_tabs` | Only this client's granted sessions. Local clients also see disconnected native SSH panes with `connected: false` and a new opaque ID. |
 | `read_tab` | A snapshot of up to 300 lines / 20,000 characters. Pass its `nextCursor` for output deltas; optional `waitMs` is bounded at 30 seconds. |
-| `send_input` | Command or owned-process stdin; explicit confirm/auto grant, maximum 10,000 characters. |
+| `send_input` | Command or owned-process stdin; explicit confirm/auto grant, maximum 10,000 characters. Optionally observe the exit code of a submitted single-line command. |
 | `send_keys` | Key input only for the current lease; explicit Ctrl+C follows the same permission. |
 | `attach_process` | Claim a verified existing process without interrupting it. |
 | `release_tab` | Release only your lease; restore input without stopping a process. |
+| `ssh_exec` | Execute in a separate channel on a connected native SSH tab. Returns stdout, stderr and exit code. |
+| `manage_tab` | Select, rename, split, duplicate or close a terminal pane. Local clients can also list/open saved profiles and reconnect disconnected SSH panes. |
+| `sftp_transfer` | Submit one confirmed SSH file upload or download, up to 100 MiB. Returns the receipt before transfer. |
+| `sftp_status` | Read the owning client’s transfer receipt, including paths, current status, and completed byte count and SHA-256. |
 
 Snapshot cursors are captured before the snapshot so concurrent fresh output can
 appear again in the next delta. A delta cursor follows the returned bytes. Output
@@ -167,6 +171,84 @@ and cancellation can still reach the service while observations are saturated.
 Legacy cancellation notifications are matched to the client identity and
 grant revision; newer HTTP cancellation follows the request's abort signal.
 
+### Observe a command's exit code
+
+For a submitted single-line command, set `waitForExitMs` to an integer from 1 to
+5000. The existing input, permission and lease rules apply. For example, on a
+local shell that emits OSC 133 completion with exit status:
+
+```json
+{ "tabId": "your-tab-id", "text": "false", "waitForExitMs": 3000 }
+```
+
+The response includes `sent: true` and `exitCode: 1` if the shell reports status
+1. A successful command reports `exitCode: 0`. Use `read_tab` for terminal output.
+Without shell integration, add `"exitCodeShell": "posix"` if the target is
+known to be Bash, Zsh or another POSIX-compatible shell. This explicitly wraps
+the command in same-shell `eval` and prints its status using an invisible OSC
+marker. The wrapper accepts at most 768 UTF-8 bytes of command text. Leave it
+unset for Fish, PowerShell, CMD and other incompatible shells.
+
+`exitCode: null` means no status was observed, for example when the wait expires,
+when integration omits the code, or when the command replaces or exits the shell.
+The wait neither stops nor resubmits the command. Observe the terminal and
+continue using the lease when input is needed. If the terminal is still owned
+after a POSIX result, read the output and release input when finished. The five
+second bound leaves room in the existing observation budget for approval and
+dispatch. Calls without `waitForExitMs` retain immediate input acknowledgements.
+
+### Work with SSH, terminal panes and files
+
+Use `send_input` when the task must run in the actual shell in the chosen tab,
+including its current directory, environment, and any nested SSH or container.
+For native SSH, Tabby AI Tools requires a completed OSC 133
+`C → D → A → B` prompt sequence for this session. Outgoing terminal input
+during that prompt sequence or after it, a new shell command, a session change or the alternate screen
+blocks submission until a fresh prompt is verified. There is no automatic
+fallback to `ssh_exec`.
+
+Use `ssh_exec` explicitly for non-interactive work on the outer native Tabby
+SSH connection. It requires the native exec API and a remote `/bin/sh`.
+The channel starts in the remote account’s default working directory. It
+returns up to 16,000 bytes of stdout and the last 4,096 bytes of stderr as UTF-8,
+plus an exit code after the shell reports it. Use the actual pane for interactive
+commands. An observation timeout can occur after the remote command started.
+
+For `manage_tab`, use `list_tabs` to obtain a target ID. `split` accepts
+`left`, `right`, `up` or `down`. The target anchors saved-profile operations
+to its window. Wrapping an existing pane for its first split preserves its ID and grant. Profile listing returns up to 200 profile IDs, names and types.
+Use one of those IDs with `open_profile` and then call `list_tabs` again.
+`reconnect` targets a pane with `connected: false` where Tabby offers
+reconnection. That operation and `close` require confirmation. Successful
+reconnection gets a fresh opaque ID. Bearer grants are never copied to a new
+or reconnected pane. Saved-profile actions, close and reconnect are local-only.
+
+Generate a lowercase UUIDv4 as `requestId` before calling `sftp_transfer`.
+The reply immediately acknowledges the request and includes an exact destination.
+Confirm both paths in the target window. Both paths must be absolute.
+For upload, pass the remote parent directory. The receipt gives the destination
+in the new private directory. For download, pass the remote source file.
+Downloads write to a new local file and preserve existing destinations.
+The transfer uses the same order as sidebar attachments: SFTP, independent SSH
+with raw bytes, then independent SSH with Base64. Fallback requires an unavailable
+capability before payload delivery. Permission, verification and uncertain
+outcomes stop the operation. To also permit the last-resort pane shell, set
+`allowPtyFallback: true` and confirm that exact shell as a file endpoint.
+Tabby requires a fresh idle prompt before the PTY fallback and verifies
+authorization on each write. The pane shell may be on a nested host.
+
+Call `sftp_status` with `transferId` equal to the original `requestId` to
+observe `awaiting_approval`, `running`, `completed`, `failed` or `unknown`.
+A completed receipt gives the transport, byte count and SHA-256. Poll the same ID after
+a lost response. Repeating identical submission arguments with a retained ID
+returns the same receipt, and changing any argument results in a conflict.
+If the outcome is unknown, inspect the exact path in the receipt.
+
+Approval has its own 25-second deadline and approved transfer work gets up to
+90 seconds. The transfer continues independently of the submission response.
+Receipts are retained in memory for 15 minutes after completion and remain scoped
+to the submitting client's permission revision.
+
 ## Verification and current limits
 
 The production implementation has been exercised on Linux x64 with official
@@ -181,12 +263,9 @@ desktop behavior and user SSH terminals remain unverified. A compatible host nee
 utilityProcess, Node 20+ and the supported main-process bridge; an unsupported
 host reports an MCP-specific error and does not require another model login.
 
-The endpoint registers eight tools: `get_capabilities`, `read_skill`, `list_tabs`,
-`read_tab`, `send_input`, `send_keys`, `attach_process`, and `release_tab`. All tools
-can be discovered by a read-only client, but server-side permission checks reject
-its input requests. Tool annotations and client-side approvals never grant access.
-External logs, files, workflows, application settings and automatic client-file
-installation remain outside this preview. Internal Codex/Claude/API operations
+A read-only bearer can discover the write tools, but server-side permission
+checks reject calls to them. External logs, workflows and application settings
+remain outside the MCP interface. Internal Codex, Claude and API operations
 retain their separate behavior.
 
 ## Enable command execution and interaction
@@ -212,10 +291,10 @@ explicit grant without repeating operation approvals.
 1. `list_tabs`, then `read_tab` to inspect the target. Snapshot results also include
    available cursor/highlight interaction metadata; delta results contain text.
 2. `send_input({tabId,text,mode:"command",submit:true})` starts a command only when
-   local foreground inspection confirms idle. Maximum text length is 10,000;
+   local foreground inspection or a current native SSH shell prompt confirms idle. Maximum text length is 10,000;
    control characters are rejected (use `send_keys`). No automatic Ctrl+C or
-   foreground takeover is allowed. Unknown inspection, including normal SSH
-   enumeration, blocks a new command; generic SSH shell execution is not yet supported.
+   foreground takeover is allowed. Unknown shell state blocks a new command.
+   See the SSH section above for same-shell and independent execution.
 3. A successful input or `attach_process` returns a server-generated `leaseId`.
    Pass it with `send_input(mode:"stdin")`, `send_keys`, further same-lease commands,
    or `release_tab`. Never invent an owner or reuse another client's lease.

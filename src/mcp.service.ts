@@ -26,6 +26,7 @@ export class McpService implements OnDestroy {
   private destroyed = false
   private publishing = false
   private publishAgain = false
+  private refreshScheduled = false
   private listener = (_event: any, message: any) => {
     if (this.destroyed) return
     if (message.type === 'state') {
@@ -73,12 +74,20 @@ export class McpService implements OnDestroy {
     this.ipc.on(MCP_CHANNEL, this.listener)
     await this.ipc.invoke(MCP_CHANNEL, { type: 'register' })
     if (this.destroyed) return
-    this.subscriptions.add(this.app.tabsChanged$.subscribe(() => this.refresh()))
+    this.subscriptions.add(this.app.tabsChanged$.subscribe(() => {
+      if (this.refreshScheduled) return
+      this.refreshScheduled = true
+      // Tabby's remove/wrap emits twice in one turn for the same live pane.
+      queueMicrotask(() => { this.refreshScheduled = false; this.refresh() })
+    }))
     this.refresh()
   }
   private updateReader (): void {
-    const terminals = [...this.entries.values()].filter(e => !e.closed && e.terminal.session)
-    this.reader.update(terminals, this.grants); this.execution.update(terminals, this.grants, this.leases)
+    const terminals = [...this.entries.values()].filter(e => e.terminal.session || this.reconnectable(e.terminal))
+    this.reader.update(terminals.filter(e => !e.closed), this.grants); this.execution.update(terminals, this.grants, this.leases)
+  }
+  private reconnectable (tab: BaseTerminalTabComponent<any>): boolean {
+    return tab.profile?.type === 'ssh' && typeof (tab as any).reconnect === 'function'
   }
   private refresh (): void {
     if (this.destroyed) return
@@ -86,13 +95,16 @@ export class McpService implements OnDestroy {
     for (const [tab, entry] of this.entries) if (!tabs.includes(tab)) { entry.watchers.unsubscribe(); entry.sessionWatchers.unsubscribe(); this.entries.delete(tab) }
     for (const tab of tabs) {
       if (this.entries.has(tab)) continue
-      const entry = { key: randomBytes(16).toString('hex'), session: '', terminal: tab, actualSession: undefined as any, closed: true, watchers: new Subscription(), sessionWatchers: new Subscription() }
+      const entry = { key: randomBytes(16).toString('hex'), session: randomBytes(16).toString('hex'), terminal: tab, actualSession: undefined as any, closed: true, watchers: new Subscription(), sessionWatchers: new Subscription() }
       this.entries.set(tab, entry)
       const attach = () => {
         if (entry.actualSession === tab.session) return
         entry.sessionWatchers.unsubscribe(); entry.sessionWatchers = new Subscription()
         entry.actualSession = tab.session; entry.session = randomBytes(16).toString('hex'); entry.closed = !tab.session
-        const closed = () => { entry.closed = true; this.updateReader(); this.publish() }
+        const closed = () => {
+          if (entry.closed) return
+          entry.closed = true; entry.session = randomBytes(16).toString('hex'); this.updateReader(); this.publish()
+        }
         entry.sessionWatchers.add(tab.session?.closed$?.subscribe(closed))
         entry.sessionWatchers.add(tab.session?.destroyed$?.subscribe(closed))
         this.updateReader(); this.publish()
@@ -109,13 +121,13 @@ export class McpService implements OnDestroy {
     void (async () => {
       while (this.publishAgain && !this.destroyed) {
         this.publishAgain = false
-        const targets = [...this.entries.values()].filter(e => !e.closed && e.terminal.session).map(e => {
+        const targets = [...this.entries.values()].filter(e => e.closed ? this.reconnectable(e.terminal) : !!e.terminal.session).map(e => {
           const profile = e.terminal.profile, options = profile?.options || {}
           const type = typeof profile?.type === 'string' ? profile.type.slice(0, 30) : 'terminal'
           const host = typeof options.host === 'string' ? options.host.slice(0, 100) : ''
           const user = typeof (options.user || options.username) === 'string' ? (options.user || options.username).slice(0, 60) : ''
           const label = [type, host ? (user ? user + '@' : '') + host : ''].filter(Boolean).join(' ')
-          return { key: e.key, session: e.session, title: (String(e.terminal.customTitle || e.terminal.title || 'Terminal') + ' [' + label + ']').slice(0, 200) }
+          return { key: e.key, session: e.session, title: (String(e.terminal.customTitle || e.terminal.title || 'Terminal') + ' [' + label + ']').slice(0, 200), ...(e.closed ? { connected: false } : {}) }
         })
         await this.ipc.invoke(MCP_CHANNEL, { type: 'targets', targets })
       }

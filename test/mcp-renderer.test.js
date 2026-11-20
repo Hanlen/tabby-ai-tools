@@ -9,7 +9,10 @@ const CHANNEL = 'tabby-ai-mcp-v1'
 class Terminal {
   constructor (title) { this.title = title; this.session = { open: true, closed$: new Subject(), destroyed$: new Subject() }; this.sessionChanged$ = new Subject() }
 }
-class Split {}
+class Split {
+  constructor (tabs) { this.tabs = tabs }
+  getAllTabs () { return this.tabs }
+}
 const oldLoad = Module._load, oldTs = require.extensions['.ts'], oldPug = require.extensions['.pug'], oldCss = require.extensions['.css']
 Module._load = function (name, parent, main) {
   if (name === '@angular/core') return { Injectable: () => value => value, Component: () => value => value }
@@ -70,12 +73,28 @@ test('terminal change arriving between metadata drain and finally is not lost', 
   let resolve
   f.hook(message => message.type === 'targets' ? new Promise(done => { resolve = done }) : emptyMcpState())
   f.app.tabsChanged$.next()
+  await Promise.resolve()
   f.hook(undefined)
   resolve(emptyMcpState())
   queueMicrotask(() => { f.app.tabs = [new Terminal('B')]; f.app.tabsChanged$.next() })
   await flush(); await flush()
   const final = f.requests.filter(r => r.type === 'targets').at(-1)
   assert.match(final.targets[0].title, /^B /)
+})
+test('synchronous removal and wrapping preserves the original pane registration', async t => {
+  const f = await renderer(t)
+  const terminal = f.app.tabs[0]
+  const original = f.requests.filter(r => r.type === 'targets').at(-1).targets[0]
+  const start = f.requests.length
+  f.app.tabs = []
+  f.app.tabsChanged$.next()
+  f.app.tabs = [new Split([terminal, new Terminal('peer')])]
+  f.app.tabsChanged$.next()
+  await flush()
+  const publications = f.requests.slice(start).filter(r => r.type === 'targets')
+  assert.ok(publications.length > 0)
+  for (const { targets } of publications) assert.deepEqual(targets[0], original)
+  assert.equal(publications.at(-1).targets.length, 2)
 })
 test('explicit refresh republishes metadata after a prior publication failure', async t => {
   const f = await renderer(t)

@@ -14,10 +14,13 @@ import { SudoWorkflowLease } from './sudo-workflow'
 import { TABBY_MUTATIONS, TABBY_OPERATIONS } from './tabby-operations'
 import { matchesProcess, terminalKeySequence, terminalInteractionState } from './terminal-keys'
 import { AttachmentTransferService } from './attachment-transfer.service'
+import { AttachmentError } from './attachments'
 import { TransferTarget } from './attachment-transport'
 import { runAttachmentPty } from './attachment-pty'
 import { RemoteProcessIdentity, verifyRemoteProcess } from './remote-process'
 import { TERMINAL_INPUT_MAX_LENGTH } from './terminal-limits'
+import { randomBytes } from 'crypto'
+import { mcpSftpTransfer, mcpSshExec } from './mcp-ssh'
 
 export interface ControlledTab { tabId: string; title: string; owner: string; command: string; startedAt: number }
 export interface TabToolContext {
@@ -40,6 +43,7 @@ interface ControlState extends ControlledTab {
   observedProcess: boolean
   observedCursor: number
   completion?: 'running' | 'ended' | 'prompt'
+  exitObservation?: { marker?: string; exitCode?: number; complete: (code: number | null) => void }
   automaticCompletion: boolean
   subscriptions: Subscription
   expectedProcess?: string
@@ -59,6 +63,7 @@ export class TabbyTabToolsService implements OnDestroy {
   private controlled = new Map<BaseTerminalTabComponent<any>, ControlState>()
   private completionRevisions = new WeakMap<BaseTerminalTabComponent<any>, number>()
   private completedCommands = new WeakMap<BaseTerminalTabComponent<any>, any>()
+  private sshPrompts = new WeakMap<BaseTerminalTabComponent<any>, any>()
   private completionWatchers = new Map<BaseTerminalTabComponent<any>, Subscription>()
   private ids = new WeakMap<BaseTabComponent, string>()
   private nextId = 0
@@ -106,11 +111,35 @@ export class TabbyTabToolsService implements OnDestroy {
       const attach = (session = terminal.session) => {
         sessionWatcher?.unsubscribe()
         this.completedCommands.delete(terminal)
+        this.sshPrompts.delete(terminal)
         let pending = ''
         sessionWatcher = new Subscription()
-        const ended = () => { this.completedCommands.delete(terminal); sessionWatcher?.unsubscribe() }
+        const ended = () => { this.completedCommands.delete(terminal); this.sshPrompts.delete(terminal); sessionWatcher?.unsubscribe() }
         sessionWatcher.add(session?.closed$?.subscribe(ended))
         sessionWatcher.add(session?.destroyed$?.subscribe(ended))
+        if (terminal.profile?.type === 'ssh' && session?.middleware?.outputToSession$) {
+          let phase = '', tail = ''
+          sessionWatcher.add(session.middleware.outputToSession$.subscribe(() => {
+            // A shell can consume typeahead into the next prompt after D/A/B.
+            this.sshPrompts.delete(terminal)
+            phase = ''
+          }))
+          sessionWatcher.add(session?.output$?.subscribe(chunk => {
+            tail += chunk
+            const marks = /\x1b\]133;([ABCD])(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/g
+            let match: RegExpExecArray | null, consumed = 0
+            while ((match = marks.exec(tail))) {
+              consumed = marks.lastIndex
+              const mark = match[1]
+              if (mark === 'C') { this.sshPrompts.delete(terminal); phase = 'C' }
+              else if (mark === 'D' && phase === 'C') phase = 'D'
+              else if (mark === 'A' && phase === 'D') phase = 'A'
+              else if (mark === 'B' && phase === 'A') { this.sshPrompts.set(terminal, session); phase = '' }
+              else phase = ''
+            }
+            tail = tail.slice(Math.max(consumed, tail.length - 1024))
+          }))
+        }
         sessionWatcher.add(session?.output$?.subscribe(chunk => {
           pending = (pending + chunk).slice(-1024)
           if (/\x1b\]133;C(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/.test(pending)) {
@@ -130,6 +159,7 @@ export class TabbyTabToolsService implements OnDestroy {
       this.completionWatchers.get(terminal)?.unsubscribe()
       this.completionWatchers.delete(terminal)
       this.completedCommands.delete(terminal)
+      this.sshPrompts.delete(terminal)
       this.tracked.delete(terminal)
     }
     for (const state of this.controlled.values()) if (state.tab.session !== state.session || !state.tab.session?.open) this.release(state.tab)
@@ -233,23 +263,48 @@ export class TabbyTabToolsService implements OnDestroy {
     state.subscriptions.add(state.session?.output$?.subscribe(chunk => {
       // OSC 133 C -> D -> A: command started, ended, then shell prompt.
       // Require the sequence after ownership began; a bare prompt-like line proves nothing.
-      pending = (pending + chunk).slice(-16384)
-      const sequence = /\x1b\]133;([ACD])(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/g
+      pending += chunk
+      const sequence = /\x1b\](?:133;([ACD])(?:;([^\x07\x1b]*))?|1337;TabbyAIExit=([a-f0-9]{32}):(\d{1,3}))(?:\x07|\x1b\\)/g
       let match: RegExpExecArray | null, consumed = 0
       while ((match = sequence.exec(pending))) {
         consumed = sequence.lastIndex
-        if (match[1] === 'C') state.completion = 'running'
-        else if (match[1] === 'D' && state.completion === 'running') state.completion = 'ended'
-        else if (match[1] === 'A' && state.completion === 'ended') {
+        const observation = state.exitObservation
+        if (match[3] && observation?.marker === match[3] && Number(match[4]) <= 255) {
+          observation.complete(Number(match[4]))
+        } else if (match[1] === 'C') {
+          state.completion = 'running'
+          if (observation) observation.exitCode = undefined
+        } else if (match[1] === 'D' && state.completion === 'running') {
+          state.completion = 'ended'
+          if (observation && /^\d{1,3}$/.test(match[2] || '') && Number(match[2]) <= 255) observation.exitCode = Number(match[2])
+        } else if (match[1] === 'A' && state.completion === 'ended') {
           state.completion = 'prompt'
+          if (observation && !observation.marker) observation.complete(observation.exitCode ?? null)
           if (state.automaticCompletion && !this.alternateScreen(tab)) { ended(); break }
         }
       }
-      if (consumed) pending = pending.slice(consumed)
+      pending = pending.slice(Math.max(consumed, pending.length - 1024))
     }))
     this.publishControls()
     this.pollControl(state)
     return state
+  }
+
+  private observeExit (state: ControlState, waitMs: number, marker: string | undefined, signal?: AbortSignal): Promise<number | null> {
+    return new Promise(resolve => {
+      const complete = (code: number | null) => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', stopped)
+        state.subscriptions.remove(stopped)
+        state.exitObservation = undefined
+        resolve(code)
+      }
+      const stopped = () => complete(null)
+      const timer = setTimeout(stopped, waitMs)
+      state.exitObservation = { marker, complete }
+      state.subscriptions.add(stopped)
+      signal?.addEventListener('abort', stopped, { once: true })
+    })
   }
 
   private sendControlled (state: ControlState, data: string, context?: TabToolContext): void {
@@ -258,6 +313,7 @@ export class TabbyTabToolsService implements OnDestroy {
     if (this.controlled.get(state.tab) !== state || state.tab.session !== state.session || !state.session?.open) throw new Error('The terminal session or input owner changed; input was not sent')
     // Include output that arrives between sending input and the model's next read.
     state.observedCursor = this.output.cursor(state.tab)
+    this.sshPrompts.delete(state.tab)
     state.allowInput = true
     try { context?.onInput?.(); state.tab.sendInput(data) } finally { state.allowInput = false }
   }
@@ -356,7 +412,7 @@ export class TabbyTabToolsService implements OnDestroy {
 
   attachmentTabId (tab: BaseTerminalTabComponent<any>): string { return this.id(tab) }
 
-  attachmentTarget (tabId: string, owner: string): TransferTarget {
+  attachmentTarget (tabId: string, owner: string, external?: TabToolContext): TransferTarget {
     const tab = this.find(tabId) as BaseTerminalTabComponent<any> & { sshSession?: any }
     if (!(tab instanceof BaseTerminalTabComponent) || tab.profile?.type !== 'ssh' || !tab.session?.open || !tab.sshSession?.open) throw new Error('Select a connected native Tabby SSH terminal for file transfer')
     const ssh = tab.sshSession, session = tab.session
@@ -365,16 +421,25 @@ export class TabbyTabToolsService implements OnDestroy {
     target.hideOutput = marker => this.output.hideAttachmentOutput?.(tab, marker)
     // A remote process list is not available. Only a fresh reliable Shell completion
     // permits the PTY fallback; SFTP/exec never require claiming terminal input.
-    if (this.completedCommands.get(tab) === session && !this.controlled.has(tab) && !this.alternateScreen(tab)) target.pty = async (script, signal, sink, input) => {
-      if (!target.valid() || this.completedCommands.get(tab) !== session || this.controlled.has(tab) || this.alternateScreen(tab)) throw new Error('PTY fallback requires the same verified idle shell')
+    const prompt = () => (external ? this.sshPrompts : this.completedCommands).get(tab) === session && !this.alternateScreen(tab)
+    if (external || prompt() && !this.controlled.has(tab)) target.pty = async (script, signal, sink, input) => {
+      external?.beforeInput?.()
+      if (!target.valid() || !prompt() || this.controlled.has(tab)) throw new AttachmentError('UNSUPPORTED', 'PTY fallback requires the same verified idle shell')
       const suppress = this.output.suppress?.(tab)
       const state = this.lock(tab, owner, '[attachment transfer]'); state.automaticCompletion = false
-      let completed = false
-      try { await runAttachmentPty(target, script, signal, text => this.sendControlled(state, text), sink, input); completed = true }
+      let completed = false, first = true
+      try {
+        await runAttachmentPty(target, script, signal, text => {
+          if (external && first && !prompt()) throw new AttachmentError('UNSUPPORTED', 'The approved shell prompt is no longer idle')
+          this.sendControlled(state, text, external)
+          first = false
+        }, sink, input)
+        completed = true
+      }
       finally {
-        if (completed || state.completion === 'prompt') suppress?.()
+        if (first || completed || state.completion === 'prompt') suppress?.()
         else if (suppress) this.output.holdUntilShellPrompt?.(tab, suppress)
-        if (completed) this.release(tab)
+        if (first || completed) this.release(tab)
       }
     }
     return target
@@ -548,6 +613,67 @@ export class TabbyTabToolsService implements OnDestroy {
   callTerminal (name: string, args: any, terminal: BaseTerminalTabComponent<any>, context: TabToolContext): Promise<any> {
     if (!['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(name) || !this.allTabs().includes(terminal)) return Promise.reject(new Error('Terminal unavailable'))
     return this.call(name, { ...args, tabId: this.id(terminal) }, context)
+  }
+
+  async callMcpOperation (name: string, args: any, terminal: BaseTerminalTabComponent<any>, context: TabToolContext & { signal: AbortSignal; beforeInput: () => void; onInput: () => void }): Promise<any> {
+    context.beforeInput()
+    if (!this.allTabs().includes(terminal)) throw new Error('Terminal unavailable')
+    const tabId = this.id(terminal)
+    if (name === 'ssh_exec' || name === 'sftp_transfer') {
+      const usePane = name === 'sftp_transfer' && args.allowPtyFallback === true
+      const target = this.attachmentTarget(tabId, context.owner, usePane ? context : undefined)
+      const checked = { ...target, valid: () => {
+        try { context.beforeInput(); return target.valid() } catch { return false }
+      }, pty: usePane ? target.pty : undefined }
+      context.onInput()
+      return name === 'ssh_exec' ? mcpSshExec(checked, args.command, context.signal) : mcpSftpTransfer(checked, args, context.signal)
+    }
+    if (name !== 'manage_tab') throw new Error('Unknown external operation')
+    if (args.action === 'list_profiles') {
+      if (!this.capabilities) throw new Error('Profile provider unavailable')
+      const profiles = await this.capabilities.call('list_profiles', {}, terminal, context.beforeInput)
+      return { profiles: profiles.filter((profile: any) => !profile.isTemplate && typeof profile.id === 'string').slice(0, 200).map((profile: any) => ({
+        id: profile.id.slice(0, 256), name: String(profile.name || '').slice(0, 160), type: String(profile.type || '').slice(0, 32),
+      })) }
+    }
+    if (args.action === 'open_profile') {
+      if (!this.capabilities) throw new Error('Profile provider unavailable')
+      const result = await this.capabilities.call('open_profile', { profileId: args.profileId }, terminal, () => { context.beforeInput(); context.onInput() })
+      return { opened: result.opened }
+    }
+    if (args.action !== 'select' && this.controlled.has(terminal)) throw Object.assign(new Error('The pane has an active input owner'), { code: 'busy' })
+    if (args.action === 'reconnect') {
+      const ssh = terminal as BaseTerminalTabComponent<any> & { reconnect?: () => Promise<void>; reconnectOffered?: boolean }
+      if (terminal.profile?.type !== 'ssh' || terminal.session?.open || !ssh.reconnectOffered || typeof ssh.reconnect !== 'function') {
+        throw Object.assign(new Error('No disconnected SSH reconnection prompt is available'), { code: 'target_closed' })
+      }
+      context.onInput()
+      await ssh.reconnect()
+      return { reconnectRequested: true, connected: terminal.session?.open === true }
+    }
+    if (args.action === 'close') {
+      if (!await terminal.canClose()) return { closed: false }
+      context.beforeInput()
+      if (this.controlled.has(terminal)) throw Object.assign(new Error('The pane has an active input owner'), { code: 'busy' })
+      context.onInput()
+      if (this.app.tabs.includes(terminal)) await this.app.closeTab(terminal, false)
+      else terminal.destroy()
+      return { closed: !this.allTabs().includes(terminal) }
+    }
+    context.onInput()
+    if (args.action === 'rename') {
+      const result = await this.call('rename_tab', { tabId, title: args.title }, context)
+      return { title: result.title }
+    }
+    if (args.action === 'select') {
+      await this.call('select_tab', { tabId }, context)
+      return { selected: true }
+    }
+    const direction: Record<string, string> = { left: 'l', right: 'r', up: 't', down: 'b' }
+    const result = args.action === 'split'
+      ? await this.call('split_tab', { tabId, direction: direction[args.direction] }, context)
+      : await this.call('duplicate_tab', { tabId }, context)
+    return { opened: result.opened }
   }
 
   async call (name: string, args: any, context?: TabToolContext): Promise<any> {
@@ -777,7 +903,9 @@ export class TabbyTabToolsService implements OnDestroy {
       const session = tab.session
       const running = await this.processes(tab)
       checkStopped()
-      if (running?.length || running === null) {
+      const sameSshShell = context?.allowTakeover === false && tab.profile?.type === 'ssh' && !!(tab as any).sshSession?.open &&
+        this.sshPrompts.get(tab) === session && !this.alternateScreen(tab)
+      if (running?.length || running === null && !sameSshShell) {
         if (context?.allowTakeover === false) return { sent: false, blocked: true, reason: 'Foreground process is running or cannot be verified idle; no automatic interruption is allowed.' }
         if (args.foregroundTaskNeeded === true) return { sent: false, blocked: true, reason: 'Existing foreground task is needed; wait for it or interact using stdin mode if this session owns it.', runningProcesses: running }
         if (running?.length && args.foregroundTaskNeeded !== false) return { sent: false, blocked: true, reason: 'Inspect the existing process and decide whether the current task needs it before sending a new command.', runningProcesses: running }
@@ -805,11 +933,20 @@ export class TabbyTabToolsService implements OnDestroy {
       const server = await this.serverIdentity(tab)
       checkStopped()
       if (tab.session !== session || this.controlled.has(tab)) throw new Error('Terminal changed while reading its identity')
+      const sshPromptValid = () => this.sshPrompts.get(tab) === session && !this.alternateScreen(tab) && !!(tab as any).sshSession?.open
+      if (sameSshShell && !sshPromptValid()) {
+        return { sent: false, blocked: true, reason: 'The SSH prompt is no longer verified idle.' }
+      }
       const state = this.lock(tab, owner, args.text.slice(0, 120))
       // A prompt between pasted lines does not prove the entire batch finished.
       // Multiline submissions require explicit release after inspecting their results.
       state.automaticCompletion = !/[\r\n]/.test(args.text)
       let commandText = args.text
+      const exitMarker = args.exitCodeShell === 'posix' ? randomBytes(16).toString('hex') : undefined
+      if (exitMarker) {
+        const quotedCommand = args.text.replace(/'/g, "'\\''")
+        commandText = `eval '${quotedCommand}'; command printf '\\033]1337;TabbyAIExit=${exitMarker}:%s\\007' "$?"`
+      }
       if (context?.sudoLease && args.submit) {
         let leases = this.sudoLeases.get(owner)
         if (!leases) { leases = new Map(); this.sudoLeases.set(owner, leases) }
@@ -818,9 +955,16 @@ export class TabbyTabToolsService implements OnDestroy {
         commandText = entry.lease.wrap(commandText)
         state.automaticCompletion = false
       }
+      const exit = args.waitForExitMs ? this.observeExit(state, args.waitForExitMs, exitMarker, context?.signal) : undefined
+      if (sameSshShell && !sshPromptValid()) {
+        this.release(tab)
+        return { sent: false, blocked: true, reason: 'The SSH prompt is no longer verified idle.' }
+      }
       try { this.sendControlled(state, commandText + (args.submit ? '\r' : ''), context) } catch (error) { this.release(tab); throw error }
       if (!args.submit) this.release(tab)
-      return { sent: true, tabId: args.tabId, server, submitted: !!args.submit, userInputLocked: !!args.submit }
+      if (!exit) return { sent: true, tabId: args.tabId, server, submitted: !!args.submit, userInputLocked: !!args.submit }
+      const exitCode = await exit
+      return { sent: true, tabId: args.tabId, server, submitted: true, userInputLocked: this.controlled.get(tab) === state, exitCode }
     }
     if (name === 'attach_process') {
       if (!(tab instanceof BaseTerminalTabComponent) || !tab.session?.open) throw new Error('An open terminal is required')

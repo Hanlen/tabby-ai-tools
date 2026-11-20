@@ -23,6 +23,7 @@ const { sftpTransfer, execTransfer, execStream } = require('../src/attachment-tr
 const { AttachmentTransferService } = require('../src/attachment-transfer.service.ts')
 const { runAttachmentPty, ptyTransfer } = require('../src/attachment-pty.ts')
 const { retainAttachmentChannel } = require('../src/attachment-channel.ts')
+const { mcpSshExec, mcpSftpTransfer } = require('../src/mcp-ssh.ts')
 Module._load = load; require.extensions['.ts'] = extension
 
 async function temporary(t) {
@@ -77,6 +78,46 @@ function execTarget() {
 }
 const posix = process.platform !== 'win32'
 const signal = () => new AbortController().signal
+
+test('MCP SSH execution returns both streams and the real nonzero shell status', { skip: !posix }, async () => {
+  const result = await mcpSshExec(execTarget(), "printf __READY__; printf error >&2; exit 7", signal())
+  assert.deepEqual(result, { exitCode: 7, stdout: '__READY__', stderr: 'error', stdoutTruncated: false })
+})
+
+test('MCP SFTP streams binary files both ways and does not overwrite a destination', async t => {
+  const local = await temporary(t), remote = await temporary(t)
+  const source = path.join(local, 'source.bin'), downloaded = path.join(local, 'received.bin')
+  const bytes = randomBytes(100_321), ssh = target(localSftp(remote))
+  await fs.writeFile(source, bytes)
+  const planned = '/fixture/.tabby-mcp-3f5c1181-1234-4e89-a123-123456789abc/source.bin'
+  const uploaded = await mcpSftpTransfer(ssh, { direction: 'upload', localPath: source, remotePath: planned }, signal())
+  assert.equal(uploaded.remotePath, planned)
+  assert.equal(uploaded.transport, 'sftp')
+  assert.equal(uploaded.hash, sha256(bytes))
+  const args = { direction: 'download', localPath: downloaded, remotePath: uploaded.remotePath }
+  assert.equal((await mcpSftpTransfer(ssh, args, signal())).hash, uploaded.hash)
+  assert.deepEqual(await fs.readFile(downloaded), bytes)
+  await fs.writeFile(downloaded, 'keep')
+  await assert.rejects(mcpSftpTransfer(ssh, args, signal()), { code: 'EEXIST' })
+  assert.equal(await fs.readFile(downloaded, 'utf8'), 'keep')
+  assert.deepEqual((await fs.readdir(local)).sort(), ['received.bin', 'source.bin'])
+})
+
+test('MCP file transfer falls back to independent SSH only for an unavailable capability', { skip: !posix }, async t => {
+  const root = await temporary(t), remote = path.join(root, 'remote.bin'), local = path.join(root, 'received.bin')
+  const original = randomBytes(64001)
+  await fs.writeFile(remote, original)
+  const ssh = execTarget()
+  const args = { direction: 'download', remotePath: remote, localPath: local }
+  ssh.ssh.openSFTP = async () => { throw new Error('Permission denied') }
+  await assert.rejects(mcpSftpTransfer(ssh, args, signal()), /Permission denied/)
+  await assert.rejects(fs.stat(local), { code: 'ENOENT' })
+  ssh.ssh.openSFTP = async () => { throw new Error('SFTP subsystem is not supported') }
+  const result = await mcpSftpTransfer(ssh, args, signal())
+  assert.equal(result.transport, 'exec-binary')
+  assert.equal(result.hash, sha256(original))
+  assert.deepEqual(await fs.readFile(local), original)
+})
 
 test('native buffer retention affects only owned channel IDs and restores each hook', () => {
   const closed = [], original = id => closed.push(id), buffer = { closeChannel: original }, client = { events: { data$: buffer } }
@@ -237,9 +278,11 @@ test('real Linux PTY base64 upload/download preserves all bytes without model re
   const uploaded = await ptyTransfer(dest, { direction: 'upload', remotePath, size: bytes.length, hash: sha256(bytes), source, progress() {}, verifying() {} }, controller.signal)
   assert.equal(uploaded.hash, sha256(bytes))
   assert.deepEqual(await fs.readFile(remotePath), bytes)
-  const chunks = []
-  const downloaded = await ptyTransfer(dest, { direction: 'download', remotePath, sink: async chunk => chunks.push(chunk), progress() {}, verifying() {} }, signal())
-  assert.equal(downloaded.hash, uploaded.hash); assert.deepEqual(Buffer.concat(chunks), bytes)
+  const localPath = path.join(root, 'mcp-downloaded.bin')
+  const downloaded = await mcpSftpTransfer(dest, { direction: 'download', remotePath, localPath }, controller.signal)
+  assert.equal(downloaded.transport, 'pty-base64')
+  assert.equal(downloaded.hash, uploaded.hash)
+  assert.deepEqual(await fs.readFile(localPath), bytes)
 })
 
 

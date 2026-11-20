@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, isAbsolute, join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { McpPolicy, failure, randomId, LOCAL_CLIENT_ID } from './policy.cjs'
 import { McpDiscovery } from './discovery.cjs'
@@ -8,6 +8,23 @@ declare const TABBY_MCP_VERSION: string
 const { app, ipcMain, utilityProcess } = require('electron')
 const CHANNEL = 'tabby-ai-mcp-v1'
 const singleton = Symbol.for('tabby-ai.mcp.host.v1')
+const transferIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+type TransferStatus = 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'unknown'
+interface TransferReceipt {
+  transferId: string
+  revision: number
+  signature: string
+  direction: 'upload' | 'download'
+  localPath: string
+  remotePath: string
+  status: TransferStatus
+  finishedAt?: number
+  bytes?: number
+  hash?: string
+  transport?: 'sftp' | 'exec-binary' | 'exec-base64' | 'pty-base64'
+  code?: string
+}
+const transferView = ({ signature: _signature, revision: _revision, finishedAt: _finishedAt, ...result }: TransferReceipt) => result
 export function install () {
   const globalState = globalThis as any
   if (globalState[singleton]) return
@@ -23,7 +40,8 @@ export function install () {
   const owners = new Map<number, { sender: any; cleanup: () => void }>()
   const controls = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   const leases = new Map<string, { id: string; clientId: string; revision: number; targetId: string; sender: any; expiresAt: number; timer: ReturnType<typeof setTimeout> }>()
-  const observations = new Map<string, { leaseId?: string; sent?: boolean; approval?: { client: string; title: string; tool: string; input: string; expiresAt: number }; launch?: () => void; sender: any; target: string; clientId: string; revision: number; reject: (error: Error) => void; resolve: (value: any) => void; timer: ReturnType<typeof setTimeout>; callId: string }>()
+  const observations = new Map<string, { leaseId?: string; sent?: boolean; replacesTarget?: boolean; approval?: { client: string; title: string; tool: string; input: string; expiresAt: number }; launch?: () => void; sender: any; target: string; clientId: string; revision: number; reject: (error: Error) => void; resolve: (value: any) => void; timer: ReturnType<typeof setTimeout>; callId: string }>()
+  const transfers = new Map<string, TransferReceipt>()
   const exits = new WeakMap<object, Promise<void>>(), exitedChildren = new WeakSet<object>()
   let child: any, faulted: any, port = 0, error = '', utilityNode = '', chain = Promise.resolve(), stopping: Promise<void> | undefined
   const trusted = (event: any) => {
@@ -105,7 +123,7 @@ export function install () {
       try { const client = policy.authorize(lease.clientId, lease.revision, lease.targetId); if (client.mode === 'read_only' || faulted) throw failure('permission_denied') } catch { releaseLease(id) }
     }
     for (const [id, item] of observations) {
-      try { policy.authorize(item.clientId, item.revision, item.target) } catch { cancelObservation(id, 'permission_denied') }
+      try { policy.authorize(item.clientId, item.revision, item.replacesTarget && item.sent ? undefined : item.target) } catch { cancelObservation(id, 'permission_denied') }
     }
     for (const owner of owners.values()) sendRenderer(owner.sender, {
       type: 'state', state: state(),
@@ -125,15 +143,58 @@ export function install () {
       controls.delete(id); clearTimeout(timer); reject(new Error('MCP process unavailable'))
     }
   })
-  const dispatch = async (message: any) => {
+  const dispatch = async (message: any, transfer?: TransferReceipt): Promise<any> => {
     if (faulted || !port) throw failure('cancelled')
     const client = policy.authorize(message.clientId, message.revision)
-    if (message.tool === 'list_tabs') return [...client.targets].map(id => policy.targets.get(id)).filter(Boolean).map(t => ({ tabId: t!.id, title: t!.title }))
-    const writing = ['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(message.tool)
+    if (message.tool === 'sftp_status' || message.tool === 'sftp_transfer') {
+      const now = Date.now()
+      for (const [key, value] of transfers) if (value.finishedAt !== undefined && now - value.finishedAt >= 900000) transfers.delete(key)
+    }
+    if (message.tool === 'sftp_status') {
+      const receipt = transfers.get(client.id + ':' + message.args?.transferId)
+      if (!receipt || receipt.revision !== client.revision) throw failure('transfer_not_found')
+      return transferView(receipt)
+    }
+    if (message.tool === 'list_tabs') return [...client.targets].map(id => policy.targets.get(id)).filter(Boolean).map(t => ({ tabId: t!.id, title: t!.title, ...(t!.connected === false ? { connected: false } : {}) }))
+    const oneShot = ['ssh_exec', 'manage_tab', 'sftp_transfer'].includes(message.tool)
+    const writing = oneShot || ['send_input', 'send_keys', 'attach_process', 'release_tab'].includes(message.tool)
     if ((!writing && message.tool !== 'read_tab') || !message.args || typeof message.args.tabId !== 'string') throw failure('permission_denied')
     policy.authorize(message.clientId, message.revision, message.args.tabId)
+    const manageAction = message.tool === 'manage_tab' ? message.args.action : undefined
+    const replacesTarget = manageAction === 'close' || manageAction === 'reconnect'
+    if (['close', 'open_profile', 'list_profiles', 'reconnect'].includes(manageAction) && client.id !== LOCAL_CLIENT_ID) throw failure('permission_denied')
+    if (oneShot && message.args.leaseId !== undefined) throw failure('permission_denied')
     const target = policy.targets.get(message.args.tabId)!, owner = owners.get(target.owner)
-    if (!owner) throw failure('target_closed')
+    if (!owner || target.connected === false && message.tool !== 'manage_tab') throw failure('target_closed')
+    if (message.tool === 'sftp_transfer' && !transfer) {
+      if (client.mode === 'read_only') throw failure('permission_denied')
+      const { requestId, direction, localPath, remotePath, allowPtyFallback } = message.args
+      if (typeof requestId !== 'string' || !transferIdPattern.test(requestId) || !['upload', 'download'].includes(direction) ||
+        [localPath, remotePath].some(value => typeof value !== 'string' || !value.length || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value)) ||
+        !isAbsolute(localPath) || !posix.isAbsolute(remotePath) || ['', '.', '..'].includes(basename(localPath)) ||
+        (allowPtyFallback !== undefined && typeof allowPtyFallback !== 'boolean')) throw failure('operation_failed')
+      const key = client.id + ':' + requestId
+      const signature = JSON.stringify([target.id, direction, localPath, remotePath, allowPtyFallback === true])
+      const existing = transfers.get(key)
+      if (existing) {
+        if (existing.revision !== client.revision || existing.signature !== signature) throw failure('transfer_conflict')
+        return transferView(existing)
+      }
+      if (transfers.size >= 128 || observations.size >= 16 || [...leases.values()].some(lease => lease.targetId === target.id)) throw failure('busy')
+      const destination = direction === 'upload' ? posix.join(remotePath, '.tabby-mcp-' + requestId, basename(localPath)) : posix.normalize(remotePath)
+      if (destination.length > 4096) throw failure('operation_failed')
+      const receipt: TransferReceipt = { transferId: requestId, revision: client.revision, signature, direction, localPath, remotePath: destination, status: 'awaiting_approval' }
+      transfers.set(key, receipt)
+      // The short submission RPC is independent of the approved file operation.
+      // Losing that reply must not cancel, restart or conceal the transfer.
+      void dispatch({ ...message, id: randomId(), args: { ...message.args, remotePath: destination, allowPtyFallback: allowPtyFallback === true } }, receipt).then(value => {
+        Object.assign(receipt, { status: 'completed', bytes: value.bytes, hash: value.hash, ...(value.transport ? { transport: value.transport } : {}), finishedAt: Date.now() })
+      }, error => {
+        const code = error.code || 'internal_error'
+        Object.assign(receipt, { status: code === 'unknown_outcome' ? 'unknown' : 'failed', code, finishedAt: Date.now() })
+      })
+      return transferView(receipt)
+    }
     if (observations.size >= 16) throw failure('busy')
     let lease!: typeof leases extends Map<any, infer V> ? V : never
     if (writing) {
@@ -144,36 +205,42 @@ export function install () {
         lease = existing
         if ([...observations.values()].some(o => o.leaseId === lease.id)) throw failure('busy')
       } else {
-        if (message.tool !== 'attach_process' && !(message.tool === 'send_input' && message.args.mode !== 'stdin')) throw failure('invalid_lease')
+        if (!oneShot && message.tool !== 'attach_process' && !(message.tool === 'send_input' && message.args.mode !== 'stdin')) throw failure('invalid_lease')
         if ([...leases.values()].some(l => l.targetId === target.id)) throw failure('busy')
         lease = { id: randomId(), clientId: client.id, revision: client.revision, targetId: target.id, sender: owner.sender, expiresAt: 0, timer: undefined as any }
         leases.set(lease.id, lease); touchLease(lease.id)
       }
     }
     const value = await new Promise<any>((resolve, reject) => {
-      const id = randomId(), confirm = writing && message.tool !== 'release_tab' && client.mode === 'confirm'
+      const id = randomId(), confirm = message.tool === 'sftp_transfer' || replacesTarget || writing && message.tool !== 'release_tab' && client.mode === 'confirm'
       const timer = setTimeout(() => { cancelObservation(id, confirm ? 'approval_timeout' : 'observation_timeout'); synchronize() }, confirm ? 25000 : 32000)
-      const item = { sender: owner.sender, target: target.id, clientId: client.id, revision: client.revision, resolve, reject, timer, callId: message.id, leaseId: writing ? lease.id : undefined, sent: false, approval: undefined as any, launch: undefined as (() => void) | undefined }
+      const item = { sender: owner.sender, target: target.id, clientId: client.id, revision: client.revision, resolve, reject, timer, callId: message.id, leaseId: writing ? lease.id : undefined, replacesTarget, sent: false, approval: undefined as any, launch: undefined as (() => void) | undefined }
       item.launch = () => {
         item.approval = undefined; clearTimeout(item.timer)
-        item.timer = setTimeout(() => { cancelObservation(id, 'observation_timeout'); synchronize() }, 32000)
+        item.timer = setTimeout(() => { cancelObservation(id, 'observation_timeout'); synchronize() }, transfer ? 90000 : 32000)
         try { policy.authorize(client.id, client.revision, target.id); if (writing && !leases.has(lease.id)) throw failure('invalid_lease') }
         catch { cancelObservation(id, 'permission_denied'); return }
         item.sent = true
+        if (transfer) transfer.status = 'running'
         if (!sendRenderer(owner.sender, { type: writing ? 'execute' : 'read', id, tool: message.tool, leaseId: item.leaseId, clientId: client.id, revision: client.revision, targetId: target.id, key: target.key, session: target.session, args: message.args })) cancelObservation(id, 'target_closed', false)
       }
       observations.set(id, item)
-      if (confirm) item.approval = { client: client.name, title: target.title, tool: message.tool, input: JSON.stringify(message.args, null, 2), expiresAt: Date.now() + 25000 }
+      if (confirm) {
+        const input = transfer && message.args.allowPtyFallback
+          ? { ...message.args, fallbackEndpoint: 'The shell in this pane, which may be on a nested SSH host or in a container.' }
+          : message.args
+        item.approval = { client: client.name, title: target.title, tool: message.tool, input: JSON.stringify(input, null, 2), expiresAt: Date.now() + 25000 }
+      }
       synchronize()
       if (!confirm && observations.has(id)) item.launch()
     }).catch(error => { if (writing) { releaseLease(lease.id); synchronize() }; throw error })
     if (writing) {
-      if (message.tool === 'release_tab' || value.sent === false) releaseLease(lease.id)
+      if (oneShot || message.tool === 'release_tab' || value.sent === false) releaseLease(lease.id)
       else touchLease(lease.id)
       synchronize()
     }
-    policy.authorize(message.clientId, message.revision, target.id)
-    if (policy.targets.get(target.id) !== target) throw failure('target_stale')
+    policy.authorize(message.clientId, message.revision, replacesTarget ? undefined : target.id)
+    if (!replacesTarget && policy.targets.get(target.id) !== target) throw failure('target_stale')
     return writing ? { ...value, tabId: target.id, ...(leases.has(lease.id) ? { leaseId: lease.id, leaseExpiresAt: lease.expiresAt } : {}) } : value
   }
   const start = async () => {
@@ -294,7 +361,7 @@ export function install () {
     if (!item || !trusted(event) || event.sender !== item.sender) return
     observations.delete(message.id); clearTimeout(item.timer)
     try {
-      policy.authorize(item.clientId, item.revision, item.target)
+      policy.authorize(item.clientId, item.revision, item.replacesTarget && item.sent ? undefined : item.target)
       if (message.error) item.reject(failure(message.error))
       else if (Buffer.byteLength(JSON.stringify(message.value ?? null)) > 128 * 1024) item.reject(failure('internal_error'))
       else item.resolve(message.value)

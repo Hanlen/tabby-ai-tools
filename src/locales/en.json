@@ -6,6 +6,7 @@
   "退出登录": "Sign out",
   "取消登录": "Cancel sign-in",
   "Codex 登录菜单": "Codex sign-in menu",
+  "{0} 登录菜单": "{0} sign-in menu",
   "Codex 独立空间已登录。": "Signed in to the private Codex space.",
   "已退出 Codex 独立空间。": "Signed out of the private Codex space.",
   "请在浏览器完成 Codex 登录。": "Finish signing in to Codex in your browser.",

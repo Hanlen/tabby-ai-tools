@@ -1,5 +1,13 @@
 # Unreleased
 
+- Share the sidebar attachment transport selection with MCP file transfers and report the successful transport in the receipt.
+
+- Invalidate SSH prompt evidence on typeahead, preserve pane grants during split wrapping, and give SFTP submissions queryable receipts and a separate post-approval execution deadline.
+
+- Add external MCP native SSH execution, opt-in same-pane shell submission with verified prompt evidence, terminal and saved-profile management, and confirmed SHA-256-verified SFTP uploads/downloads.
+
+- Let external MCP clients request a shell exit code from `send_input` for a submitted single-line command. Use OSC 133 shell integration or opt into POSIX wrapping. Return `null` when status is unobserved during the bounded wait.
+
 - Redesign the sidebar header as consistent 32px reconnect, account and collapse controls with matching SVG icons, clear hover/focus/disabled states, reduced-motion connection progress, and an account disclosure showing sign-in state with keyboard entry and Escape return-focus.
 - Remove the redundant header Details button; the status, context and control summaries still open the same details panel.
 
@@ -18,3 +26,5 @@
 - Fix Claude Code private-space authentication: use the official selected-space login command instead of copying rotating system OAuth caches. The authentication warning exposes command generation/copy and a login check with reconnect.
 - Preserve conversation history, native sessions and drafts; block recovery during active work and never replay inference or terminal tools. CLI paths are resolved from the configured selector again.
 - Update both READMEs, the authentication guide, bundled skill and interface illustration. Offline regression and browser evidence are recorded locally; real account/keychain, desktop, Windows/macOS and SSH validation remain pending.
+
+- Fix the sidebar account menu when switching private CLI connections: show Claude Code login-command and check/reconnect actions for Claude, retain Codex browser sign-in/sign-out for Codex, and hide CLI login actions for API connections. Authentication checks preserve drafts and never resend tasks.

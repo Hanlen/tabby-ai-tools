@@ -654,3 +654,54 @@ for (const reject of [false, true]) {
     assert.deepEqual(sent, [])
   })
 }
+
+test('account menu follows Codex, Claude and API connections and targets current Claude space', async t => {
+  const { panel, sent, tools } = await setup(t)
+  const codex = panel.codex
+  codex.sessionSpace = { native: '/codex' }
+  codex.signIn = async () => { throw new Error('must not sign in to Codex') }
+  panel.codexSignedIn = true
+  panel.toggleAuthMenu()
+  assert.equal(panel.authMenuOpen, true)
+  assert.equal(panel.privateClaudeLogin, false)
+  assert.match(panel.loginMenuLabel, /Codex/)
+
+  let generated = 0, checked = 0, reconnected = 0
+  const claude = { profile: { runtime: 'claude-code' }, sessionSpace: { native: '/claude' },
+    authenticationCommand: async () => { generated++; return 'selected Claude login' },
+    refreshAuthentication: async () => { checked++ }, client: {} }
+  panel.codex = claude
+  panel.profileId = 'claude-code'
+  panel.prompt = 'unsent draft'
+  panel.authBackend = codex // stale warning must not control the header menu
+  panel.authProfileId = ''
+  assert.equal(panel.privateCodexLogin, false)
+  assert.equal(panel.nativeLoginMenu, true)
+  assert.match(panel.loginMenuLabel, /Claude Code/)
+  panel.reconnect = async () => { reconnected++; return true }
+  await panel.openClaudeLogin()
+  assert.equal(panel.authMenuOpen, false)
+  assert.equal(panel.authBackend, claude)
+  assert.equal(panel.authProfileId, 'claude-code')
+  assert.equal(panel.claudeLoginCommand, 'selected Claude login')
+  assert.equal(generated, 1)
+  assert.equal(checked, 0)
+  await panel.openClaudeLogin(true)
+  assert.equal(checked, 1)
+  assert.equal(reconnected, 1)
+  assert.equal(panel.authWarning, false)
+  panel.busy = true
+  await panel.openClaudeLogin()
+  assert.equal(generated, 1)
+  panel.busy = false
+  panel.codex = codex
+  assert.match(panel.loginMenuLabel, /Codex/)
+  panel.codex = { profile: { runtime: 'api' } }
+  assert.equal(panel.nativeLoginMenu, false)
+  panel.authMenuOpen = false
+  panel.toggleAuthMenu()
+  assert.equal(panel.authMenuOpen, false)
+  assert.equal(panel.prompt, 'unsent draft')
+  assert.deepEqual(sent, [])
+  assert.deepEqual(tools, [])
+})

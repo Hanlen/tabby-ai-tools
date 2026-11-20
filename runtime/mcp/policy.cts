@@ -8,7 +8,7 @@ export const tokenDigest = (value: string) => createHash('sha256').update(value)
 export const LOCAL_CLIENT_ID = 'local'
 export type McpMode = 'read_only' | 'confirm' | 'auto'
 export interface ClientGrant { mode: McpMode; id: string; name: string; digest: string; revision: number; targets: Set<string>; lastSeen?: string }
-export interface Target { id: string; owner: number; key: string; session: string; title: string }
+export interface Target { id: string; owner: number; key: string; session: string; title: string; connected?: boolean }
 export class McpPolicy {
   enabled = false
   port = 0
@@ -65,7 +65,7 @@ export class McpPolicy {
   }
   setScope (id: string, targetIds: string[]): void {
     if (id === LOCAL_CLIENT_ID) throw failure('permission_denied')
-    if (!Array.isArray(targetIds) || targetIds.length > 256 || targetIds.some(id => typeof id !== 'string' || !this.targets.has(id))) throw failure('target_stale')
+    if (!Array.isArray(targetIds) || targetIds.length > 256 || targetIds.some(id => typeof id !== 'string' || !this.targets.has(id) || this.targets.get(id)?.connected === false)) throw failure('target_stale')
     const client = this.client(id)
     client.targets = new Set(targetIds); client.revision++
   }
@@ -81,10 +81,10 @@ export class McpPolicy {
     // unrelated local observations/leases when another tab closes or reconnects.
     for (const client of this.clients.values()) if (client.targets.delete(id) && client.id !== LOCAL_CLIENT_ID) client.revision++
   }
-  register (owner: number, entries: { key: string; session: string; title: string }[]): void {
-    if (!Array.isArray(entries) || entries.length > 256 || entries.some(t => !t || typeof t.key !== 'string' || t.key.length > 128 || typeof t.session !== 'string' || t.session.length > 128 || typeof t.title !== 'string' || t.title.length > 200)) throw new Error('Invalid terminal registration')
+  register (owner: number, entries: { key: string; session: string; title: string; connected?: boolean }[]): void {
+    if (!Array.isArray(entries) || entries.length > 256 || entries.some(t => !t || typeof t.key !== 'string' || t.key.length > 128 || typeof t.session !== 'string' || t.session.length > 128 || typeof t.title !== 'string' || t.title.length > 200 || t.connected !== undefined && typeof t.connected !== 'boolean')) throw new Error('Invalid terminal registration')
     if (new Set(entries.map(t => t.key)).size !== entries.length) throw new Error('Duplicate terminal key')
-    for (const target of [...this.targets.values()]) if (target.owner === owner && !entries.some(e => e.key === target.key && e.session === target.session)) this.removeTarget(target.id)
+    for (const target of [...this.targets.values()]) if (target.owner === owner && !entries.some(e => e.key === target.key && e.session === target.session && (e.connected === false) === (target.connected === false))) this.removeTarget(target.id)
     for (const entry of entries) {
       const current = [...this.targets.values()].find(t => t.owner === owner && t.key === entry.key && t.session === entry.session)
       if (current) current.title = entry.title
@@ -105,6 +105,6 @@ export class McpPolicy {
   snapshot () { return { enabled: this.enabled, clients: [...this.clients.values()].map(c => ({ id: c.id, digest: c.digest, revision: c.revision, mode: c.mode })) } }
   publicState () {
     const view = (c: ClientGrant) => ({ id: c.id, name: c.name, mode: c.mode, revision: c.revision, targets: [...c.targets], lastSeen: c.lastSeen })
-    return { enabled: this.enabled, localClient: view(this.client(LOCAL_CLIENT_ID)), clients: [...this.clients.values()].filter(c => c.id !== LOCAL_CLIENT_ID).map(view), targets: [...this.targets.values()].map(t => ({ id: t.id, title: t.title, window: t.owner })) }
+    return { enabled: this.enabled, localClient: view(this.client(LOCAL_CLIENT_ID)), clients: [...this.clients.values()].filter(c => c.id !== LOCAL_CLIENT_ID).map(view), targets: [...this.targets.values()].filter(t => t.connected !== false).map(t => ({ id: t.id, title: t.title, window: t.owner })) }
   }
 }

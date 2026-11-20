@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const Module = require('node:module')
 const ts = require('typescript')
 const { Subject } = require('rxjs')
+const { execFileSync } = require('node:child_process')
 
 class FakeTab {
   constructor (title) { this.title = title; this.topmostParent = null; this.hostView = { rootNodes: [{ textContent: 'Settings content' }] } }
@@ -113,6 +114,118 @@ function snapshotLatencyFixture (t) {
     },
   }
 }
+
+test('SSH send_input uses the actual pane only after a current OSC prompt and no subsequent input', async t => {
+  const terminal = new FakeTerminal('SSH', ['prompt'])
+  terminal.profile.type = 'ssh'
+  terminal.sshSession = { open: true }
+  const input = new Subject()
+  terminal.session.middleware = { outputToSession$: input }
+  const app = { tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject() }
+  const tools = new TabbyTabToolsService(app, new CodexTerminalOutputService(app))
+  t.after(() => tools.ngOnDestroy())
+  const run = () => tools.callTerminal('send_input', { text: 'pwd', submit: true }, terminal, { owner: 'mcp:fixture', allowTakeover: false })
+  const prompt = () => terminal.session.output$.next('\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07remote> \x1b]133;B\x07')
+  assert.equal((await run()).blocked, true)
+  terminal.session.output$.next('\x1b]133;C\x07')
+  input.next(Buffer.from('typeahead'))
+  terminal.session.output$.next('\x1b]133;D;0\x07\x1b]133;A\x07remote> \x1b]133;B\x07')
+  assert.equal((await run()).blocked, true)
+  prompt()
+  input.next(Buffer.from('partial input'))
+  assert.equal((await run()).blocked, true)
+  prompt()
+  assert.equal((await run()).sent, true)
+  assert.deepEqual(terminal.sent, ['pwd\r'])
+})
+
+test('external Tabby management uses native APIs and omits renderer IDs and profile options', async t => {
+  const terminal = new FakeTerminal('before', ['ready'])
+  terminal.setTitle = title => { terminal.title = title }
+  terminal.canClose = async () => true
+  const app = { tabs: [terminal], tabsChanged$: new Subject(), activeTabChange$: new Subject(),
+    emitTabsChanged () { this.tabsChanged$.next() },
+    selectTab (tab) { this.activeTab = tab },
+    duplicateTab: async () => new FakeTerminal('duplicate', []),
+    closeTab: async () => { app.tabs = [] },
+  }
+  const capabilities = { call: async (name, _args, _tab, check) => {
+    if (name === 'list_profiles') return [{ id: 'ssh-one', name: 'SSH', type: 'ssh', options: { secret: 'hidden' } }]
+    check(); return { opened: true, title: 'new', tabId: 'renderer-secret' }
+  } }
+  const tools = new TabbyTabToolsService(app, new CodexTerminalOutputService(app), capabilities)
+  t.after(() => tools.ngOnDestroy())
+  const context = { owner: 'mcp:fixture', signal: new AbortController().signal, beforeInput () {}, onInput () {} }
+  const run = (action, extra) => tools.callMcpOperation('manage_tab', { action, ...extra }, terminal, context)
+  assert.deepEqual(await run('list_profiles'), { profiles: [{ id: 'ssh-one', name: 'SSH', type: 'ssh' }] })
+  assert.deepEqual(await run('open_profile', { profileId: 'ssh-one' }), { opened: true })
+  assert.deepEqual(await run('rename', { title: 'after' }), { title: 'after' })
+  assert.deepEqual(await run('select'), { selected: true })
+  assert.equal(app.activeTab, terminal)
+  assert.deepEqual(await run('duplicate'), { opened: true })
+  terminal.profile.type = 'ssh'; terminal.session.open = false; terminal.reconnectOffered = true
+  terminal.reconnect = async () => { terminal.session = { open: true } }
+  assert.deepEqual(await run('reconnect'), { reconnectRequested: true, connected: true })
+  assert.deepEqual(await run('close'), { closed: true })
+})
+
+test('exit observation associates split shell events with this single submission', async t => {
+  const { terminal, tools } = snapshotLatencyFixture(t)
+  const send = terminal.sendInput.bind(terminal)
+  terminal.sendInput = value => {
+    send(value)
+    terminal.session.output$.next('\x1b]133;D;99\x07\x1b]133;A\x07')
+    terminal.session.output$.next('\x1b]133;C\x07\x1b]133;')
+    terminal.session.output$.next('D;1\x1b\\\x1b]133;A\x07')
+  }
+  const result = await tools.callTerminal('send_input', { text: 'false', submit: true, waitForExitMs: 5000 }, terminal, { owner: 'mcp:fixture' })
+  assert.equal(result.exitCode, 1)
+  assert.equal(result.userInputLocked, false)
+  assert.deepEqual(terminal.sent, ['false\r'])
+})
+
+test('waiting for a missing exit code returns null and leaves the command owned', async t => {
+  const { terminal, tools } = snapshotLatencyFixture(t)
+  const result = await tools.callTerminal('send_input', { text: 'sleep 1', submit: true, waitForExitMs: 10 }, terminal, { owner: 'mcp:fixture' })
+  assert.equal(result.exitCode, null)
+  assert.equal(result.userInputLocked, true)
+  assert.deepEqual(terminal.sent, ['sleep 1\r'])
+  tools.releaseOwner('mcp:fixture')
+  terminal.sendInput('user')
+  assert.deepEqual(terminal.sent, ['sleep 1\r', 'user'])
+})
+
+test('release settles a pending exit observation without sending more terminal input', async t => {
+  const { terminal, tools } = snapshotLatencyFixture(t)
+  let submitted
+  const sent = new Promise(resolve => { submitted = resolve })
+  const send = terminal.sendInput.bind(terminal)
+  terminal.sendInput = value => { send(value); submitted() }
+  const pending = tools.callTerminal('send_input', { text: 'sleep 10', submit: true, waitForExitMs: 5000 }, terminal, { owner: 'mcp:fixture' })
+  await sent
+  tools.releaseOwner('mcp:fixture')
+  assert.equal((await pending).exitCode, null)
+  assert.deepEqual(terminal.sent, ['sleep 10\r'])
+})
+
+test('POSIX exit observation runs the actual wrapper in sh and preserves quoting and exit status', { skip: process.platform === 'win32' }, async t => {
+  const { terminal, tools } = snapshotLatencyFixture(t)
+  const send = terminal.sendInput.bind(terminal)
+  const outputs = []
+  terminal.sendInput = value => {
+    send(value)
+    const output = execFileSync('/bin/sh', ['-c', value.slice(0, -1)], { encoding: 'utf8' })
+    outputs.push(output)
+    terminal.session.output$.next(output)
+  }
+  for (const [text, exitCode] of [["printf '%s' \"a'b\"", 0], ['false', 1]]) {
+    const result = await tools.callTerminal('send_input', { text, submit: true, waitForExitMs: 5000, exitCodeShell: 'posix' }, terminal, { owner: 'mcp:fixture' })
+    assert.equal(result.exitCode, exitCode)
+    tools.releaseOwner('mcp:fixture')
+  }
+  assert.match(outputs[0], /^a'b\x1b\]1337;TabbyAIExit=/)
+  assert.equal(terminal.sent.length, 2)
+})
 
 for (const beforeRead of [false, true]) test(`snapshot wakes on unread output without shell integration (already arrived: ${beforeRead})`, { timeout: 3000 }, async t => {
   const f = snapshotLatencyFixture(t)

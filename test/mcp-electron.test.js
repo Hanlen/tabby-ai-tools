@@ -105,6 +105,122 @@ test('local token-free access automatically reaches all tabs and routes to their
   assert.equal(restored.localClient.mode, 'auto')
 })
 
+test('SSH operations require live targets, SFTP requires approval, and reconnect retires an offline ID', async t => {
+  const f = fixture(t), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  await f.invoke(a, { type: 'enabled', enabled: true })
+  const register = targets => f.invoke(a, { type: 'targets', targets })
+  const native = { key: 'ssh', session: 'first', title: 'SSH' }
+  let state = await register([native])
+  let tabId = state.targets[0].id
+  const child = f.children[0]
+  const call = (id, tool, args) => child.emit('message', { type: 'tool', id, clientId: 'local', revision: state.localClient.revision, tool, args: { tabId, ...args } })
+  const reply = (id, result) => f.ipc.emit(CHANNEL + '-reply', { sender: a, senderFrame: a.mainFrame }, { id, value: result })
+  const result = async id => {
+    await new Promise(setImmediate)
+    return child.messages.find(message => message.type === 'tool-result' && message.id === id)
+  }
+  const execution = tool => a.sent.findLast(item => item.message.type === 'execute' && item.message.tool === tool)?.message
+
+  call('exec', 'ssh_exec', { command: 'pwd' })
+  reply(execution('ssh_exec').id, { stdout: '/home/user', exitCode: 0 })
+  assert.equal((await result('exec')).value.leaseId, undefined)
+  const requestId = '3f5c1181-1234-4e89-a123-123456789abc'
+  call('file', 'sftp_transfer', { requestId, direction: 'download', localPath: path.join(os.tmpdir(), 'result'), remotePath: '/tmp/input' })
+  assert.equal((await result('file')).value.status, 'awaiting_approval')
+  assert.equal(execution('sftp_transfer'), undefined)
+  state = await f.invoke(a, { type: 'state' })
+  assert.equal(state.approvals[0].tool, 'sftp_transfer')
+  await f.invoke(a, { type: 'decide', id: state.approvals[0].id, accept: false })
+  call('file-status', 'sftp_status', { transferId: requestId })
+  assert.equal((await result('file-status')).value.code, 'approval_denied')
+  assert.equal(execution('sftp_transfer'), undefined)
+
+  state = await register([{ ...native, session: 'disconnected', connected: false }])
+  call('old', 'ssh_exec', { command: 'pwd' })
+  assert.equal((await result('old')).error, 'permission_denied')
+  call('listing', 'list_tabs', {})
+  const tabs = (await result('listing')).value
+  assert.equal(tabs[0].connected, false)
+  tabId = tabs[0].tabId
+  call('offline', 'ssh_exec', { command: 'pwd' })
+  assert.equal((await result('offline')).error, 'target_closed')
+  call('reconnect', 'manage_tab', { action: 'reconnect' })
+  state = await f.invoke(a, { type: 'state' })
+  await f.invoke(a, { type: 'decide', id: state.approvals[0].id, accept: true })
+  const reconnect = execution('manage_tab')
+  state = await register([{ ...native, session: 'second' }])
+  reply(reconnect.id, { reconnectRequested: true, connected: true })
+  assert.equal((await result('reconnect')).value.connected, true)
+  assert.notEqual(state.targets[0].id, tabId)
+  tabId = state.targets[0].id
+  call('close', 'manage_tab', { action: 'close' })
+  state = await f.invoke(a, { type: 'state' })
+  await f.invoke(a, { type: 'decide', id: state.approvals[0].id, accept: true })
+  const close = execution('manage_tab')
+  await register([])
+  reply(close.id, { closed: true })
+  assert.equal((await result('close')).value.closed, true)
+})
+
+test('SFTP survives a lost submission reply, deduplicates retries, and has a separate execution budget', async t => {
+  const f = fixture(t), a = f.owner(1)
+  await f.invoke(a, { type: 'register' })
+  await f.invoke(a, { type: 'enabled', enabled: true })
+  const state = await f.invoke(a, { type: 'targets', targets: [{ key: 'ssh', session: 's', title: 'SSH' }] })
+  const reader = await f.invoke(a, { type: 'add', name: 'Other' })
+  const other = (await f.invoke(a, { type: 'state' })).clients.find(client => client.id === reader.id)
+  const child = f.children[0]
+  const requestId = '3f5c1181-1234-4e89-a123-123456789abc'
+  const args = { tabId: state.targets[0].id, requestId, direction: 'upload', localPath: path.join(os.tmpdir(), 'sample.bin'), remotePath: '/remote' }
+  const send = (id, tool, args, client = state.localClient) => child.emit('message', { type: 'tool', id, clientId: client.id, revision: client.revision, tool, args })
+  const outcome = async id => {
+    await new Promise(setImmediate)
+    return child.messages.find(message => message.type === 'tool-result' && message.id === id)
+  }
+  const status = id => send(id, 'sftp_status', { transferId: requestId })
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  try {
+    send('submit', 'sftp_transfer', args)
+    child.emit('message', { type: 'cancel', id: 'submit' })
+    send('retry', 'sftp_transfer', args)
+    const expectedPath = '/remote/.tabby-mcp-' + requestId + '/sample.bin'
+    assert.equal((await outcome('retry')).value.remotePath, expectedPath)
+    send('conflict', 'sftp_transfer', { ...args, remotePath: '/other' })
+    send('unauthorized', 'sftp_status', { transferId: requestId }, other)
+    assert.equal((await outcome('conflict')).error, 'transfer_conflict')
+    assert.equal((await outcome('unauthorized')).error, 'transfer_not_found')
+    const pending = await f.invoke(a, { type: 'state' })
+    assert.equal(pending.approvals.length, 1)
+    assert.match(pending.approvals[0].input, /sample\.bin/)
+    t.mock.timers.tick(24000)
+    await f.invoke(a, { type: 'decide', id: pending.approvals[0].id, accept: true })
+    t.mock.timers.tick(35000)
+    status('running')
+    assert.equal((await outcome('running')).value.status, 'running')
+    const operations = a.sent.filter(item => item.message.type === 'execute')
+    assert.equal(operations.length, 1)
+    assert.equal(operations[0].message.args.remotePath, expectedPath)
+    f.ipc.emit(CHANNEL + '-reply', { sender: a, senderFrame: a.mainFrame }, { id: operations[0].message.id, value: { bytes: 9, hash: 'a'.repeat(64), transport: 'exec-binary' } })
+    await new Promise(setImmediate)
+    status('done')
+    assert.deepEqual((await outcome('done')).value, { transferId: requestId, status: 'completed', direction: 'upload', localPath: args.localPath, remotePath: expectedPath, bytes: 9, hash: 'a'.repeat(64), transport: 'exec-binary' })
+
+    const timeoutId = '3f5c1181-1234-4e89-a123-123456789abd'
+    send('slow', 'sftp_transfer', { ...args, requestId: timeoutId, allowPtyFallback: true })
+    const slow = (await f.invoke(a, { type: 'state' })).approvals[0]
+    assert.match(slow.input, /nested SSH host/)
+    await f.invoke(a, { type: 'decide', id: slow.id, accept: true })
+    t.mock.timers.tick(90000)
+    await new Promise(setImmediate)
+    send('slow-status', 'sftp_status', { transferId: timeoutId })
+    const unknown = (await outcome('slow-status')).value
+    assert.equal(unknown.status, 'unknown')
+    assert.equal(unknown.remotePath, '/remote/.tabby-mcp-' + timeoutId + '/sample.bin')
+    assert.ok(a.sent.some(item => item.message.type === 'cancel'))
+  } finally { t.mock.timers.reset() }
+})
+
 test('reading current connection instructions and checking skill conflicts do not change live grants or restart the utility', async t => {
   const f = fixture(t), a = f.owner(1)
   await f.invoke(a, { type: 'register' })

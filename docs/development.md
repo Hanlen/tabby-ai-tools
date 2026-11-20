@@ -256,3 +256,5 @@ Codex browser sign-in retains completion notifications received before the login
 
 
 Header actions share `.codex-header-action`: 32px border-box targets, 16px inline SVGs, theme colors, stable hover/pressed/focus states and reduced-motion progress. The optional Codex account disclosure retains outside/focus dismissal and Escape return-focus; Arrow Down opens it and focuses the first enabled action. Reconnect retains existing busy/request guards. Collapse keeps the running session. Validate actual button rectangles and menu actions in both themes, narrow panes and RTL; stub authentication and reconnection in UI checks to avoid account changes or paid model requests.
+
+CLI account-menu regression: verify Codex → Claude Code → Codex and API transitions, including stale failed-target authentication warnings. The header targets the current backend; Claude uses the existing selected-space login-command/check dialog and never inherits Codex account status. Keep busy/request guards and verify draft preservation with no task/tool replay.

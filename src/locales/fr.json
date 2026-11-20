@@ -3,6 +3,7 @@
   "退出登录": "Se déconnecter",
   "取消登录": "Annuler la connexion",
   "Codex 登录菜单": "Menu de connexion à Codex",
+  "{0} 登录菜单": "Menu de connexion à {0}",
   "Codex 独立空间已登录。": "Connecté à l’espace privé de Codex.",
   "已退出 Codex 独立空间。": "Déconnecté de l’espace privé de Codex.",
   "请在浏览器完成 Codex 登录。": "Terminez la connexion à Codex dans votre navigateur.",

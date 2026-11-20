@@ -53,3 +53,17 @@ test('renderer lease deadline restores its own input even if main can no longer 
  await assert.rejects(f.adapter.execute(f.request,new AbortController().signal),{code:'invalid_lease'})
  assert.equal(f.adapter.timers.size,0)
 })
+
+test('the exit-code request is scoped to single submitted commands and preserves zero and unknown', async t => {
+ const f=fixture(t), signal=new AbortController().signal
+ const request={...f.request,args:{...f.request.args,waitForExitMs:50}}
+ for(const input of [{mode:'stdin'},{submit:false},{text:'true\nfalse'},{waitForExitMs:5001},{exitCodeShell:'other'}]) {
+  await assert.rejects(f.adapter.execute({...request,args:{...request.args,...input}},signal),{code:'permission_denied'})
+ }
+ for(const [reported,expected] of [[0,0],[1,1],[undefined,null],[-1,null]]) {
+  f.setHandler(async()=>({sent:true,exitCode:reported}))
+  assert.equal((await f.adapter.execute(request,signal)).exitCode,expected)
+ }
+ assert.equal(f.calls.length,4)
+ assert.equal(f.calls[0][1].waitForExitMs,50)
+})

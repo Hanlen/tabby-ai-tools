@@ -179,7 +179,7 @@ for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`client observation c
 for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`real HTTP read-only end-to-end with real output service: ${JSON.stringify(mode)}`, async t => {
   const f = await httpFixture(t, mode)
   const tools = (await f.client.listTools()).tools.map(t => t.name).sort()
-  assert.deepEqual(tools, ['attach_process', 'get_capabilities', 'list_tabs', 'read_skill', 'read_tab', 'release_tab', 'send_input', 'send_keys'])
+  assert.deepEqual(tools, ['attach_process', 'get_capabilities', 'list_tabs', 'manage_tab', 'read_skill', 'read_tab', 'release_tab', 'send_input', 'send_keys', 'sftp_status', 'sftp_transfer', 'ssh_exec'])
   assert.deepEqual(value(await f.client.callTool({ name: 'list_tabs', arguments: {} })).map(t => t.tabId), [f.targets[0]])
   f.terminal.session.output$.next('\x1b[32mreal subscription output\x1b[0m')
   const snapshot = value(await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0] } }))
@@ -192,6 +192,9 @@ for (const mode of ['legacy', { pin: '2026-07-28' }]) test(`real HTTP read-only 
   const malformed = await f.client.callTool({ name: 'read_tab', arguments: { tabId: f.targets[0], owner: 'forged' } })
   assert.equal(malformed.isError, true)
   assert.equal(value(await f.client.callTool({ name: 'send_input', arguments: { tabId: f.targets[0], text: 'pwd' } })).code, 'permission_denied')
+  for (const [name, args] of [['ssh_exec', { command: 'pwd' }], ['manage_tab', { action: 'rename', title: 'test' }], ['sftp_transfer', { requestId: '3f5c1181-1234-4e89-a123-123456789abc', direction: 'download', localPath: '/tmp/sample', remotePath: '/tmp/sample' }]]) {
+    assert.equal(value(await f.client.callTool({ name, arguments: { tabId: f.targets[0], ...args } })).code, 'permission_denied')
+  }
   for (const name of ['send_input', 'send_keys', 'attach_process', 'release_tab', 'list_logs', 'close_tab']) await invalidCall(f.client.callTool({ name, arguments: {} }))
 })
 test('client-bound cursors reject sharing, tampering, different target and changed grant generation', async t => {
@@ -362,7 +365,7 @@ for (const authentication of ['bearer', 'local']) for (const mode of ['legacy', 
   policy.enabled = true
   if (authentication === 'bearer') { policy.setScope(grant.id, [targets[0]]); policy.setMode(grant.id, 'auto') }
   const calls = []
-  const server = await startMcpServer(async (id, revision, tool, args) => { policy.authorize(id, revision, args.tabId); calls.push({ tool, args }); return { sent: true, leaseId: 'server-issued' } }, policy.snapshot())
+  const server = await startMcpServer(async (id, revision, tool, args) => { policy.authorize(id, revision, args.tabId); calls.push({ tool, args }); return { sent: true, leaseId: 'server-issued', ...(args.waitForExitMs ? { exitCode: 1 } : {}) } }, policy.snapshot())
   const client = new Client({ name: 'writer', version: '1' }, { versionNegotiation: { mode } })
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), { requestInit: { headers: grant.token ? { Authorization: 'Bearer '+grant.token } : {} } }))
   t.after(async () => { await client.close(); await server.close() })
@@ -371,6 +374,11 @@ for (const authentication of ['bearer', 'local']) for (const mode of ['legacy', 
   assert.equal(calls.length, 0)
   const sent = value(await client.callTool({ name: 'send_input', arguments: { tabId: targets[0], text: 'pwd' } }))
   assert.equal(sent.leaseId, 'server-issued'); assert.equal(calls[0].args.submit, true); assert.equal(calls[0].args.mode, 'command')
+  const observeExit = args => client.callTool({ name: 'send_input', arguments: { tabId: targets[0], text: 'false', ...args } })
+  for (const args of [{ waitForExitMs: 5001 }, { waitForExitMs: 100, mode: 'stdin' }, { waitForExitMs: 100, submit: false }, { waitForExitMs: 100, text: 'true\nfalse' }, { exitCodeShell: 'posix' }, { waitForExitMs: 100, exitCodeShell: 'posix', text: 'é'.repeat(385) }]) await invalidCall(observeExit(args))
+  assert.equal(calls.length, 1)
+  assert.equal(value(await observeExit({ waitForExitMs: 100, exitCodeShell: 'posix' })).exitCode, 1)
+  assert.equal(calls[1].args.exitCodeShell, 'posix')
   for (const [name, args] of [['send_keys', { leaseId: sent.leaseId, key: 'c', ctrl: true }], ['send_input', { text: 'answer', mode: 'stdin', leaseId: sent.leaseId }], ['release_tab', { leaseId: sent.leaseId }], ['attach_process', { expectedProcess: 'codex', purpose: 'User requested supervising this agent' }]]) assert.equal((await client.callTool({ name, arguments: { tabId: targets[0], ...args } })).isError, undefined)
   if (authentication === 'bearer') policy.setMode(grant.id, 'read_only')
   else policy.removeTarget(targets[0])
