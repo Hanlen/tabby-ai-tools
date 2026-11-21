@@ -1,173 +1,47 @@
 <div align="center">
 
-  <h1>Tabby AI Tools</h1>
-  <p>Let AI work through your terminal, across your computer and multiple servers.</p>
+<h1>Tabby AI Tools</h1>
+<p>One AI sidebar for the terminals you already have open.</p>
 
 [![Latest release](https://img.shields.io/github/v/release/Hanlen/tabby-ai-tools?style=flat-square)](https://github.com/Hanlen/tabby-ai-tools/releases/latest)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b5bf7?style=flat-square)](#install-and-start)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b5bf7?style=flat-square)](#quick-start)
 [![License](https://img.shields.io/github/license/Hanlen/tabby-ai-tools?style=flat-square)](LICENSE)
 
-[Download](https://github.com/Hanlen/tabby-ai-tools/releases/latest) · [Quick start](#install-and-start) · [Models](#multiple-model-providers-including-your-chatgpt-subscription) · [User guide](docs/guide.md) · [简体中文](README.zh-CN.md)
+[Quick start](#quick-start) · [Model connections](#model-connections) · [User guide](docs/guide.md) · [Release notes](https://github.com/Hanlen/tabby-ai-tools/releases) · [简体中文](README.zh-CN.md)
 
-<br>
-
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.png">
-    <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="A cheerful little robot typing while coordinating tasks across multiple terminal windows" width="560" height="280">
-  </picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.png">
+  <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/robot-multitask.gif" alt="A small robot coordinating work across terminals" width="176" height="88">
+</picture>
 
 </div>
 
-**Unreleased sidebar polish:** the login/logout dropdown closes on outside interaction or Escape; status summaries open details without a duplicate header button.
+## Two terminals, one task
 
-**Unreleased MCP setup fix:** preserved older skills now show token-mode guidance, the current source and copyable connection instructions. Register the generated configuration in the intended Codex space, reload the client and verify MCP tools; `auto` applies only to checked terminals. [Connection steps](docs/mcp.md).
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/two-terminal-demo.png">
+  <img src="https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/two-terminal-demo.gif" alt="In Tabby, the assistant copies brief.md from Tab 1 to Tab 2, then copies checks.txt from Tab 2 to Tab 1 and verifies both." width="1100">
+</picture>
 
-**v1.0.0: external MCP terminal connections, faster reads and private Codex sign-in.** Connect local AI clients to explicitly shared terminals with read-only or controlled input permissions. Terminal snapshots wake on fresh output; private Codex spaces support browser sign-in and bounded login-cache recovery without replaying tasks. [Release notes](docs/releases/1.0.0.md).
+*Recorded in Tabby with a local test backend. Both panes execute real commands on sample files.*
 
-**Conversation navigation and CLI recovery.** The shared Agent panel has a question index in the right scrollbar strip: hover or focus to preview a question, click to jump, and use “latest” to resume streaming follow. The centered, compact 1px lines share an 18px right strip with a draggable conversation scroll thumb, freeing the former left gutter. Previews open to the left; theme-aware ↑ / ↓ buttons appear when needed. Green means confirmed completion; pale green means an ordinary interruption without a user Stop. Blue means running or waiting for an external prerequisite. Red means a confirmed user Stop, unfinished task, or execution limit. Completed turns wait for goal confirmation; automatic continuation returns to blue. History with no known execution result remains neutral.
+- Read output and run commands across local and SSH terminal tabs from one conversation.
+- Use your existing SSH connections to transfer files. Save recurring work as workflows or schedule it while Tabby is open.
+- Connect external AI clients to Tabby’s terminal tools through [MCP](docs/mcp.md).
 
-**Unreleased restart recovery.** Codex and Claude Code try to recover the saved conversation. If a running task keeps it occupied, AI Tools can open a new session and show why in the sidebar. The original session stays in history, and recovery never resends the previous task. [Session recovery details](docs/guide.md#cli-自动发现与启动排查)
+## Quick start
 
-<br>
+1. In [Tabby](https://github.com/Eugeny/tabby), open **Settings → Plugins**, install `tabby-ai-tools`, and restart Tabby.
+2. Open **AI Tools** from the robot icon. Choose a connection or add one under **Settings → AI Tools → Connections and models**.
+3. Open the terminals you want to use. Describe the task in the sidebar and send with **Ctrl+Enter** or **Cmd+Enter**.
 
-Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.
+## Model connections
 
-![Tabby AI Tools interface illustration with Markdown tables and syntax-highlighted code blocks, alongside provider connections, task logs, scheduled tasks and settings; example content](https://raw.githubusercontent.com/Hanlen/tabby-ai-tools/main/docs/assets/overview.png)
-
-**Markdown replies.** Assistant messages and scheduled AI explanations render tables, headings, lists, quotes, links and code blocks. Wide tables and code scroll within the message; code blocks highlight labeled languages and have their own copy button, and message copy preserves the original Markdown. Formatting updates during streaming and applies to restored history. [v0.9.4 details](docs/releases/0.9.4.md).
-
-**Fixed in v0.9.2:** Codex checks known Windows companion files and permits one idle-boundary installation recovery without replaying tasks. Claude local rechecks its configured CLI before each invocation and distinguishes installation faults from logout. Existing native Linux SSH agents can be attached after independent process/PTY verification. [Release notes and limits](docs/releases/0.9.2.md).
-
-**Fixed in v0.9.1:** ordinary commands, stdin, Enter and process attachment work when workflows are idle or disabled. Active workflow budgets and cancellation checks remain enforced. Private Codex/Claude spaces inherit available local login caches; an expired login offers explicit cache recovery and reconnect without replaying tasks. Missing Codex rollouts recover only when no saved context is available. Pi repeated-compaction tests allow more time on Windows. [Release notes](docs/releases/0.9.1.md).
-
-**New in v0.9.0: image previews, incremental output and task logs.** Click a pasted image thumbnail to open a larger preview. Terminal reads support cursor paging and output waiting; task-scoped local logs provide bounded paging and literal search. Expired logs reclaim capacity, and delta reads preserve the controlled-terminal default wait. See [terminal logs](docs/terminal-logs.md) and [release notes](docs/releases/0.9.0.md).
-
-**v0.8.2 startup fix:** Codex background startup and the sidebar now share CLI discovery, preventing a false “app-server was closed during CLI discovery” alert. Concurrent Claude Code connections also share readiness checks. Clipboard files and images appear inline with thumbnails and removal. [Release notes](docs/releases/0.8.2.md).
-
-**New in v0.8.0: SSH attachments.** Paste screenshots or files directly with Ctrl+V (Cmd+V on macOS); inline attachments show image thumbnails. Click a thumbnail to open a larger preview; close it with Esc, the close button or the backdrop. Ask the assistant to upload/download through your existing SSH connection and follow native tab progress. The plugin handles every chunk and base64 fallback without model relay. Use the verified remote path for your terminal Agent; automatic Codex image attachment and sidebar visual input are not included. [Files, limits and compatibility](docs/attachments.md).
-
-<sub>Interface illustration with example tasks and connections; appearance varies with your Tabby theme and window size.</sub>
-
-Thinking and tool activity stream into collapsed entries in the conversation. Expand an entry to inspect the text returned by the service, tool arguments and results; replies stay visible. **v1.0.0 terminal reads:** default terminal reads return early on new output, including unread output received after the task's input and before the read, or reliable shell completion. Output alone does not mark a command complete; multiline scripts keep their input lock. See [terminal waiting](docs/terminal-logs.md). Thinking entries appear only after readable text arrives; Codex and supported OpenAI reasoning requests enable summaries. Selecting and copying sidebar text does not send Ctrl+C to the active terminal.
-
-**Fixed in v0.7.1:** Windows default discovery compares installed Codex CLI versions, so an older PATH entry no longer hides a newer desktop installation. Desktop upgrade paths recover automatically. See the [release notes](docs/releases/0.7.1.md).
-
-**Pi API configuration (v0.8.0):** new API connections recommend Pi SDK, with searchable native providers (including Gemini and OpenRouter), an offline SDK 1.4.0 model catalog, capability-based reasoning/output limits and four explicit custom protocols. Connection edits now use Save / Discard / Copy drafts. Existing connections keep their runtime and product presets. Local checks and paid model/tool tests are separate; OAuth/cloud identity and advanced import/export remain pending. See [Pi configuration and boundaries](docs/pi.md#unreleased-native-providers-and-connection-drafts-p0--p1).
-
-**Unreleased Claude private-login fix:** the authentication warning provides a space-specific official login command and a check/reconnect action. System OAuth caches are no longer copied; history and drafts are retained without task replay.
-
-**Custom instructions and private CLI history:** configure shared or per-connection instruction text/local AGENTS.md with previews and saved session snapshots. Unused Codex/Claude Code connections default to Tabby private history; existing CLI references retain an explicit compatibility mode. Generate a space-specific login command, check its authentication and switch when idle. See [instructions, authentication and migration](docs/instructions-sessions.md).
-
-**New in v0.7.0:** readable thinking/tool activity, safe sidebar copying and earlier terminal readback after verified command completion. See the [release notes](docs/releases/0.7.0.md) for validation and limits.
-
-Terminal takeover is automatic: unavailable foreground-process detection (including SSH) does not require a confirmation click. The agent inspects terminal output, preserves needed tasks, and can interrupt detected unrelated tasks.
-
-Terminal output is read on demand with `read_tab`; it is no longer automatically forwarded into an active turn. During backend retries, the sidebar keeps a visible waiting state with elapsed time, and shows the next retry time plus a countdown only if the backend supplies it. Stop cancels the AI turn; check the terminal and workflow checkpoint before continuing, since commands may already have completed. See [workflow recovery](docs/task-workflows.md#限流中断与恢复).
-
-**New in v0.5.0:** optional Pi SDK runtime, `/compact`, workflow archive status and conversational aliases. Select **Agent runtime → Pi SDK** in an API connection; automatic compaction is opt-in. See [setup, recovery and validation boundaries](docs/pi.md).
-
-**v0.5.1 installation fix:** Pi's SDK is now bundled with the plugin. Installing or updating through Tabby no longer installs Pi's dependency tree or requires a system `node` command. Pi now defaults to Tabby’s built-in Node in an isolated Electron utility process. No separate Node installation is needed on a compatible Tabby; an optional Node 22.19+ path is retained for compatibility.
-
-## Multiple model providers, including your ChatGPT subscription
-
-**Have a ChatGPT subscription with Codex access? Use your existing account through Codex CLI on your own computer, with no separate API key for this mode.** The plugin reuses the local Codex login. Model availability and usage limits follow your account and workspace permissions. See [OpenAI's authentication documentation](https://learn.chatgpt.com/docs/auth).
-
-| Connection | How to use it |
+| Connection | Setup |
 | --- | --- |
-| **ChatGPT subscription → local Codex** | Install Codex CLI and select **Codex (local login)**. An empty private space can import the local ChatGPT login. Use **Sign in** next to the sidebar connection button if recovery is unavailable. |
-| **Claude subscription → local Claude Code** | Install the official CLI and select **Claude Code (local login)**. Generate the selected private space’s official login command, complete it in a local terminal, then check and reconnect. Claude OAuth caches are no longer copied between spaces (unreleased fix). |
-| **OpenAI API** | Add an OpenAI connection with an API key, Base URL, and model ID. |
-| **DeepSeek** | Add a DeepSeek API connection and choose the model and Thinking settings. |
-| **GLM / Zhipu** | Add a GLM API connection using the endpoint and model available to your account. |
-| **Kimi API** | Select **Kimi API**, choose China mainland or International, and use an open-platform key. |
-| **Kimi Coding Plan** | Select **Kimi Coding Plan**, choose the region, and use a Kimi Code membership key. |
-| **Alibaba Cloud Coding Plan** | Select the dedicated Coding Plan provider and region, then use its plan key (`sk-sp-`). |
-| **Claude / Anthropic** | Add a Claude API connection with its API key and model ID. |
-| **Custom OpenAI-compatible service** | Select **Custom (OpenAI compatible)**, enter a Base URL and model ID, and choose Chat Completions (default) or Responses. Use a direct key, an environment variable, or no key for services without authentication. |
+| **ChatGPT via Codex CLI** | Install Codex CLI, run `codex login` with a ChatGPT account that has Codex access, and select **Codex (local login)**. This mode uses your ChatGPT entitlement. [Codex sign-in](https://learn.chatgpt.com/docs/auth#codex-cli) |
+| **Claude Code local login** | Install Claude Code. For a private session space, generate its login command in AI Tools, run it in a local terminal, then check and reconnect. [Claude Code setup](docs/claude-code.md) |
+| **OpenAI, DeepSeek, GLM, or Claude API** | Add the provider in AI Tools and enter its API key and model ID. |
+| **Kimi, Alibaba Cloud Coding Plan, or a custom endpoint** | Choose a provider preset or configure an endpoint and model. [Coding plans](docs/coding-plans.md) · [Pi and custom connections](docs/pi.md) |
 
-**Claude Code subscription support is available in v0.4.1.** The plugin runs the local official CLI without reading or saving subscription credentials. Entitlements, limits, and authentication follow the CLI; API keys or cloud configuration may use separate billing. See [setup and limitations](docs/claude-code.md). A real subscription end-to-end run remains unverified.
-
-Kimi and Alibaba Cloud Coding Plan connections are available in v0.4.1, with separate China mainland and international presets. See [endpoints, keys and setup](docs/coding-plans.md). Plans are for personal interactive coding; use an appropriate ordinary API for unattended schedules. Real plan access and quota deduction remain unverified.
-
-Choose a model, then choose reasoning effort in the sidebar model picker, including for API connections and Claude Code. Provider defaults and manual effort values are available. API and Claude Code goals continue automatically by default without asking you to click Continue; stop controls, token budgets, and explicitly configured tool limits still apply.
-
-Save multiple named connections and switch them in the sidebar. Discover available models or enter a model ID manually. API connections use the selected provider's credentials and billing plan; they can be used without Codex CLI. Compatible proxies must implement the selected provider's protocol.
-
-Custom connections are available in v0.4.1. For example, use `https://gateway.example/v1` or `http://localhost:1234/v1` as the Base URL, without `/chat/completions` or `/responses`. Terminal tasks require SSE streaming and function calling; model discovery uses `/models` with manual entry as a fallback. HTTP is restricted to loopback addresses. See [custom connection setup and limitations (中文)](docs/guide.md#自定义-openai-兼容接口).
-
-## Work with servers on a private network
-
-Your servers do not need internet access. If your computer can reach the AI service and connect to the servers through Tabby, the assistant can use their SSH terminals to inspect logs, troubleshoot, run commands, and verify results. No server-side AI Agent is required. Terminal content needed for analysis is sent from your computer to your selected model service.
-
-## Coordinate servers without installing an Agent on each one
-
-Use Tabby's connections and signed-in accounts to inspect and operate different servers through tabs and split panes. There is no need to install an Agent, configure a model, or manage separate Agent login credentials on every server.
-
-## Enter sudo passwords yourself, then continue
-
-When elevated access is needed, manually run `sudo ls` or `sudo -v` in the same terminal on the target server and enter your password there. Let the assistant continue afterward without sharing the password with the model. Authentication reuse and expiry follow the server's sudo configuration.
-
-## Start with your local ChatGPT subscription login
-
-1. Install [Codex CLI](https://learn.chatgpt.com/docs/cli) on the computer running Tabby.
-2. Open **Settings → AI Tools → Connections & models → Codex → CLI session storage**. An empty private space can import your local ChatGPT login. If it cannot recover an expired login, open the account button at the top right of the sidebar and choose **Sign in**. You can also generate a login command for the selected space in Settings. Unused connections default to a private space. For an existing **System space (legacy compatibility)** connection, the ordinary commands are:
-
-   ```bash
-   codex login
-   codex login status
-   ```
-
-3. AI Tools opens automatically when Tabby starts, using **Codex (local login)** by default. Reconnect after logging in to the selected space, then choose a model available to your account or use the Codex default.
-
-For a private Codex space, the account menu also offers official browser sign-in and local sign-out. Automatic cache recovery accepts only a newer imported credential for the same user/workspace; explicit sign-in or sign-out disables imports. Tasks are never resent.
-
-Only your computer needs this Codex installation and login. The assistant can then use your existing Tabby SSH terminals to work on servers; those servers do not need their own ChatGPT login or AI Agent installation.
-
-Automatic discovery covers standalone installations (including `CODEX_INSTALL_DIR` and `CODEX_HOME/packages/standalone/current/bin`), Homebrew and npm global prefixes, and compatible Codex binaries in VS Code extensions as a final fallback. On macOS, it checks `ChatGPT.app/Contents/Resources/codex-cli/bin/codex` and the older `Contents/Resources/codex` entry under `/Applications` and `~/Applications`, including the former `Codex.app` name. For other locations, set the full path in **Settings → AI Tools → Connections & models → Codex → CLI path & working directory**. See the [discovery matrix (中文)](docs/guide.md#cli-自动发现与启动排查).
-
-On Windows, leave the Codex CLI executable blank (or `codex`) to compare actual versions across PATH, desktop, standalone and known npm installations and select the newest discovered CLI. Upgrades are rescanned on each new connection. Explicit file paths keep a fixed version; a stable `OpenAI\Codex\bin` directory limits comparison to that installation. See the [discovery guide](docs/guide.md#cli-自动发现与启动排查).
-
-Valid explicit CLI selectors keep their priority. In v0.9.4, unavailable saved Codex paths or commands are cleared and saved, then automatic discovery runs once; existing session history is retained. New configurations leave the CLI field blank; `codex` has the same discovery behavior. See [recovery behavior and limits](docs/codex-installation-recovery.md).
-
-## Orchestrate tasks in natural language
-
-Describe the targets, order, conditions, and verification criteria. The assistant can work through multiple servers and steps, using terminal feedback to guide each action. For example:
-
-> Check application-to-database connectivity on staging-app and staging-db. Verify the database first, then inspect the application configuration. Explain any issue before asking me to authorize a fix, and verify the application health check afterward.
-
-Workflows can branch based on observed results and interact with other terminal Agents. Start a recording with `/remember TASK`. After successful completion, give the workflow an alias such as `task1` (in the sidebar or by asking the assistant to save it); send `/task1` to execute it again with fresh environment checks. Each step retains the server IP, stable connection/server ID, operation path and completion checks. Multi-server steps follow their saved order; a result checkpoint must confirm the preceding step before the next operation. The assistant can query recording/archive status and save aliases with `workflow_status` / `workflow_set_alias`; checkpoint success alone does not guarantee archival, and rejection reasons are shown. Ordinary tasks are not recorded and cannot be saved retroactively. Workflows containing sudo ask you to authenticate with `sudo -v` or `sudo ls` in each execution terminal, then keep that terminal’s credentials refreshed during the task. [Orchestration and reuse guide (中文)](docs/guide.md#任务编排与多服务器协作).
-
-Interactive `/remember` workflows retain conditional rules and response intent for stdin, keys, process attachment and sidebar questions. The runtime handles saved if/else conditions locally, uses an optional helper model on the current connection for uncertain interactions, and resumes the pending step. Configure it in **AI Tools → Tasks & workflows → Workflows & preferences → Interaction helper model**. Helper usage counts toward the task budget; missing machine checks return to the main model for verification. [Conditional workflow details (中文)](docs/task-workflows.md#条件与交互流程). In v0.9.4, recordings preserve complete commands and multiline scripts up to the terminal’s 10,000-character limit. Fixed steps use machine checks; `policy.decision` returns to the main AI before a step that requires live judgment, then scripted execution resumes.
-
-## Schedule checks, decisions, actions, and verification
-
-Create one-time, interval, or daily tasks with an explicit timezone in chat. For example:
-
-> Every day at 09:00 Asia/Shanghai, check service health on the server in the production profile. If unhealthy, analyze logs and attempt repairs within the authorized scope, at most three times. Recheck after each action and record the result.
-
-Use `/schedules` to inspect plans and run records, pause or resume, run immediately, or stop a run. Delete tasks in Settings. Saved tasks reload after restart and **run only while Tabby is open**. Unattended runs stop and record the reason when secrets or additional authorization are required. [Scheduled task guide (中文)](docs/scheduled-tasks.md).
-
-## Install and start
-
-**External MCP (v1.0.0, controlled-input preview):** Settings → AI Tools → External AI connections (MCP) exposes explicitly selected terminals to local clients. Clients start read-only; choose per-operation confirmation or automatic operations to use `send_input`, `send_keys`, `attach_process` and `release_tab`. Input shares the sidebar/scheduler controller, never automatically interrupts a foreground task, and uses client-bound leases. Revocation or lease expiry releases input without killing a command. It uses Tabby's runtime and works with the sidebar closed; configuration snippets are merged manually. Linux Tabby/Codex read-only acceptance is recorded; controlled-input validation and remaining platform/client boundaries are detailed in the guide. Included in v1.0.0. [Setup and limits](docs/mcp.md). A portable `tabby-mcp` Agent Skill helps local agents find the service and pairing route; it does not configure or authorize an MCP client.
-
-The sidebar header uses matching 32px icon buttons for reconnect, the current CLI account menu (when available), and collapse. The menu follows the selected private CLI space: Codex shows sign-in status and browser login/sign-out; Claude Code offers its official login command and a login check with reconnect. Arrow Down focuses its action and Escape closes it and returns focus. Connection progress respects reduced-motion preferences.
-
-**Unreleased: MCP SSH and file operations.** Run a command in an independent native SSH channel or use the actual tab shell when its prompt is verified. Manage terminal panes and saved connections, and transfer verified files through the sidebar’s SFTP-first transport order with a queryable receipt. [SSH, tabs and transfers](docs/mcp.md#work-with-ssh-terminal-panes-and-files).
-
-**Unreleased: MCP command exit codes.** Add `waitForExitMs` to a submitted single-line `send_input` call to observe the shell exit code; use `read_tab` for output. [Exit-code options and limits](docs/mcp.md#observe-a-commands-exit-code).
-
-**Unreleased: token-free local MCP.** Enable the service and copy the URL-only configuration; no client creation, token issuance, permission selection or tab selection is needed. Local programs share automatic read/write access to all terminal tabs, including newly opened and reconnected tabs, and share input leases. Optional bearer clients remain available. See the [updated setup](docs/mcp.md).
-
-
-The redesigned settings page groups **Connections & models**, **Tasks & workflows**, **External AI connections (MCP)** and **General**. A compact connection picker gives the editor the available width, up to 1080px. Models and permissions appear first; CLI paths, custom instructions, session storage, workflow preferences and helper models expand only when needed. Default connection and language live under General, with startup and log switches folded below. Connection drafts still require Save; instructions and session storage retain their own Save actions. This layout is an unreleased local change.
-
-1. In Tabby, open **Settings → Plugins**, find **`tabby-ai-tools`**, and install it. Click Tabby's **Restart the app to apply changes** prompt when ready; installations and updates take effect after the restart.
-2. Use your local Codex login, or add an API connection under **Settings → AI Tools**.
-3. AI Tools opens automatically after restart. Open the target terminal, describe a task in the sidebar, and send with **Ctrl+Enter / Cmd+Enter**. Use the robot icon to reopen a hidden sidebar. To disable automatic opening, uncheck **Open AI Tools when Tabby starts** in **Settings → AI Tools → General → Startup & logs**; an existing opt-out is preserved.
-
-**[Full configuration and user guide (中文) →](docs/guide.md)** covers prerequisites, source installation, connections, models, permissions, sudo, orchestration, all feature entry points, and troubleshooting.
-
-One bundled [Tabby skill](skills/tabby/SKILL.md) retains all feature entry points for the model. The build embeds it, installation includes it, and the plugin supplies it to Codex and API models automatically. No separate skill installation is required.
-
-[Development (中文)](docs/development.md) · [Validation scope (中文)](VALIDATION.md) · [Issues](https://github.com/Hanlen/tabby-ai-tools/issues) · [MIT](LICENSE)
+[Workflows](docs/task-workflows.md) · [Scheduled tasks](docs/scheduled-tasks.md) · [Development](docs/development.md)

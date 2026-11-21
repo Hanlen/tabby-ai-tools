@@ -1,5 +1,7 @@
 # Unreleased
 
+- Simplify both READMEs and replace the overview illustration on the project page with a six-second Tabby recording of a two-way file handoff using a local test backend.
+
 - Share the sidebar attachment transport selection with MCP file transfers and report the successful transport in the receipt.
 
 - Invalidate SSH prompt evidence on typeahead, preserve pane grants during split wrapping, and give SFTP submissions queryable receipts and a separate post-approval execution deadline.
