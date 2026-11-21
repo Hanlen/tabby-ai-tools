@@ -87,9 +87,25 @@ test('resume waits for a retiring writer without replacing history or submitting
   assert.equal(settings.tabToolThreads['/project'], 'saved')
 })
 
-test('writer recovery is bounded and never replaces a busy thread or retries an unknown transport result', async () => {
+test('writer recovery opens a fresh thread after bounded retries without touching the occupied thread', async () => {
+  const service = new CodexService(), calls = [], notices = []
+  service.client.connected = true
+  const settings = { model: 'chosen', tabToolThreads: { '/project': 'saved' } }
+  service.client.request = async (method, params) => {
+    calls.push({ method, params })
+    if (method === 'thread/resume') throw Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 })
+    assert.equal(method, 'thread/start')
+    return { thread: { id: 'fresh' } }
+  }
+  assert.equal(await service.openThread('/project', settings, 'saved', notice => notices.push(notice)), 'fresh')
+  assert.deepEqual(calls.map(call => call.method), ['thread/resume', 'thread/resume', 'thread/resume', 'thread/resume', 'thread/start'])
+  assert.equal(calls.at(-1).params.model, 'chosen')
+  assert.equal(settings.tabToolThreads['/project'], 'fresh')
+  assert.deepEqual(notices, ['new-session'])
+})
+
+test('writer recovery leaves the saved thread alone on unknown transport results and unrelated errors', async () => {
   for (const failure of [
-    Object.assign(new Error('thread saved already has an active writer'), { rpcRejected: true, code: -32600 }),
     new Error('thread saved already has an active writer: observation timed out'),
     Object.assign(new Error('permission denied'), { rpcRejected: true, code: -32600 }),
   ]) {
@@ -98,11 +114,64 @@ test('writer recovery is bounded and never replaces a busy thread or retries an 
     service.client.request = async method => { calls.push(method); throw failure }
     const settings = { model: '', tabToolThreads: { '/project': 'saved' } }
     await assert.rejects(service.openThread('/project', settings, 'saved'), error => error === failure)
-    assert.equal(calls.length, failure.rpcRejected && failure.message.includes('active writer') ? 4 : 1)
+    assert.equal(calls.length, 1)
     assert.ok(calls.every(method => method === 'thread/resume'))
     assert.equal(settings.tabToolThreads['/project'], 'saved')
   }
 })
+
+for (const mode of ['interrupt', 'interrupt-fails', 'missing-turn-id', 'already-attached', 'server-changes', 'before-start', 'storage-error']) {
+  test(`startup recovery handles a busy pre-upgrade Codex session (${mode})`, async () => {
+    const service = new CodexService(), calls = [], notices = [], saved = new Map()
+    service.client.connected = true
+    service.client.generation = 1
+    const settings = { model: 'chosen', tabToolThreads: { '/project': 'old' } }
+    let status = 'inProgress'
+    service.client.request = async (method, params, beforeSend) => {
+      if (mode === 'before-start' && method === 'thread/start') service.client.generation++
+      beforeSend?.()
+      calls.push({ method, params })
+      const thread = { id: 'old', cwd: '/project', status: { type: status === 'inProgress' ? 'active' : 'idle' }, historyMode: 'paginated' }
+      if (method === 'thread/resume' || method === 'thread/read') return { thread }
+      if (method === 'thread/turns/list') return { data: mode === 'missing-turn-id' ? [] : [{ id: 'old-turn', status,
+        items: [{ id: 'question', type: 'userMessage', content: [{ type: 'text', text: 'original question' }] }] }] }
+      if (method === 'turn/interrupt') {
+        assert.deepEqual(params, { threadId: 'old', turnId: 'old-turn' })
+        if (mode === 'interrupt-fails') throw new Error('Interrupt not available')
+        if (mode === 'server-changes') service.client.generation++
+        status = 'interrupted'
+        service.client.emit('event', { method: 'turn/completed', params: { threadId: 'old' } })
+        return {}
+      }
+      if (method === 'thread/goal/get') return { goal: null }
+      if (method === 'thread/start') return { thread: { id: 'fresh' } }
+      if (method === 'thread/unsubscribe') { assert.equal(params.threadId, 'old'); return {} }
+      assert.fail(`Unexpected request ${method}`)
+    }
+    if (mode === 'already-attached') await service.resumeThread('old', '/project', settings)
+    service.setContextStore({ loadCodexContext: async id => {
+      if (mode === 'storage-error' && status === 'interrupted') throw new Error('disk permission denied')
+      return saved.get(id)
+    }, loadCodexContextRecord: async () => undefined,
+      saveCodexContext: async (id, context) => saved.set(id, context) })
+    const opened = service.openThread('/project', settings, 'old', notice => notices.push(notice))
+    const failure = ['server-changes', 'before-start'].includes(mode) ? /connection changed/ : mode === 'storage-error' ? /disk permission denied/ : undefined
+    if (failure) {
+      await assert.rejects(opened, failure)
+      assert.deepEqual(notices, [])
+      assert.equal(settings.tabToolThreads['/project'], 'old')
+    } else {
+      assert.equal(await opened, 'fresh')
+      assert.deepEqual(notices, [mode === 'interrupt' ? 'interrupted' : 'new-session'])
+      assert.equal(settings.tabToolThreads['/project'], 'fresh')
+    }
+    assert.equal(calls.filter(call => call.method === 'turn/interrupt').length, ['missing-turn-id', 'already-attached'].includes(mode) ? 0 : 1)
+    assert.equal(calls.filter(call => call.method === 'thread/start').length, failure ? 0 : 1)
+    assert.equal(calls.filter(call => call.method === 'thread/unsubscribe').length, failure || mode === 'already-attached' ? 0 : 1)
+    assert.equal(saved.get('fresh')?.messages[0].content, mode === 'interrupt' ? 'original question' : undefined)
+    assert.equal(saved.get('fresh')?.turns[0].status, mode === 'interrupt' ? 'interrupted' : undefined)
+  })
+}
 
 test('writer wait stops when its app-server is replaced', async () => {
   const service = new CodexService()

@@ -63,6 +63,8 @@ Tabby 在应用内安装、升级插件后，已由[内置插件管理器](https
 
 `docs/assets/overview.svg` 是功能界面示意的可编辑源文件，`overview.png` 是中英文 README 使用的导出图。功能变化时一起更新，图中版本号须与发布版本一致，示例任务、连接与输出应明确标注；示意图不能代替真实 Tabby 桌面验证。Linux 上可用 `gdk-pixbuf-thumbnailer -s 1800 docs/assets/overview.svg docs/assets/overview.png` 导出，也可使用支持 SVG 的图形工具，导出后检查字体、布局和图片引用。
 
+`test/thread-tools.test.js` 覆盖 Codex 恢复旧会话时的写入冲突、指定回合中断、历史保留与新会话回退。`test/claude-code.test.js` 使用离线 CLI 子进程覆盖系统与独立空间的双窗口锁冲突、退出清理和历史恢复。显式选择历史会话沿用原恢复流程。
+
 标题下的 `robot-multitask.gif` 为 1024 × 512、12 帧的装饰动画，在 README 中按 560 × 280 显示；同尺寸的 `robot-multitask.png` 用于减少动态效果时的静态回退，高清生成提示词和编码参数保存在同目录的 `robot-multitask.prompt.md`。两类图片用途不同，更新功能效果图时保留标题动画。
 
 ## 测试范围与平台说明

@@ -134,8 +134,16 @@ export class ClaudeCodeAgent extends ApiAgent {
   private selectedExecutable = ''
   private discovery?: AbortController
   private connecting?: { key: string; ready: Promise<void> }
+  private hostWindow?: Window
+  private windowUnloaded = false
+  private readonly onWindowUnload = (): void => { this.windowUnloaded = true; this.close() }
   constructor (profile: ApiProfile, store: AgentStore, private configuredExecutable = 'claude', space?: NativeSessionSpace) { super(profile, store, async () => '', space) }
   async connect (settings: AgentSettings): Promise<void> {
+    if (this.windowUnloaded) throw new Error('Claude Code window has unloaded')
+    if (!this.hostWindow && typeof window !== 'undefined') {
+      this.hostWindow = window
+      window.addEventListener('unload', this.onWindowUnload)
+    }
     const executable = normalizeExecutable(settings.claudeExecutable ?? this.configuredExecutable) || 'claude'
     const cwd = settings.cwd || os.homedir()
     const key = JSON.stringify([executable, cwd, this.sessionSpace?.key, this.sessionSpace?.native])
@@ -182,13 +190,15 @@ export class ClaudeCodeAgent extends ApiAgent {
       supportedReasoningEfforts: modelReasoningEfforts(this.profile, model).map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort })) }))
   }
   protected async createAdapter (session: ApiSession, _settings: AgentSettings, call: (call: ModelToolCall, signal?: AbortSignal) => Promise<ToolResult>): Promise<ApiProviderAdapter> {
-    if (!this.executable) throw new Error('Claude Code 尚未连接，请重新连接')
+    if (!this.executable || this.windowUnloaded) throw new Error('Claude Code 尚未连接，请重新连接')
     const selector = this.selectedExecutable
     const space = this.sessionSpace
     return new ClaudeCodeAdapter({ ...this.profile }, this.executable, session, call, !!_settings.decisionOnly, space,
       signal => inspectClaudeCode(selector, session.cwd, signal, sessionEnvironment(space, process.env)))
   }
   close (): void {
+    this.hostWindow?.removeEventListener('unload', this.onWindowUnload)
+    this.hostWindow = undefined
     this.discovery?.abort()
     this.discovery = undefined
     this.connecting = undefined

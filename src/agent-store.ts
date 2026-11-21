@@ -44,6 +44,10 @@ export interface ApiSession {
   goal?: { objective: string; status: string; tokenBudget: number; usedTokens: number }
 }
 
+export class NativeSessionInUseError extends Error {
+  constructor () { super('Session is in use by another window') }
+}
+
 export class AgentStore {
   private writes = Promise.resolve()
   constructor (private root: string) {}
@@ -81,7 +85,10 @@ export class AgentStore {
         // Serialize stale-lock recovery, then reread ownership. Two recovering
         // windows must never unlink a fresh lock acquired by the other window.
         let recovery
-        try { recovery = await fs.open(file + '.recovery', 'wx', 0o600) } catch { throw new Error('Session is in use by another window') }
+        try { recovery = await fs.open(file + '.recovery', 'wx', 0o600) } catch (error: any) {
+          if (error.code === 'EEXIST') throw new NativeSessionInUseError()
+          throw error
+        }
         try {
           let owner: { pid: number }
           try { owner = JSON.parse(await fs.readFile(file, 'utf8')) } catch (missing: any) {
@@ -89,7 +96,7 @@ export class AgentStore {
             throw new Error('Session lock is being initialized; reconnect before retrying')
           }
           if (!Number.isInteger(owner.pid) || owner.pid <= 0) throw new Error('Invalid session lock; inspect it before continuing')
-          try { process.kill(owner.pid, 0); throw new Error('Session is in use by another window') }
+          try { process.kill(owner.pid, 0); throw new NativeSessionInUseError() }
           catch (failure: any) {
             if (failure.code !== 'ESRCH') throw failure
             await fs.unlink(file)
@@ -97,7 +104,7 @@ export class AgentStore {
         } finally { await recovery.close(); await fs.unlink(file + '.recovery') }
       }
     }
-    throw new Error('Session is in use by another window')
+    throw new NativeSessionInUseError()
   }
   piDirectory (id: string): string { this.file(id); return path.join(this.root, 'pi', id) }
   private file (id: string): string {

@@ -75,6 +75,7 @@ rl.on('line', line => {
   if (msg.id === 9 && msg.result?.decision === 'accept') process.stdout.write(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: 'thread-1', requestId: 9 } }) + '\n')
 })
 
+
 `)
   const client = new CodexClient()
   let connectedEvents = 0
@@ -102,6 +103,31 @@ rl.on('line', line => {
     assert.equal(client.isConnected, false)
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('a late recovery RPC reply does not disconnect the client or disturb another request', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabby-codex-recovery-rpc-'))
+  const executable = mockServer(dir, 'mock-codex', String.raw`
+const readline = require('readline')
+readline.createInterface({ input: process.stdin }).on('line', line => {
+  const { id, method } = JSON.parse(line)
+  if (id === undefined) return
+  const respond = () => process.stdout.write(JSON.stringify({ id, result: { method } }) + '\n')
+  if (method === 'turn/interrupt') setTimeout(respond, 100)
+  else if (method === 'thread/read') setTimeout(respond, 150)
+  else respond()
+})
+`)
+  const client = new CodexClient()
+  t.after(async () => { await client.close(); fs.rmSync(dir, { recursive: true, force: true }) })
+  await client.connect(executable)
+  const generation = client.generation
+  const unrelated = client.request('thread/read', { threadId: 'other-window' })
+  await assert.rejects(client.request('turn/interrupt', { threadId: 'old', turnId: 'stale' }, undefined, 20), /during session recovery/)
+  assert.deepEqual(await unrelated, { method: 'thread/read' })
+  assert.equal(client.isConnected, true)
+  assert.equal(client.generation, generation)
+  assert.equal(client.pending.size, 0)
 })
 
 function mockServer (dir, name, body) {

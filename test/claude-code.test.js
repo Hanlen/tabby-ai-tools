@@ -16,6 +16,7 @@ Module._load = function (request, parent, main) {
 }
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019, experimentalDecorators: true } }).outputText, filename)
 const { ClaudeCodeAgent, ClaudeCodeAdapter, claudeCodeProfile } = require('../src/claude-code-agent.ts')
+const { privateSpaceConfig, resolveSessionSpace } = require('../src/session-space.ts')
 const { resolveClaudeExecutable, inspectClaudeCode, runClaudeProcess } = require('../src/claude-code-client.ts')
 const { createClaudeMcp } = require('../src/claude-code-mcp.ts')
 const { AgentStore } = require('../src/agent-store.ts')
@@ -437,13 +438,88 @@ test('crash recovery invalidates the native continuation and retains observed op
   saved.claudeSession = { id: '550e8400-e29b-41d4-a716-446655440000', messageCount: 0 }
   saved.turns.push({ id: 'crashed-turn', status: 'inProgress', items: [{ id: 'observed-operation', type: 'commandExecution', command: 'send_input confirmed-task', aggregatedOutput: 'operation already happened' }] })
   await f.store.save(saved)
-  await f.agent.resumeThread(id, f.root, f.settings)
+  const notices = []
+  assert.equal(await f.agent.openThread(f.root, f.settings, id, notice => notices.push(notice)), id)
+  assert.deepEqual(notices, ['interrupted'])
   const recovered = await f.store.load(id)
   assert.equal(recovered.claudeSession, undefined)
   assert.equal(recovered.turns[0].status, 'interrupted')
   assert.match(recovered.messages.at(-1).content, /operation already happened/)
   assert.match(recovered.messages.at(-1).content, /禁止自动重放/)
   assert.equal(fs.existsSync(path.join(f.root, 'capture.json')), false)
+})
+
+test('Claude retries a retiring session writer before falling back', async t => {
+  const f = await fixture(t)
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const unlock = await f.store.lockNativeSession(id)
+  const lock = f.store.lockNativeSession.bind(f.store)
+  let attempts = 0
+  f.store.lockNativeSession = async key => {
+    if (++attempts !== 1) return lock(key)
+    try { return await lock(key) } finally { await unlock() }
+  }
+  const notices = []
+  assert.equal(await f.agent.openThread(f.root, f.settings, id, notice => notices.push(notice)), id)
+  assert.equal(attempts, 2)
+  assert.deepEqual(notices, [])
+  assert.equal(fs.existsSync(path.join(f.root, 'capture.json')), false)
+})
+
+for (const mode of ['system', 'private']) {
+  test(`Claude ${mode} startup leaves another window's task running and opens a new session`, async t => {
+    const f = await fixture(t, { hang: true, invocations: [{ hang: true }] })
+    const space = mode === 'private' ? resolveSessionSpace(f.root, 'claude-code', privateSpaceConfig('claude-code')) : undefined
+    const first = space ? new ClaudeCodeAgent(f.profile, f.store, f.executable, space) : f.agent
+    const second = new ClaudeCodeAgent(f.profile, f.store, f.executable, space)
+    t.after(() => { first.close(); second.close() })
+    await first.connect(f.settings)
+    await second.connect(f.settings)
+    const original = await first.openThread(f.root, f.settings)
+    await second.resumeThread(original, f.root, f.settings)
+    const stopped = done(first)
+    const turn = await first.startTurn(original, 'active task', f.root, f.settings)
+    try {
+      await waitFor(() => fs.existsSync(path.join(f.root, 'capture.json')))
+      await assert.rejects(second.setGoal(original, 'conflicting work', 0), /another window/)
+      await assert.rejects(second.resumeThread(original, f.root, f.settings), /another window/)
+      const notices = []
+      const replacement = await second.openThread(f.root, f.settings, original, notice => notices.push(notice))
+      assert.notEqual(replacement, original)
+      assert.deepEqual(notices, ['new-session'])
+      assert.deepEqual((await f.store.load(replacement)).turns, [])
+      assert.equal((await f.store.load(original)).turns[0].status, 'inProgress')
+      assert.equal(JSON.parse(await fs.promises.readFile(path.join(f.root, 'invocations.json'))), 1)
+      assert.deepEqual(new Set((await second.listSessions(f.root)).data.map(thread => thread.id)), new Set([original, replacement]))
+    } finally { await first.interrupt(original, turn) }
+    assert.equal((await stopped).status, 'interrupted')
+    assert.equal(await second.openThread(f.root, f.settings, original), original)
+  })
+}
+
+test('Claude window unload aborts the owned CLI and keeps history without relaunching', async t => {
+  const f = await fixture(t, { invocations: [{ hang: true }] })
+  const host = new EventTarget()
+  const previous = global.window
+  global.window = host
+  t.after(() => { if (previous === undefined) delete global.window; else global.window = previous })
+  await f.agent.connect(f.settings)
+  const id = await f.agent.openThread(f.root, f.settings)
+  const stopped = done(f.agent)
+  await f.agent.startTurn(id, 'stop on window exit', f.root, f.settings)
+  await waitFor(() => fs.existsSync(path.join(f.root, 'capture.json')))
+  const { pid } = f.capture()
+  host.dispatchEvent(new Event('unload'))
+  assert.equal((await stopped).status, 'interrupted')
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
+  await assert.rejects(f.agent.connect(f.settings), /window has unloaded/)
+  const restarted = new ClaudeCodeAgent(f.profile, f.store, f.executable)
+  t.after(() => restarted.close())
+  await restarted.connect(f.settings)
+  assert.equal(await restarted.openThread(f.root, f.settings, id), id)
+  assert.equal((await f.store.load(id)).turns[0].status, 'interrupted')
+  assert.equal(JSON.parse(await fs.promises.readFile(path.join(f.root, 'invocations.json'))), 1)
 })
 
 test('native MCP repetition detection stops subsequent operations and leaves the goal unfinished', async t => {

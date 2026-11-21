@@ -379,14 +379,20 @@ export class CodexClient extends EventEmitter {
     this.tryRecovery()
   }
 
-  private requestRaw (method: string, params: any = {}): Promise<any> {
+  private requestRaw (method: string, params: any = {}, recoveryTimeoutMs?: number): Promise<any> {
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
       if (!this.process?.stdin.writable) return reject(new Error('Codex app-server is unavailable'))
       const child = this.process
       const timer = setTimeout(() => {
+        if (recoveryTimeoutMs !== undefined) {
+          this.pending.delete(id)
+          reject(new Error(`Codex app-server did not answer ${method} during session recovery`))
+          this.tryRecovery()
+          return
+        }
         this.disconnect(new Error(`Codex app-server did not answer ${method} within 60 seconds`), child)
-      }, 60000)
+      }, recoveryTimeoutMs ?? 60000)
       this.pending.set(id, { resolve, reject, timer })
       child.stdin.write(JSON.stringify({ id, method, params }) + '\n', error => {
         if (error && (error as NodeJS.ErrnoException).code !== 'EPIPE') this.disconnect(error, child)
@@ -394,7 +400,7 @@ export class CodexClient extends EventEmitter {
     })
   }
 
-  async request (method: string, params: any = {}): Promise<any> {
+  async request (method: string, params: any = {}, beforeSend?: () => void, recoveryTimeoutMs?: number): Promise<any> {
     if (!this.ready) throw new Error('Codex app-server is not connected')
     await this.ready
     if (this.space?.native && (method === 'turn/start' || method === 'turn/steer')) await requirePrivateCodexLogin(this.space)
@@ -408,8 +414,9 @@ export class CodexClient extends EventEmitter {
         throw new Error(`${error.message}\nInstallation recovery is pending or exhausted; no new task was sent.`)
       }
     }
+    beforeSend?.()
     if (method === 'turn/start') this.activeTurns.add(params.threadId)
-    try { return await this.requestRaw(method, params) } catch (error: any) {
+    try { return await this.requestRaw(method, params, recoveryTimeoutMs) } catch (error: any) {
       // A transport loss / timeout leaves execution unknown. Only a definite RPC
       // rejection establishes that this admission did not start a turn.
       if (method === 'turn/start' && error.rpcRejected) { this.activeTurns.delete(params.threadId); this.tryRecovery() }

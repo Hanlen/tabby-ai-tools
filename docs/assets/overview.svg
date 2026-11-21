@@ -215,6 +215,12 @@ text{font-family:"DejaVu Sans",sans-serif;fill:#e8eff9}
 <text x="72" y="2063" font-size="17" style="fill:#a7b8cb">Codex: clear unavailable saved CLI · Auto-discover · Check companions · No task replay</text>
 <text x="72" y="2096" font-size="17" style="fill:#a7b8cb">Claude local: recheck original CLI before each invocation · Preserve session on preflight failure</text>
 <text x="72" y="2129" font-size="17" style="fill:#8ae6c2">Existing Linux SSH Agent: independent PID / PTY proof before input · No restart or stdin probe</text>
+<g aria-label="Sidebar example after startup opens a new conversation">
+<rect x="1016" y="2010" width="710" height="123" rx="8" fill="#1c2b3e" stroke="#3b526c"/>
+<text x="1034" y="2040" font-size="15" style="fill:#9fb1c7">RESTART RECOVERY · EXAMPLE SIDEBAR NOTICE</text>
+<text x="1034" y="2073" font-size="19" font-weight="650" style="fill:#8ae6c2">New session created</text>
+<text x="1034" y="2103" font-size="16">The previous task blocked recovery. Find the original session in history.</text>
+</g>
 
 <g aria-label="MCP controlled terminal preview settings example">
 <rect x="48" y="2174" width="1704" height="318" rx="12" fill="#172130" stroke="#35475c"/>

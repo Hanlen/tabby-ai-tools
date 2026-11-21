@@ -1,4 +1,6 @@
 {
+  "上一会话的任务阻塞了恢复，已打开新会话。可在历史中查看原会话。": "A task in the previous session blocked recovery, so a new session was opened. The previous session is available in history.",
+  "上次任务已中断，聊天历史已恢复。": "The previous task was interrupted and the conversation history was restored.",
   "Codex accepted the selected space’s ChatGPT login.": "Codex accepted the selected space’s ChatGPT login.",
   "Codex rejected the selected space’s login. Sign in from the sidebar or generate its login command.": "Codex rejected the selected space’s login. Sign in from the sidebar or generate its login command.",
   "An empty private space can import an existing local login. System history stays in the system space.": "An empty private space can import an existing local login. System history stays in the system space.",

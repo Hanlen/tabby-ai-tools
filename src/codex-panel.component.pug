@@ -161,6 +161,7 @@
       button.btn.btn-primary.btn-sm(type='button', *ngIf='sessions.length', (click)='selectSession(sessions[sessionSelection])', [disabled]='loading || historyLoading || busy || !!request') {{t("恢复所选会话")}}
       button.btn.btn-outline-secondary.btn-sm(type='button', *ngIf='sessionCursor && !historyLoading', (click)='loadSessions()', [disabled]='!canBrowseHistory') {{t("加载更多")}}
   .codex-output-note(*ngIf='historyNotice') {{t(historyNotice)}}
+  .codex-output-note(*ngIf='sessionRecoveryNotice', role='status') {{t(sessionRecoveryNotice)}}
   .codex-output-note(*ngIf='outputNotice') {{t(outputNotice)}}
   .codex-feed-container([class.agent-navigation-enabled]='entries.length > 0')
     agent-conversation-navigation([entries]='entries', [feed]='chatFeed', (navigate)='navigateQuestion($event)')

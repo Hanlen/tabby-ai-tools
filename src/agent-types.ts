@@ -66,6 +66,9 @@ export interface AgentClient extends EventEmitter {
   respondError(id: number, message: string): void
   close(): void
 }
+
+export type SessionRecoveryNotice = 'interrupted' | 'new-session'
+
 export interface AgentBackend {
   readonly sessionSpace?: NativeSessionSpace
   readonly sessionThreads?: Record<string, string>
@@ -78,7 +81,7 @@ export interface AgentBackend {
   authenticationCommand?(settings: AgentSettings): Promise<string>
   signIn?(settings: AgentSettings, openBrowser: (url: string) => void, signal: AbortSignal): Promise<void>
   signOut?(): Promise<void>
-  openThread(cwd: string, settings: AgentSettings, savedId?: string): Promise<string>
+  openThread(cwd: string, settings: AgentSettings, savedId?: string, onRecovery?: (notice: SessionRecoveryNotice) => void): Promise<string>
   resumeThread(threadId: string, cwd: string, settings: AgentSettings): Promise<string>
   listSessions(cwd: string, cursor?: string | null): Promise<SessionPage>
   listModels(): Promise<CodexModel[]>

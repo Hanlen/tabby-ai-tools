@@ -16,7 +16,7 @@ import { UserQuestion, answersComplete, formatAnswers, isUserInputMethod } from 
 import { ChatScroll } from './chat-scroll'
 import { ChatEntry, activityEntry, thinkingText } from './chat-activity'
 import { AgentBackendFactory } from './agent-backend.service'
-import { AgentBackend, ApiProfile } from './agent-types'
+import { AgentBackend, ApiProfile, SessionRecoveryNotice } from './agent-types'
 import { withModelReasoning } from './model-reasoning'
 import { readThreadHistory } from './agent-history'
 import { TaskWorkflow, workflowInstructions, workflowNeedsSudo } from './task-memory'
@@ -442,6 +442,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
   private questionInterrupting = false
   outputNotice = ''
   historyNotice = ''
+  sessionRecoveryNotice = ''
   historyOpen = false
   historyLoading = false
   historyError = ''
@@ -1071,6 +1072,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     const previous = { codex: this.codex, profileId: this.profileId, codexSignedIn: this.codexSignedIn, cliConfiguration: this.cliConfiguration, cwd: this.cwd, threadId: this.threadId, turnId: this.turnId,
       entries: this.entries, goalStatus: this.goalStatus, latestTurnStatus: this.latestTurnStatus, sessions: this.sessions, models: this.models,
       historyOpen: this.historyOpen, modelPickerOpen: this.modelPickerOpen, connected: this.connected, busy: this.busy, status: this.status,
+      sessionRecoveryNotice: this.sessionRecoveryNotice,
       threadStatus: this.threadStatus, statusRateLimits: this.statusRateLimits, ordinaryUsageAllowed: this.ordinaryUsageAllowed,
       contextUsedTokens: this.contextUsedTokens, contextWindowTokens: this.contextWindowTokens, sessionTotalTokens: this.sessionTotalTokens }
     this.loading = true
@@ -1120,6 +1122,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.latestTurnStatus = ''
       this.sessions = []
       this.models = []
+      this.sessionRecoveryNotice = ''
       this.modelLoading = false
       this.historyOpen = false
       this.modelPickerOpen = false
@@ -1277,6 +1280,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.statusRateLimits = undefined
     this.ordinaryUsageAllowed = null
     const previousThreadId = this.threadId
+    let recovery: SessionRecoveryNotice | undefined
     this.loading = true
     this.connected = false
     this.status = this.codex.client.isConnected ? '正在恢复会话…' : `正在连接 ${this.agentLabel}…`
@@ -1290,19 +1294,38 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       this.status = '正在恢复会话…'
       this.cwd = this.cwd || this.settings.cwd || os.homedir()
       const savedId = this.settings.threads[this.cwd]
-      this.threadId = preparedThreadId || await this.codex.openThread(this.cwd, this.settings, savedId)
+      const settings = this.settings
+      const savedToolId = settings.tabToolThreads?.[this.cwd]
+      this.threadId = preparedThreadId || await this.codex.openThread(this.cwd, settings, savedId, notice => { recovery = notice })
+      const id = this.threadId
+      try {
+        const goal = await this.codex.getGoal(id)
+        if (id !== previousThreadId) this.clearTokenUsage()
+        await this.loadHistory(id !== previousThreadId)
+        settings.threads[this.cwd] = id
+        await this.config.save()
+        this.goalStatus = goal?.status || ''
+      } catch (error) {
+        if (settings.threads[this.cwd] === id) {
+          if (savedId === undefined) delete settings.threads[this.cwd]
+          else settings.threads[this.cwd] = savedId
+        }
+        if (settings.tabToolThreads?.[this.cwd] === id) {
+          if (savedToolId === undefined) delete settings.tabToolThreads[this.cwd]
+          else settings.tabToolThreads[this.cwd] = savedToolId
+        }
+        this.threadId = previousThreadId
+        throw error
+      }
       this.refreshAttachments()
-      if (this.threadId !== previousThreadId) this.clearTokenUsage()
       const upgraded = !!savedId && savedId !== this.threadId
-      this.settings.threads[this.cwd] = this.threadId
-      await this.config.save()
-      await this.loadHistory(this.threadId !== previousThreadId)
-      const goal = await this.codex.getGoal(this.threadId)
-      this.goalStatus = goal?.status || ''
+      if (recovery === 'new-session') this.sessionRecoveryNotice = '上一会话的任务阻塞了恢复，已打开新会话。可在历史中查看原会话。'
+      else if (recovery === 'interrupted') this.sessionRecoveryNotice = '上次任务已中断，聊天历史已恢复。'
+      else if (id !== previousThreadId) this.sessionRecoveryNotice = ''
       this.restoreNavigationGoal()
       this.connected = true
       this.connectionError = ''
-      this.status = upgraded ? '已创建支持访问所有 Tabby 标签的新会话' : this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '就绪'
+      this.status = recovery === 'new-session' ? '新会话已创建' : upgraded && !recovery ? '已创建支持访问所有 Tabby 标签的新会话' : this.busy ? '已恢复正在执行的任务' : this.goalStatus === 'active' ? '已恢复未完成任务' : '就绪'
       return true
     } catch (error: any) {
       const serverConnected = this.codex.client.isConnected
@@ -1428,6 +1451,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
         throw error
       }
       this.threadId = restoredId
+      this.sessionRecoveryNotice = ''
       this.refreshAttachments()
       this.cancelWorkflowOperations()
       this.tabTools.releaseOwner(oldId)
@@ -1513,7 +1537,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
     this.sendNotice = ''
     this.sendAttempt++
     if (this.busy && !this.turnId) { this.status = '正在启动回合，请稍后追加指令'; return }
-    if (!this.threadId) { await this.reconnect(); if (!this.threadId) return }
+    if (!this.threadId && (!await this.reconnect() || !this.threadId)) return
     // Finish a completed recording before a follow-up goal can discard its run.
     if (!this.busy && this.goalStatus !== 'active' && this.latestTurnStatus === 'completed' && this.agents?.memory?.activeLibrary?.token(this.threadId)) await this.refreshGoal()
     if (this.goalStatus !== 'active') {
@@ -1654,6 +1678,7 @@ export class CodexPanelComponent implements AfterViewInit, OnDestroy {
       if (this.sourceTerminal) this.outputCursor = this.terminalOutput.cursor(this.sourceTerminal)
       this.outputNotice = ''
       this.historyNotice = ''
+      this.sessionRecoveryNotice = ''
       this.latestTurnStatus = ''
       this.threadId = newId
       this.refreshAttachments()

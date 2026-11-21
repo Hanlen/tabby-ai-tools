@@ -447,6 +447,38 @@ test('reconnect renders recovered CLI status and real failures without waiting f
   assert.match(rendered.at(-1)[2], /current CLI not found/)
 })
 
+test('automatic session fallback leaves the sidebar ready and preserves the unsent draft', async () => {
+  const settings = { cwd: '/project', threads: { '/project': 'old' }, tabToolThreads: { '/project': 'old' } }
+  const saved = []
+  const backend = {
+    client: { isConnected: true }, connect: async () => {}, getGoal: async () => null,
+    openThread: async (cwd, config, id, onRecovery) => {
+      assert.equal(id, 'old')
+      config.tabToolThreads[cwd] = 'new'
+      onRecovery('new-session')
+      return 'new'
+    },
+  }
+  let historyFailure = true
+  const panel = new CodexPanelComponent({ store: { codexAgent: settings }, save: async () => saved.push(settings.threads['/project']) },
+    backend, { run: callback => callback() }, {}, fakeTabTools)
+  panel.loadHistory = async () => { if (historyFailure) throw new Error('history unavailable') }
+  panel.prompt = 'Keep this draft'
+  assert.equal(await panel.reconnect(), false)
+  assert.equal(panel.threadId, '')
+  assert.equal(settings.threads['/project'], 'old')
+  assert.equal(settings.tabToolThreads['/project'], 'old')
+  assert.deepEqual(saved, [])
+  historyFailure = false
+  assert.equal(await panel.reconnect(), true)
+  assert.equal(panel.connected, true)
+  assert.equal(panel.threadId, 'new')
+  assert.equal(panel.prompt, 'Keep this draft')
+  assert.match(panel.sessionRecoveryNotice, /任务阻塞了恢复.*历史/)
+  assert.equal(panel.status, '新会话已创建')
+  assert.deepEqual(saved, ['new'])
+})
+
 test('reconnecting a private Codex space reuses its writer and restores the icon without replay', async () => {
   const { EventEmitter } = require('node:events')
   const settings = { executable: '', cwd: '/project', threads: { '/project': 'saved-thread' } }

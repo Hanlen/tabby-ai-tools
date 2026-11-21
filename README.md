@@ -26,6 +26,8 @@
 
 **Conversation navigation and CLI recovery.** The shared Agent panel has a question index in the right scrollbar strip: hover or focus to preview a question, click to jump, and use “latest” to resume streaming follow. The centered, compact 1px lines share an 18px right strip with a draggable conversation scroll thumb, freeing the former left gutter. Previews open to the left; theme-aware ↑ / ↓ buttons appear when needed. Green means confirmed completion; pale green means an ordinary interruption without a user Stop. Blue means running or waiting for an external prerequisite. Red means a confirmed user Stop, unfinished task, or execution limit. Completed turns wait for goal confirmation; automatic continuation returns to blue. History with no known execution result remains neutral.
 
+**Unreleased restart recovery.** Codex and Claude Code try to recover the saved conversation. If a running task keeps it occupied, AI Tools can open a new session and show why in the sidebar. The original session stays in history, and recovery never resends the previous task. [Session recovery details](docs/guide.md#cli-自动发现与启动排查)
+
 <br>
 
 Tabby AI Tools is an AI assistant inside [Tabby](https://github.com/Eugeny/tabby). It reads terminal output, sends commands, and uses the results to decide what to do next. Describe your goal in the sidebar, follow the work in your terminals, and reclaim terminal input whenever needed.

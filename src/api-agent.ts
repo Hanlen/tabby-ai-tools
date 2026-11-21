@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events'
 import { thinkingText } from './chat-activity'
-import { AgentBackend, AgentContext, ApiProfile, configuredToolRoundLimit } from './agent-types'
+import { AgentBackend, AgentContext, ApiProfile, SessionRecoveryNotice, configuredToolRoundLimit } from './agent-types'
 import { AgentSettings } from './config'
-import { AgentStore, ApiSession, ApiTurn, agentId, profileFingerprint } from './agent-store'
+import { AgentStore, ApiSession, ApiTurn, NativeSessionInUseError, agentId, profileFingerprint } from './agent-store'
 import { ApiProviderAdapter, ToolDefinition, ModelToolCall, ToolResult } from './api-provider'
 import { TAB_TOOLS } from './tab-tools'
 import type { CodexModel, SessionPage } from './codex.service'
@@ -60,6 +60,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   constructor (readonly profile: ApiProfile, private store: AgentStore, private getKey: () => Promise<string>, readonly sessionSpace?: NativeSessionSpace) { super() }
   protected get hasActiveTurns (): boolean { return this.running.size > 0 }
   get isConnected (): boolean { return this.connected }
+  private get needsSessionLock (): boolean { return !!this.sessionSpace?.native || this.profile.runtime === 'claude-code' }
 
   async connect (_settings: AgentSettings): Promise<void> {
     if (!this.profile.model.trim()) throw new Error('请先在 AI Tools 设置中填写模型 ID')
@@ -76,41 +77,67 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
     return this.sessions.has(id) ? { model: this.profile.model, reasoningEffort: this.profile.reasoningEffort } : undefined
   }
 
-  async openThread (cwd: string, settings: AgentSettings, savedId?: string): Promise<string> {
+  async openThread (cwd: string, settings: AgentSettings, savedId?: string, onRecovery?: (notice: SessionRecoveryNotice) => void): Promise<string> {
+    let occupied = false
     if (savedId?.startsWith('api-')) {
-      try {
-        const previous = await this.store.load(savedId)
-        if (previous.profileId === this.profile.id && previous.cwd === cwd && this.ownsSpace(previous)) {
-          if (previous.fingerprint === profileFingerprint(this.profile)) return await this.resumeThread(savedId, cwd, settings)
-          return await this.importContext(sessionContext(previous), cwd, settings)
+      // Give a retiring Claude window a chance to save its final state and release the lock.
+      for (const delay of [0, 250, 750]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+        occupied = false
+        try {
+          const previous = await this.store.load(savedId)
+          if (previous.profileId !== this.profile.id || previous.cwd !== cwd || !this.ownsSpace(previous)) break
+          return await this.restoreSavedSession(previous, settings, onRecovery)
+        } catch (error: any) {
+          if (this.profile.runtime === 'claude-code' && error instanceof NativeSessionInUseError) occupied = true
+          else if (error.code === 'ENOENT') break
+          else throw error
         }
-      } catch (error: any) { if (error.code !== 'ENOENT') throw error }
+      }
     }
     const session: ApiSession = { version: 1, id: agentId(), cwd, profileId: this.profile.id, fingerprint: profileFingerprint(this.profile), model: this.profile.model,
       ...(this.sessionSpace ? { spaceKey: this.sessionSpace.key } : {}), instructions: await resolveInstructions(settings.decisionOnly ? { mode: 'none' } : this.profile.instructions, settings.decisionOnly ? undefined : settings.defaultInstructions),
       updatedAt: Date.now(), messages: [], turns: [], totalTokens: 0 }
     await this.store.save(session)
     this.sessions.set(session.id, session)
+    if (occupied) onRecovery?.('new-session')
     return session.id
   }
 
-  async resumeThread (id: string, cwd: string, _settings: AgentSettings): Promise<string> {
+  private async restoreSavedSession (previous: ApiSession, settings: AgentSettings, onRecovery?: (notice: SessionRecoveryNotice) => void): Promise<string> {
+    if (previous.fingerprint === profileFingerprint(this.profile)) return this.resumeThread(previous.id, previous.cwd, settings, onRecovery)
+    if (this.profile.runtime !== 'claude-code') return this.importContext(sessionContext(previous), previous.cwd, settings)
+    // A changed model can import history only once the original writer has stopped.
+    const release = await this.store.lockNativeSession(previous.id)
+    try {
+      const source = await this.store.load(previous.id)
+      const id = await this.importContext(sessionContext(source), previous.cwd, settings)
+      if (source.turns.some(turn => turn.status === 'inProgress')) onRecovery?.('interrupted')
+      return id
+    } finally { await release() }
+  }
+
+  async resumeThread (id: string, cwd: string, _settings: AgentSettings, onRecovery?: (notice: SessionRecoveryNotice) => void): Promise<string> {
     if (this.running.has(id)) {
       if (this.session(id).cwd !== cwd) throw new Error('工作目录与会话不一致')
       return id
     }
-    const release = this.sessionSpace?.native ? await this.store.lockNativeSession(id) : undefined
+    const release = this.needsSessionLock ? await this.store.lockNativeSession(id) : undefined
     try {
       const session = await this.store.load(id)
       if (session.profileId !== this.profile.id || session.fingerprint !== profileFingerprint(this.profile) || session.cwd !== cwd || !this.ownsSpace(session)) throw new Error('会话属于其他连接、空间、模型或工作目录')
       session.instructions ||= await resolveInstructions({ mode: 'none' })
+      let interrupted = false
       for (const turn of session.turns) if (turn.status === 'inProgress') {
         turn.status = 'interrupted'
+        interrupted = true
         if (this.profile.runtime === 'claude-code') delete session.claudeSession
         session.messages.push({ role: 'user', content: '上一回合因应用退出而中断。可能已有终端操作发生，请先读取终端核对实际状态，禁止自动重放之前的命令。已记录的操作：\n' + turn.items.filter(item => item.type === 'commandExecution').map(item => item.command + '\n' + item.aggregatedOutput).join('\n').slice(-12000) })
       }
+      if (interrupted && this.needsSessionLock) session.updatedAt = Math.max(Date.now(), session.updatedAt + 1)
       await this.store.save(session)
       this.sessions.set(id, session)
+      if (interrupted) onRecovery?.('interrupted')
       return id
     } finally { await release?.() }
   }
@@ -129,7 +156,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   }
   async exportContext (id: string): Promise<AgentContext> {
     if (this.running.has(id)) throw new Error('任务运行中，无法切换连接')
-    const release = this.sessionSpace?.native ? await this.store.lockNativeSession(id) : undefined
+    const release = this.needsSessionLock ? await this.store.lockNativeSession(id) : undefined
     try {
       const session = release ? await this.store.load(id) : this.session(id)
       if (!this.ownsSpace(session)) throw new Error('Session belongs to another space')
@@ -162,21 +189,29 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
   }
   async setGoal (id: string, objective: string, budget: number): Promise<void> {
     const session = this.session(id)
-    session.goal = { objective, status: 'active', tokenBudget: budget, usedTokens: 0 }
-    delete session.toolLoopState
-    await this.store.save(session)
+    const release = this.needsSessionLock && !this.running.has(id) ? await this.lockLoadedSession(session) : undefined
+    try {
+      session.goal = { objective, status: 'active', tokenBudget: budget, usedTokens: 0 }
+      delete session.toolLoopState
+      if (release) session.updatedAt = Math.max(Date.now(), session.updatedAt + 1)
+      await this.store.save(session)
+    } finally { await release?.() }
   }
   async getGoal (id: string): Promise<any> { return this.session(id).goal || null }
   async accountUsage (id: string, tokens: number): Promise<void> {
     if (!Number.isFinite(tokens) || tokens <= 0) return
     const session = this.session(id)
-    session.totalTokens += tokens
-    if (session.goal) session.goal.usedTokens += tokens
-    if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) {
-      session.goal.status = 'budgetLimited'
-      this.event(id, 'thread/goal/updated', { goal: session.goal })
-    }
-    await this.store.save(session)
+    const release = this.needsSessionLock && !this.running.has(id) ? await this.lockLoadedSession(session) : undefined
+    try {
+      session.totalTokens += tokens
+      if (session.goal) session.goal.usedTokens += tokens
+      if (session.goal?.tokenBudget && session.goal.usedTokens >= session.goal.tokenBudget) {
+        session.goal.status = 'budgetLimited'
+        this.event(id, 'thread/goal/updated', { goal: session.goal })
+      }
+      if (release) session.updatedAt = Math.max(Date.now(), session.updatedAt + 1)
+      await this.store.save(session)
+    } finally { await release?.() }
     this.event(id, 'thread/tokenUsage/updated', { tokenUsage: { total: { totalTokens: session.totalTokens } } })
   }
 
@@ -210,15 +245,19 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
     })
   }
 
+  private async lockLoadedSession (session: ApiSession): Promise<() => Promise<void>> {
+    const release = await this.store.lockNativeSession(session.id)
+    try {
+      if ((await this.store.load(session.id)).updatedAt !== session.updatedAt) throw new Error('Session changed in another window; reconnect before sending')
+      return release
+    } catch (error) { await release(); throw error }
+  }
+
   async startTurn (id: string, text: string, cwd: string, settings: AgentSettings, terminalOutput = ''): Promise<string> {
     if (this.running.has(id)) throw new Error('此会话已有任务运行')
     const session = this.session(id)
     if (session.cwd !== cwd) throw new Error('工作目录与会话不一致')
-    const release = this.sessionSpace?.native ? await this.store.lockNativeSession(id) : undefined
-    if (release) {
-      try { if ((await this.store.load(id)).updatedAt !== session.updatedAt) throw new Error('Session changed in another window; reconnect before sending') }
-      catch (error) { await release(); throw error }
-    }
+    const release = this.needsSessionLock ? await this.lockLoadedSession(session) : undefined
     const turn: ApiTurn = { id: agentId(), status: 'inProgress', items: [{ id: agentId(), type: 'userMessage', content: [{ type: 'text', text }] }] }
     const job: RunningTurn = { turn, controller: new AbortController(), queued: [], done: Promise.resolve(), release }
     this.running.set(id, job)
@@ -500,7 +539,7 @@ export class ApiAgent extends EventEmitter implements AgentBackend {
         session.messages.push({ role: 'user', content: input })
         turn.items.push({ id: agentId(), type: 'userMessage', content: [{ type: 'text', text: input }] })
       }
-      session.updatedAt = Date.now()
+      session.updatedAt = Math.max(Date.now(), session.updatedAt + 1)
       try { await this.store.save(session) } catch { turn.status = 'failed'; failure = '保存 API 会话失败；请检查配置目录权限和磁盘空间' }
       try { await job.release?.() } catch { turn.status = 'failed'; failure = 'Unable to release the session lock; inspect the session before continuing' }
       this.running.delete(session.id)

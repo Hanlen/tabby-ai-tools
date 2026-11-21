@@ -1,4 +1,6 @@
 {
+  "上一会话的任务阻塞了恢复，已打开新会话。可在历史中查看原会话。": "Eine laufende Aufgabe hat die Wiederherstellung der vorherigen Sitzung blockiert. Eine neue Sitzung wurde geöffnet. Die vorherige Sitzung findest du im Verlauf.",
+  "上次任务已中断，聊天历史已恢复。": "Die letzte Aufgabe wurde unterbrochen und der Gesprächsverlauf wiederhergestellt.",
   "登录": "Anmelden",
   "退出登录": "Abmelden",
   "取消登录": "Anmeldung abbrechen",
