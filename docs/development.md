@@ -63,6 +63,8 @@ Tabby 在应用内安装、升级插件后，已由[内置插件管理器](https
 
 中英文 README 共用 `docs/assets/two-terminal-demo.gif` 和减弱动态效果时使用的 `two-terminal-demo.png`。6 秒 GIF 由真实 Tabby 界面截图合成。隔离的 OpenAI 兼容 HTTP 测试后端返回工具调用，真实终端先把 `brief.md` 从 Tab 1 复制到 Tab 2，再把 `checks.txt` 复制回来。演示脚本读取两个终端的输出，并逐字节核对两份副本。重新录制时使用示例文件和隔离配置，检查两方向的操作、最终结果、文字可读性和静态回退。`overview.svg` 和 `overview.png` 保留为可编辑的界面示意及导出图。
 
+`ssh-command-demo.gif` 展示用户在侧栏发送指令、在 Tabby 原生 SSH 会话中执行 `./check-health`，再从终端读回 HTTP 200。录制使用隔离的回环 OpenSSH 服务和真实响应健康检查的 HTTP 夹具，侧栏模型响应由本地测试后端提供。`ssh-command-demo.png` 是减弱动态效果时使用的最终结果画面。
+
 标题下的 `robot-multitask.gif` 为 1024 × 512、12 帧的装饰动画，在 README 中按 176 × 88 显示；同尺寸的 `robot-multitask.png` 用于减少动态效果时的静态回退，高清生成提示词和编码参数保存在同目录的 `robot-multitask.prompt.md`。两类图片用途不同，更新功能效果图时保留标题动画。
 
 ## 测试范围与平台说明
